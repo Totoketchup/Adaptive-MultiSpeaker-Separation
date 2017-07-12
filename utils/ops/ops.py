@@ -1,5 +1,6 @@
 import numpy as np
 import tensorflow as tf
+import functools
 
 def scope(function):
     name = function.__name__
@@ -239,7 +240,7 @@ class BLSTM:
         return tf.concat([forward_out[:,:,:], backward_out[:,::-1,:]], 2)
 
 class Residual_Net:
-    def __init__(self, input_shape, k = [1, 32, 64, 128], N = 3, training):
+    def __init__(self, input_shape, training, k = [1, 32, 64, 128], N = 3):
         self.k = k
         self.T = input_shape[1]
         self.F = input_shape[2]
