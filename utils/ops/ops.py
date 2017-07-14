@@ -2,6 +2,9 @@ import numpy as np
 import tensorflow as tf
 import functools
 
+
+rng = np.random.RandomState(1234)
+
 def scope(function):
     name = function.__name__
     attribute = '_cache_' + name
@@ -115,31 +118,17 @@ class LSTM:
         return h[1][-1] # Take the last state
         
 class Dense:
-    def __init__(self, in_dim, out_dim, function=lambda x: x):
+    def __init__(self, in_dim, out_dim, function=lambda x: x, name='Dense'):
         # Xavier initializer
-        self.W = tf.Xavier_init(in_dim, out_dim, 'W')
+        self.W = Xavier_init(in_dim, out_dim, 'W')
         self.b = tf.Variable(np.zeros([out_dim]).astype('float32'))
         self.function = function
+        self.name = name
+
 
     def f_prop(self, x):
         return self.function(tf.matmul(x, self.W) + self.b)
 
-class Conv:
-    def __init__(self, filter_shape, function=lambda x: x, strides=[1,1,1,1], padding='SAME'):
-        # Xavier
-        fan_in = np.prod(filter_shape[:3])
-        fan_out = np.prod(filter_shape[:2]) * filter_shape[3]
-        self.d_in = filter_shape[2]
-        self.d_out = filter_shape[3]
-        self.W = Xavier_init(fan_in, fan_out, name='W')
-        self.b = tf.Variable(np.zeros((filter_shape[3]), dtype='float32'), name='b')
-        self.function = function
-        self.strides = strides
-        self.padding = padding
-
-    def f_prop(self, x):
-        u = tf.nn.conv2d(x, self.W, strides=self.strides, padding=self.padding) + self.b
-        return self.function(u)
 
 class Pooling:
     def __init__(self, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME'):
@@ -178,44 +167,29 @@ class Dropout:
     def f_prop(self, x):
         return tf.cond(self.train, lambda: tf.nn.dropout(x, self.prob), lambda: x)
 
-
-class Residual:
-    def __init__(self, layers):
-        self.layers = layers;
-        self.downsample = False;
-        if layers[0].d_in != layers[0].d_out:
-            self.downsample = True;
-            self.conv_op = Conv((1,1,layers[0].d_in,layers[0].d_out), strides = layers[0].strides)
-            
-    def f_prop(self, x):
-        o = x;
-        for layer in self.layers:
-            o = layer.f_prop(o)
-        if self.downsample:
-            x =  self.conv_op.f_prop(x) # Add the input to the residual learning 
-        return o + x;
-
-class Conv1D:
-    def __init__(self, filter_shape, function=lambda x: x, stride=1, padding='SAME'):
-        # Xavier
-        fan_in = np.prod(filter_shape[:3])
-        fan_out = np.prod(filter_shape[:2]) * filter_shape[3]
-        self.W = Xavier_init(fan_in, fan_out, name='W')
-        self.b = tf.Variable(np.zeros((filter_shape[-1]), dtype='float32'), name='b')
-        self.function = function
-        self.stride = stride
-        self.padding = padding
-
-    def f_prop(self, x):
-        u = tf.nn.conv1d(x, self.W, stride=self.stride, padding=self.padding) + self.b
-        return self.function(u + self.b)
-
 class Reshape:
-    def __init__(self, shape):
+    def __init__(self, shape, name = 'Reshape'):
         self.shape = shape
+        self.name = name
 
     def f_prop(self, x):
-        return tf.reshape(x, shape)
+        return tf.reshape(x, self.shape)
+
+class BatchNorm:
+    def __init__(self, shape, epsilon=np.float32(1e-5)):
+        self.gamma = tf.Variable(np.ones(shape, dtype='float32'), name='gamma')
+        self.beta  = tf.Variable(np.zeros(shape, dtype='float32'), name='beta')
+        self.epsilon = epsilon
+
+    def f_prop(self, x):
+        if len(x.get_shape()) == 2:
+            mean, var = tf.nn.moments(x, axes=0, keepdims=True)
+            std = tf.sqrt(var + self.epsilon)
+        elif len(x.get_shape()) == 4:
+            mean, var = tf.nn.moments(x, axes=(0,1,2), keep_dims=True)
+            std = tf.sqrt(var + self.epsilon)
+        normalized_x = (x - mean) / std
+        return self.gamma * normalized_x + self.beta
 
 class BLSTM:
     def __init__(self, hid_dim, name):
@@ -238,18 +212,35 @@ class BLSTM:
 
         # Concatenate the RNN outputs and return
         return tf.concat([forward_out[:,:,:], backward_out[:,::-1,:]], 2)
+        
+class Residual:
+    def __init__(self, layers):
+        self.layers = layers;
+        self.downsample = False;
+        if layers[0].d_in != layers[0].d_out:
+            self.downsample = True;
+            self.conv_op = Conv((1,1,layers[0].d_in,layers[0].d_out), strides = layers[0].strides)
+            
+    def f_prop(self, x):
+        o = x;
+        for layer in self.layers:
+            o = layer.f_prop(o)
+
+        if self.downsample:
+            x =  self.conv_op.f_prop(x) # Add the input to the residual learning 
+        return o + x;
 
 class Residual_Net:
-    def __init__(self, input_shape, training, k = [1, 32, 64, 128], N = 3):
+    def __init__(self, input_shape, training, k = [1, 32, 64, 128], N = 3, name='Residual Net'):
         self.k = k
-        self.T = input_shape[1]
-        self.F = input_shape[2]
-
+        self.T = input_shape[0]
+        self.F = input_shape[1]
+        self.name = name
         blocks = []
         for i in range(len(k)-1):
             strides = [1, 2, 2, 1]
             T = int(self.T/pow(2,i))
-            F = int(self.F/pow(2,i)) 
+            F = int(self.F/pow(2,i))# + self.F%(self.F/pow(2,i))) 
             
             for n in range(N):
                 if i == 0 or n != 0:
@@ -264,6 +255,8 @@ class Residual_Net:
                     Activation(tf.nn.relu),
                 ])
         self.layers = []
+
+        # Create the Residual blocks
         for b in blocks:
             self.layers.append(Residual(b))
             
@@ -271,6 +264,72 @@ class Residual_Net:
         for layer in self.layers:
             x = layer.f_prop(x)
         return x
+
+ 
+##############################
+### CONVOLUTION OPERATIONS ###
+##############################
+
+class Conv:
+    def __init__(self, filter_shape, function=lambda x: x, strides=[1,1,1,1], padding='SAME'):
+        # Xavier
+        self.filter = filter_shape
+        fan_in = np.prod(filter_shape[:3])
+        fan_out = np.prod(filter_shape[:2]) * filter_shape[3]
+        self.d_in = filter_shape[2]
+        self.d_out = filter_shape[3]
+        self.W = tf.Variable(rng.uniform(
+                        low=-np.sqrt(6/(fan_in + fan_out)),
+                        high=np.sqrt(6/(fan_in + fan_out)),
+                        size=filter_shape
+                    ).astype('float32'), name='W')
+        self.b = tf.Variable(np.zeros((filter_shape[3]), dtype='float32'), name='b')
+        self.function = function
+        self.strides = strides
+        self.padding = padding
+
+    def f_prop(self, x):
+        u = tf.nn.conv2d(x, self.W, strides=self.strides, padding=self.padding) + self.b
+        return self.function(u)
+
+
+class Conv1D:
+    def __init__(self, filter_shape, function=lambda x: x, stride=1, padding='SAME'):
+        # Xavier
+        fan_in = np.sqrt(2/(float(filter_shape[1]+filter_shape[2])))
+        self.W = tf.Variable(rng.uniform(
+                        low=-np.sqrt(2/fan_in),
+                        high=np.sqrt(2/fan_in),
+                        size=filter_shape
+                    ).astype('float32'), name='W')
+        self.b = tf.Variable(np.zeros((filter_shape[-1]), dtype='float32'), name='b')
+        self.function = function
+        self.stride = stride
+        self.padding = padding
+
+    def f_prop(self, x):
+        u = tf.nn.conv1d(x, self.W, stride=self.stride, padding=self.padding)
+        return self.function(u + self.b)
+
+class DeConv:
+    def __init__(self, filter_shape, output_shape, function=lambda x: x, strides=[1,1,1,1], padding='SAME'):
+        # Xavier
+        fan_in = np.prod(filter_shape[:3])
+        fan_out = np.prod(filter_shape[:2]) * filter_shape[3]
+        self.d_in = filter_shape[2]
+        self.d_out = filter_shape[3]
+        self.W = Xavier_init(fan_in, fan_out, name='W')
+        self.b = tf.Variable(np.zeros((filter_shape[3]), dtype='float32'), name='b')
+        self.function = function
+        self.strides = strides
+        self.output_shape = output_shape
+        self.rate = rate
+        self.padding = padding
+
+    def f_prop(self, x):
+        u = tf.nn.tf.nn.conv2d_transpose(x, self.W, output_shape=self.output_shape, strides=self.strides, padding=self.padding) + self.b
+        return self.function(u)
+ 
 
 class Dilated_Conv:
     def __init__(self, filter_shape, function=lambda x: x, strides=[1,1,1,1], rate=2, padding='SAME'):
@@ -308,27 +367,6 @@ class Dilated_DeConv:
     def f_prop(self, x):
         u = tf.nn.atrous_conv2d_transpose(x, self.W, output_shape=self.output_shape, strides=self.strides, rate=self.rate, padding=self.padding) + self.b
         return self.function(u)
- 
-
-class DeConv:
-    def __init__(self, filter_shape, output_shape, function=lambda x: x, strides=[1,1,1,1], padding='SAME'):
-        # Xavier
-        fan_in = np.prod(filter_shape[:3])
-        fan_out = np.prod(filter_shape[:2]) * filter_shape[3]
-        self.d_in = filter_shape[2]
-        self.d_out = filter_shape[3]
-        self.W = Xavier_init(fan_in, fan_out, name='W')
-        self.b = tf.Variable(np.zeros((filter_shape[3]), dtype='float32'), name='b')
-        self.function = function
-        self.strides = strides
-        self.output_shape = output_shape
-        self.rate = rate
-        self.padding = padding
-
-    def f_prop(self, x):
-        u = tf.nn.tf.nn.conv2d_transpose(x, self.W, output_shape=self.output_shape, strides=self.strides, padding=self.padding) + self.b
-        return self.function(u)
- 
 
 # Based on: Convolutional LSTM Network: A Machine Learning Approach for Precipitation Nowcasting
 

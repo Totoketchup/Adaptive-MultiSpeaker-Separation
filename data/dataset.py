@@ -59,7 +59,7 @@ class H5PY_RW:
     def next(self):
         item_path = self.items[self.index_item]
         split = item_path.split('/')
-        key = split[0]
+        key = int(split[0])
         i = int(split[2])
         item_path = '/'.join(split[:2])
         X = self.h5[item_path][i*self.chunk_size : (i+1)*self.chunk_size]
@@ -73,6 +73,8 @@ class H5PY_RW:
     def shuffle(self):
         permutation = np.random.shuffle(self.items)
 
+    def speakers(self):
+        return self.keys
 
     def __iter__(self):
         return self
@@ -81,12 +83,45 @@ class H5PY_RW:
 
 
 class Mixer:
-    def __init__(datasets):
-        pass
+    def __init__(self, datasets, mixing_type='add'):
+        self.datasets = datasets
+        self.type = mixing_type       
 
+    def shuffle(self):
+        for dataset in self.datasets:
+            dataset.shuffle()
 
-    def next():
-        pass
+    def next(self):
+        X_d = []
+        key_d = []
+
+        for dataset in self.datasets:
+            X, key = dataset.next()
+            X_d.append(X)
+            key_d.append(key)
+
+        Y = np.argmax(np.array(X_d), axis=0)
+        Y[Y == 0] = -1
+        Y = np.array([Y , -Y])
+        Y = np.transpose(Y , (1,2,0))
+
+        return X, Y, np.array(key_d)
+
+    def get_batch(self, batch_size):
+        X = []
+        Y = []
+        Ind = []
+        for i in range(batch_size):
+            x, y, ind = self.next()
+            X.append(x)
+            Y.append(y)
+            Ind.append(ind)
+
+        return np.array(X), np.array(Y), np.array(Ind)
+
+    def __iter__(self):
+        return self
+
 
 # H5 = H5PY_RW()
 # # H5.open_h5_dataset('test.h5py')

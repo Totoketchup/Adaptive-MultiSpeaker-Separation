@@ -1,29 +1,28 @@
-FROM gcr.io/tensorflow/tensorflow
+FROM gcr.io/tensorflow/tensorflow:1.2.1-gpu
 
 MAINTAINER Anthony D'Amato <anthony.damato@hotmail.fr>
 
 #Container for updates
-RUN apt-get update
+#RUN apt-get update
 
 # Pick up some TF dependencies
 #RUN apt-get install -y --no-install-recommends \
-#        soundfile \
+#        ffmpeg \
 #        && \
 #    apt-get clean && \
 #    apt-get purge && \
 #    rm -rf /var/lib/apt/lists/*
 
 RUN pip --no-cache-dir install \
-            haikunator \
+            soundfile \
             h5py \
-            soundfile
+            scipy
 
 # Copy all python files
-COPY *.py workdir/
-COPY libs workdir/libs
+COPY . workdir/
 
-# Copy HDF5 file
-COPY *.hdf5 workdir/data
+# For CUDA profiling, TensorFlow requires CUPTI.
+ENV LD_LIBRARY_PATH /usr/local/cuda/extras/CUPTI/lib64:$LD_LIBRARY_PATH
 
 # TensorBoard
 EXPOSE 6006
