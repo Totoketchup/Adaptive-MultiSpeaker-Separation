@@ -20,3 +20,4 @@ window = 'hann'
 embedding_size = 40
 threshold = 1e-3
 chunk_size = 40
+batch_size = 32
