@@ -15,9 +15,8 @@ MAINTAINER Anthony D'Amato <anthony.damato@hotmail.fr>
 
 RUN pip --no-cache-dir install \
             soundfile \
-            h5py \
-            scipy
-
+            h5py 
+            
 # Copy all python files
 COPY . workdir/
 
