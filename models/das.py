@@ -1,21 +1,23 @@
 # My Model 
 from utils.ops import ops
 from utils.ops.ops import Residual_Net, Conv1D, Reshape, Dense
+from tensorflow.contrib.tensorboard.plugins import projector
 
+import os
 import config
 import tensorflow as tf
 
 #############################################
-# 		Deep Adaptive Separator Model 		#
+#       Deep Adaptive Separator Model       #
 #############################################
 
 class DAS:
 
 	def __init__(self, S, T, fftsize=config.fftsize//2, E=config.embedding_size, threshold=config.threshold, l=0.2):
 
-		self.F = fftsize	# Freqs size
-		self.E = E 			# Embedding size
-		self.S = S 			# Total number of speakers
+		self.F = fftsize    # Freqs size
+		self.E = E          # Embedding size
+		self.S = S          # Total number of speakers
 		self.T = T          # Spectrograms length
 		self.threshold = threshold # Threshold for silent weights
 		self.l = l
@@ -43,15 +45,32 @@ class DAS:
 
 			# The centroids used for each speaker
 			# shape = [ #tot_speakers, embedding size]
-			self.speaker_centroids = tf.Variable(tf.truncated_normal([self.S,self.E], stddev=tf.sqrt(2/float(self.E))))
+			self.speaker_centroids = tf.Variable(
+				tf.truncated_normal([self.S,self.E], 
+				stddev=tf.sqrt(2/float(self.E))),
+				name='centroids')
 
 			self.prediction
 			self.cost
 			self.optimize
 
 			self.saver = tf.train.Saver()
-			self.train_writer = tf.summary.FileWriter('log/', self.graph)
 			self.merged = tf.summary.merge_all()
+
+			# Format: tensorflow/tensorboard/plugins/projector/projector_config.proto
+			config = projector.ProjectorConfig()
+
+			# You can add multiple embeddings. Here we add only one.
+			embedding = config.embeddings.add()
+			embedding.tensor_name = self.speaker_centroids.name
+			# Link this tensor to its metadata file (e.g. labels).
+			# embedding.metadata_path = os.path.join('log/', 'metadata.tsv')
+
+			self.train_writer = tf.summary.FileWriter('log/', self.graph)
+
+			# The next line writes a projector_config.pbtxt in the LOG_DIR. TensorBoard will
+			# read this file during startup.
+			projector.visualize_embeddings(self.train_writer, config)
 
 
 		# Create a session for this model based on the constructed graph
@@ -141,4 +160,11 @@ class DAS:
 		self.train_writer.add_summary(summary, step)
 		return cost
 
+
+	def save(self, step):
+		self.saver.save(self.sess, os.path.join('log/', "model.ckpt"), step)
+
+	def embeddings(self, X):
+		V = self.sess.run(self.prediction, {self.X: X, self.training: False})
+		return V
 
