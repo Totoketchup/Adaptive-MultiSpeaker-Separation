@@ -1,6 +1,8 @@
 from data.dataset import H5PY_RW, Mixer
 from models.das import DAS
 from data.data_tools import read_data_header, males_keys, females_keys
+from utils.audio import istft_
+
 import config
 import numpy as np
 import tensorflow as tf
@@ -24,19 +26,24 @@ if __name__ == "__main__":
 
 	das_model = DAS(S=len(Mixer.get_labels()), T= config.chunk_size)
 
-	# Merge all the summaries and write them out to /log (by default)
-
 	das_model.init()
 
 
 	for i in range(100):
 		print 'Step #' ,i
 		X, Y, Ind = Mixer.get_batch(64)
+		x_mixture =[]
+
+		for x in X:
+			_, x_recons = istft_(x.T)
+			x_mixture.append(x_recons)
+
 		X = X[:,:,:128]
 		Y = Y[:,:,:128,:]
+
 		# Scale the model inputs
-		X = np.sqrt(X)
+		X = np.sqrt(np.abs(X))
 		X = (X - X.min())/(X.max() - X.min())
 
-		das_model.train(X, Y, Ind, i)
+		das_model.train(X, Y, Ind, x_mixture, i)
 		das_model.save(i)

@@ -19,7 +19,7 @@ class KMeans:
 		self.F = F
 		self.E = E
 		self.alpha = alpha
-		self.nb_iteration = 10
+		self.nb_iteration = 100
 		self.batch_size = batch_size
 
 		self.graph = tf.Graph()
@@ -81,21 +81,22 @@ class KMeans:
 			# print 'X ', self.X.shape
 			# print 'Ws ', self.Ws.shape
 
-			self.centroids = tf.reduce_sum(self.assignments*Ws*X/self.assignments*Ws, axis=1)
+			self.centroids = tf.reduce_sum(self.assignments*Ws*X, axis= 1)/tf.reduce_sum(self.assignments*Ws, axis=1)
 
 		return tf.reshape(tf.argmax(self.assignments, axis=2), [self.batch_size, self.T, self.F])
 
 	def fit(self, X_train):
-		labels = self.sess.run(self.network, {self.X: X_train})
-		return labels
+		labels, centroids = self.sess.run([self.network, self.centroids], {self.X: X_train})
+		return labels, centroids
 
 
 if __name__ == "__main__":
 	T = 40
-	X = np.random.rand(32, T*config.fftsize//2, config.embedding_size)
+	X = np.random.rand(1, T*config.fftsize//2, config.embedding_size) + 3* np.random.rand(1, T*config.fftsize//2, config.embedding_size)
 
-	kmean = KMeans(3, T)
+	kmean = KMeans(2, T, batch_size=1)
 	kmean.init()
 
-	label = kmean.fit(X)
-	print label.shape
+	label, centroids = kmean.fit(X)
+	print centroids
+	print label[0][0]
