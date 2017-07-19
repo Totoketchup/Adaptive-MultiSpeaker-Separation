@@ -1,5 +1,5 @@
 import numpy as np
-from audio import istft, create_spectrogram
+from audio import istft_, create_spectrogram
 from sklearn.cluster import KMeans
 
 # Compute the reconstruction of the signal from the filtered spectrogram
@@ -11,7 +11,7 @@ def reconstruct_signal(filtered_spec, orig_spec, fs=config.fs, fftsize=config.ff
 	else
 		phi = np.random.randn(*orig_spec.shape)
 
-	return istft(filtered_spec*phi)
+	return istft_(filtered_spec*phi)
 
 
 # Produce the embeddings of a mixture spectogram through a Deep Learning modle
