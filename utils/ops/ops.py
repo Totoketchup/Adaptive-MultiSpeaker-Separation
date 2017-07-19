@@ -175,6 +175,15 @@ class Reshape:
     def f_prop(self, x):
         return tf.reshape(x, self.shape)
 
+class Normalize:
+    def __init__(self, axis, name = 'Normalize'):
+        self.axis = axis
+        self.name = name
+
+    def f_prop(self, x):
+        return tf.nn.l2_normalize(x, self.axis)
+
+
 class BatchNorm:
     def __init__(self, shape, epsilon=np.float32(1e-5)):
         self.gamma = tf.Variable(np.ones(shape, dtype='float32'), name='gamma')
@@ -294,7 +303,7 @@ class Conv:
 
 
 class Conv1D:
-    def __init__(self, filter_shape, function=lambda x: x, stride=1, padding='SAME'):
+    def __init__(self, filter_shape, function=lambda x: x, stride=1, padding='SAME', name='Conv1D'):
         # Xavier
         fan_in = np.sqrt(2/(float(filter_shape[1]+filter_shape[2])))
         self.W = tf.Variable(rng.uniform(
@@ -306,6 +315,7 @@ class Conv1D:
         self.function = function
         self.stride = stride
         self.padding = padding
+        self.name = name
 
     def f_prop(self, x):
         u = tf.nn.conv1d(x, self.W, stride=self.stride, padding=self.padding)
