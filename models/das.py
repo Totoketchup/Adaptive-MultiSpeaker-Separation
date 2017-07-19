@@ -2,6 +2,7 @@
 from utils.ops import ops
 from utils.ops.ops import Residual_Net, Conv1D, Reshape, Dense
 from tensorflow.contrib.tensorboard.plugins import projector
+# from utils.postprocessing.reconstruction import 
 
 import os
 import config
@@ -29,6 +30,10 @@ class DAS:
 			# shape = [ batch size , chunk size, F ]
 			self.X = tf.placeholder("float", [None, None, self.F])
 
+			# Batch of spectrogram chunks - Input data
+			# shape = [ batch size , samples ]
+			self.X_raw = tf.placeholder("float", [None, None])
+
 			# Batch of Masks (bins label)
 			# shape = [ batch size, chunk size, F, #speakers ]
 			self.Y = tf.placeholder("float", [None, None, self.F, None])
@@ -50,6 +55,8 @@ class DAS:
 				stddev=tf.sqrt(2/float(self.E))),
 				name='centroids')
 
+			self.audio_writer = tf.summary.audio(name= "input", tensor = self.X_raw, sample_rate = config.fs)
+
 			self.prediction
 			self.cost
 			self.optimize
@@ -58,19 +65,18 @@ class DAS:
 			self.merged = tf.summary.merge_all()
 
 			# Format: tensorflow/tensorboard/plugins/projector/projector_config.proto
-			config = projector.ProjectorConfig()
+			config_ = projector.ProjectorConfig()
 
 			# You can add multiple embeddings. Here we add only one.
-			embedding = config.embeddings.add()
+			embedding = config_.embeddings.add()
 			embedding.tensor_name = self.speaker_centroids.name
 			# Link this tensor to its metadata file (e.g. labels).
-			# embedding.metadata_path = os.path.join('log/', 'metadata.tsv')
 
 			self.train_writer = tf.summary.FileWriter('log/', self.graph)
 
 			# The next line writes a projector_config.pbtxt in the LOG_DIR. TensorBoard will
 			# read this file during startup.
-			projector.visualize_embeddings(self.train_writer, config)
+			projector.visualize_embeddings(self.train_writer, config_)
 
 
 		# Create a session for this model based on the constructed graph
@@ -154,9 +160,9 @@ class DAS:
 	def optimize(self):
 		return tf.train.AdamOptimizer().minimize(self.cost)
 
-	def train(self, X_train, Y_train, Ind_train, step):
+	def train(self, X_train, Y_train, Ind_train, x, step):
 		cost, _, summary = self.sess.run([self.cost, self.optimize, self.merged],
-			{self.X: X_train, self.Y: Y_train, self.Ind:Ind_train, self.training : True})
+			{self.X: X_train, self.Y: Y_train, self.Ind:Ind_train, self.X_raw: x, self.training : True})
 		self.train_writer.add_summary(summary, step)
 		return cost
 

@@ -11,13 +11,13 @@ data_subset = 'dev-clean'
 
 fs = 8000 
 fftsize = 256
-overlap = 4
+overlap = 2
 window = 'hann'
 
 
 #########################
 
 embedding_size = 40
-threshold = 1e-3
+threshold = 1e-8
 chunk_size = 40
 batch_size = 32

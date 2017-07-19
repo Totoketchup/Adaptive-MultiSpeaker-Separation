@@ -110,7 +110,9 @@ class Mixer:
 			X_d.append(X)
 			key_d.append(key)
 
+		
 		X_d = np.array(X_d)
+
 		Y_pos = np.argmax(X_d, axis=0)
 
 		Y = np.full((X_d.shape[1], X_d.shape[2], len(self.datasets)), -1)
@@ -119,7 +121,9 @@ class Mixer:
 			for j, value in enumerate(row):
 				Y[i, j, value] = 1
 
-		return X, Y, np.array(key_d)
+		X_d = np.sum(X_d, axis=0)
+
+		return X_d, Y, np.array(key_d)
 
 	def get_batch(self, batch_size):
 		X = []
