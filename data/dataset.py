@@ -1,7 +1,7 @@
 import h5py
 import numpy as np
 import data_tools
-import soundfile as sf
+# import soundfile as sf
 import os
 import config
 from utils.audio import create_spectrogram
@@ -11,30 +11,30 @@ class H5PY_RW:
 	def __init__(self):
 		self.current = None
 
-	def create_h5_dataset(self, output_fn, subset=config.data_subset, data_root=config.data_root):
-		speakers_info = data_tools.read_data_header(subset)
-		with h5py.File(output_fn,'w') as data_file:
-			for (key, elements) in speakers_info.items():
-				if key not in data_file:
-					data_file.create_group(key)
-				print 'Speaker '+key
-				folder = data_root+'/'+subset+'/'+key # speaker folder
-				for chapter in elements['chapters']: # for all chapters read by this speaker
-					print '-- Chapter '+chapter
-					for root, dirs, files in os.walk(folder+'/'+chapter): # find all .flac audio
-						for file in files:
-							if file.endswith(".flac"):
-								print '------ Track '+file
-								path = os.path.join(root,file)
-								raw_audio, samplerate = sf.read(path)
+	# def create_h5_dataset(self, output_fn, subset=config.data_subset, data_root=config.data_root):
+	# 	speakers_info = data_tools.read_data_header(subset)
+	# 	with h5py.File(output_fn,'w') as data_file:
+	# 		for (key, elements) in speakers_info.items():
+	# 			if key not in data_file:
+	# 				data_file.create_group(key)
+	# 			print 'Speaker '+key
+	# 			folder = data_root+'/'+subset+'/'+key # speaker folder
+	# 			for chapter in elements['chapters']: # for all chapters read by this speaker
+	# 				print '-- Chapter '+chapter
+	# 				for root, dirs, files in os.walk(folder+'/'+chapter): # find all .flac audio
+	# 					for file in files:
+	# 						if file.endswith(".flac"):
+	# 							print '------ Track '+file
+	# 							path = os.path.join(root,file)
+	# 							raw_audio, samplerate = sf.read(path)
 
-								_, _, spec = create_spectrogram(raw_audio, samplerate)
+	# 							_, _, spec = create_spectrogram(raw_audio, samplerate)
 
-								data_file[key].create_dataset(file,
-									data=spec.T.astype(np.complex64),
-									compression="gzip",
-									dtype=np.complex64,
-									compression_opts=0)
+	# 							data_file[key].create_dataset(file,
+	# 								data=spec.T.astype(np.complex64),
+	# 								compression="gzip",
+	# 								dtype=np.complex64,
+	# 								compression_opts=0)
 			
 
 		print 'Dataset for the subset: ' + subset + ' has been built'
@@ -92,10 +92,12 @@ class H5PY_RW:
 
 
 class Mixer:
-	def __init__(self, datasets, mixing_type='add'):
+	def __init__(self, datasets, mixing_type='add', mask_positive_value=1, mask_negative_value=-1):
 		self.datasets = datasets
 		self.type = mixing_type
 		self.create_labels()
+		self.mask_negative_value = mask_negative_value
+		self.mask_positive_value = mask_negative_value
 
 	def shuffle(self):
 		for dataset in self.datasets:
@@ -115,11 +117,11 @@ class Mixer:
 
 		Y_pos = np.argmax(X_d, axis=0)
 
-		Y = np.full((X_d.shape[1], X_d.shape[2], len(self.datasets)), -1)
+		Y = np.full((X_d.shape[1], X_d.shape[2], len(self.datasets)), self.mask_negative_value)
 
 		for i, row in enumerate(Y_pos):
 			for j, value in enumerate(row):
-				Y[i, j, value] = 1
+				Y[i, j, value] = self.mask_positive_value
 
 		X_d = np.sum(X_d, axis=0)
 
@@ -129,7 +131,6 @@ class Mixer:
 		X = []
 		Y = []
 		Ind = []
-		print self.dico
 		for i in range(batch_size):
 			x, y, ind = self.next()
 			X.append(x)

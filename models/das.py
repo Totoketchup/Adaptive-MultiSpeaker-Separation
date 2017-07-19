@@ -150,7 +150,7 @@ class DAS:
 		cost = tf.reduce_mean(cost)
 
 		centroids_cost = tf.nn.l2_loss(tf.matmul(self.speaker_centroids,tf.transpose(self.speaker_centroids)))
-		cost = cost + self.l * centroids_cost
+		cost = cost - self.l * centroids_cost
 
 		tf.summary.scalar('cost', cost)
 
@@ -168,7 +168,7 @@ class DAS:
 
 
 	def save(self, step):
-		self.saver.save(self.sess, os.path.join('log/', "model.ckpt"), step)
+		self.saver.save(self.sess, os.path.join('log/', "deep_adaptive_separator_model.ckpt"), step)
 
 	def embeddings(self, X):
 		V = self.sess.run(self.prediction, {self.X: X, self.training: False})
