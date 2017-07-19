@@ -7,7 +7,7 @@ MAINTAINER Anthony D'Amato <anthony.damato@hotmail.fr>
 
 # Pick up some TF dependencies
 #RUN apt-get install -y --no-install-recommends \
-#        ffmpeg \
+#        libsndfile1 \
 #        && \
 #    apt-get clean && \
 #    apt-get purge && \
