@@ -37,7 +37,7 @@ class H5PY_RW:
 	# 								compression_opts=0)
 			
 
-		print 'Dataset for the subset: ' + subset + ' has been built'
+		# print 'Dataset for the subset: ' + subset + ' has been built'
 
 	def open_h5_dataset(self, filename, subset=None):
 		self.h5 = h5py.File(filename, 'r')
