@@ -13,13 +13,13 @@ if __name__ == "__main__":
 
 	Males = H5PY_RW()
 	Males.open_h5_dataset('test.h5py', subset = males_keys(H5_dico))
-	Males.set_chunk(config.chunk_size)
+	Males.set_chunk(100)
 	Males.shuffle()
 	print 'Male voices loaded: ', Males.length(), ' items'
 
 	Females = H5PY_RW()
 	Females.open_h5_dataset('test.h5py', subset = females_keys(H5_dico))
-	Females.set_chunk(config.chunk_size)
+	Females.set_chunk(100)
 	Females.shuffle()
 	print 'Female voices loaded: ', Females.length(), ' items'
 
