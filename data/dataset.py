@@ -1,45 +1,79 @@
 import h5py
 import numpy as np
 import data_tools
-# import soundfile as sf
+import soundfile as sf
 import os
 import config
 from utils.audio import create_spectrogram
 from sets import Set
+from utils.tools import print_progress
 
 class H5PY_RW:
 	def __init__(self):
 		self.current = None
 
-	# def create_h5_dataset(self, output_fn, subset=config.data_subset, data_root=config.data_root):
-	# 	speakers_info = data_tools.read_data_header(subset)
-	# 	with h5py.File(output_fn,'w') as data_file:
-	# 		for (key, elements) in speakers_info.items():
-	# 			if key not in data_file:
-	# 				data_file.create_group(key)
-	# 			print 'Speaker '+key
-	# 			folder = data_root+'/'+subset+'/'+key # speaker folder
-	# 			for chapter in elements['chapters']: # for all chapters read by this speaker
-	# 				print '-- Chapter '+chapter
-	# 				for root, dirs, files in os.walk(folder+'/'+chapter): # find all .flac audio
-	# 					for file in files:
-	# 						if file.endswith(".flac"):
-	# 							print '------ Track '+file
-	# 							path = os.path.join(root,file)
-	# 							raw_audio, samplerate = sf.read(path)
 
-	# 							_, _, spec = create_spectrogram(raw_audio, samplerate)
+	def create_h5_dataset(self, output_fn, subset=config.data_subset, data_root=config.data_root):
+		"""
+		Create a H5 file from the LibriSpeech dataset and the subset given:
 
-	# 							data_file[key].create_dataset(file,
-	# 								data=spec.T.astype(np.complex64),
-	# 								compression="gzip",
-	# 								dtype=np.complex64,
-	# 								compression_opts=0)
-			
+		Inputs:
+			output_fn: filename for the created file
+			subset: LibriSpeech subset : 'dev-clean' , ...
+			data_root: LibriSpeech folder path
 
-		# print 'Dataset for the subset: ' + subset + ' has been built'
+		"""
+
+		# Extract the information about this subset (speakers, chapters)
+		# Dictionary with the following shape: 
+		# {speaker_key: {chapters: [...], sex:'M/F', ... } }
+		speakers_info = data_tools.read_data_header(subset)
+
+		with h5py.File(output_fn,'w') as data_file:
+
+			for (key, elements) in speakers_info.items():
+				if key not in data_file:
+					# Create an H5 Group for each key/speaker
+					data_file.create_group(key)
+
+				# Current speaker folder path
+				folder = data_root+'/'+subset+'/'+key
+
+				print_progress(0, len(elements['chapters']), prefix = 'Speaker '+key+' :', suffix = 'Complete')
+
+				# For all the chapters read by this speaker
+				for i, chapter in enumerate(elements['chapters']): 
+					# Find all .flac audio
+					for root, dirs, files in os.walk(folder+'/'+chapter): 
+						for file in files:
+							if file.endswith(".flac"):
+
+								path = os.path.join(root,file)
+								raw_audio, samplerate = sf.read(path)
+
+								# Generate the spectrogram for the current audio file
+								_, _, spec = create_spectrogram(raw_audio, samplerate)
+
+								data_file[key].create_dataset(file,
+									data=spec.T.astype(np.complex64),
+									compression="gzip",
+									dtype=np.complex64,
+									compression_opts=0)
+
+					print_progress(i + 1, len(elements['chapters']), prefix = 'Speaker '+key+' :', suffix = 'Complete')
+
+
+		print 'Dataset for the subset: ' + subset + ' has been built'
+
 
 	def open_h5_dataset(self, filename, subset=None):
+	"""
+	Open a LibriSpeech H5PY file.
+	
+	Inputs:
+		filename: name of h5 file
+		subset: subset of speakers used, default = None (all in the file)
+	"""
 		self.h5 = h5py.File(filename, 'r')
 		
 		if subset == None:
@@ -50,11 +84,16 @@ class H5PY_RW:
 		items = []
 		for key in self.keys:
 			items += [key + '/' + val  for val in self.h5[key]]
+
 		self.raw_items = items
 		self.index_key = 0
 		self.index_item = 0
 
+
 	def set_chunk(self, chunk_size):
+	"""
+	Define the size of the chunk: each spectrogram is chunked with 'chunk_size'
+	"""
 		self.chunk_size = chunk_size
 		items = []
 		for item in self.raw_items:
@@ -63,10 +102,18 @@ class H5PY_RW:
 		self.items = items
 
 	def next(self):
+	"""
+	Return next chunked item
+	"""
 		item_path = self.items[self.index_item]
 		split = item_path.split('/')
+
+		# Speaker indice
 		key = int(split[0])
+
+		# Which part to chunk
 		i = int(split[2])
+
 		item_path = '/'.join(split[:2])
 		X = self.h5[item_path][i*self.chunk_size : (i+1)*self.chunk_size]
 
@@ -77,7 +124,7 @@ class H5PY_RW:
 		return X, key
 
 	def shuffle(self):
-		permutation = np.random.shuffle(self.items)
+		np.random.shuffle(self.items)
 
 	def speakers(self):
 		return self.keys
@@ -92,7 +139,16 @@ class H5PY_RW:
 
 
 class Mixer:
+
 	def __init__(self, datasets, mixing_type='add', mask_positive_value=1, mask_negative_value=-1):
+	"""
+	Mix multiple H5PY file reader
+	Inputs:
+		datasets: array of H5PY reader
+		mixing_type: 'add' (Default), 'mean'
+		mask_positive_value: Bin value if the spectrogram bin belong to the mask
+		mask_negative_value: Bin value if the spectrogram bin does not belong to the mask
+	"""
 		self.datasets = datasets
 		self.type = mixing_type
 		self.create_labels()
@@ -122,8 +178,10 @@ class Mixer:
 		for i, row in enumerate(Y_pos):
 			for j, value in enumerate(row):
 				Y[i, j, value] = self.mask_positive_value
-
-		X_d = np.sum(X_d, axis=0)
+		if mixing_type == 'add':
+			X_d = np.sum(X_d, axis=0)
+		else if mixing_type == 'mean':
+			X_d = np.mean(X_d, axis=0)
 
 		return X_d, Y, np.array(key_d)
 
@@ -140,12 +198,15 @@ class Mixer:
 		return np.array(X), np.array(Y), np.array(Ind)
 
 	def create_labels(self):
+		# Create a set of all the speaker indicies 
 		self.items = Set()
 		for dataset in self.datasets:
 			self.items.update(dataset.speakers())
+
 		self.items = list(self.items)
 		self.items.sort()
 		self.dico = {}
+		# Assign ordered indicies to each speaker indicies
 		for i, item in enumerate(self.items):
 			self.dico[int(item)] = i
 
@@ -161,4 +222,4 @@ class Mixer:
 
 # # for (X, key) in H5:
 # #     continue
-# H5.create_h5_dataset('test.h5py')
+# H5.create_h5_dataset('test2.h5py')
