@@ -104,6 +104,7 @@ class H5PY_RW:
 		"""
 		Return next chunked item
 		"""
+
 		item_path = self.items[self.index_item]
 		split = item_path.split('/')
 
@@ -124,18 +125,15 @@ class H5PY_RW:
 
 	def next_in_split(self, splits, split_index):
 		"""
-		Return next chunked item in the indicate split
+		Return next chunked item in the indicated split
 		Input:
 			splits: ratio of each split (array)
 			index: split index
 		"""
-		print len(self.items)
 		if not hasattr(self, 'index_item_split'):
 			self.index_item_split = np.zeros((len(splits),), dtype = np.int32)
 			for i in range(1,len(splits)):
 				self.index_item_split[i] = int(sum(splits[0:i])*len(self.items))
-
-		print self.index_item_split
 
 		item_path = self.items[self.index_item_split[split_index]]
 		split = item_path.split('/')
@@ -151,7 +149,6 @@ class H5PY_RW:
 
 		self.index_item_split[split_index]+=1
 		if self.index_item_split[split_index] >= int(sum(splits[0:split_index+1])*len(self.items)):
-			print 'ojo'
 			self.index_item_split[split_index] = int(sum(splits[0:split_index])*len(self.items))
 
 		return X, key

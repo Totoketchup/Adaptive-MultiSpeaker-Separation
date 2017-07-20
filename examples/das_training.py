@@ -24,15 +24,29 @@ if __name__ == "__main__":
 	print 'Female voices loaded: ', Females.length(), ' items'
 
 	Mixer = Mixer([Males, Females])
-
+	# Mixer.select_split(2)
 	das_model = DAS(S=len(Mixer.get_labels()), T= config.chunk_size)
 	print 'Model DAS created'
 	das_model.init()
 
+	Mixer.select_split(1)
+	#Validation Data
+	X_valid, Y_valid, Ind_valid = Mixer.get_batch(1)
+	X_raw_valid =[]
+	for x in X_valid:
+			_, x_recons = istft_(x.T)
+			X_raw_valid.append(x_recons)
+	X_valid = X_valid[:,:,:128]
+	Y_valid = Y_valid[:,:,:128,:]
+	X_valid = np.sqrt(np.abs(X_valid))
+	X_valid = (X_valid - X_valid.min())/(X_valid.max() - X_valid.min())
 
-	for i in range(100):
+	cost_valid_min = 1e10
+	Mixer.select_split(0)
+
+	for i in range(config.max_iterations):
 		print 'Step #' ,i
-		X, Y, Ind = Mixer.get_batch(64)
+		X, Y, Ind = Mixer.get_batch(1)
 		x_mixture =[]
 
 		for x in X:
@@ -47,4 +61,20 @@ if __name__ == "__main__":
 		X = (X - X.min())/(X.max() - X.min())
 
 		das_model.train(X, Y, Ind, x_mixture, i)
-		das_model.save(i)
+
+		if (i+1) % config.batch_test == 0:
+
+			# Cost obtained with the current model on the validation set
+			cost_valid = das_model.valid(X_valid, X_raw_valid, Y_valid, Ind_valid, i)
+			
+			if cost_valid < cost_valid_min:
+				print 'DAS model saved at iteration number ', i,' with cost = ', cost_valid 
+				cost_valid_min = cost_valid
+				das_model.save(i)
+				last_saved = i
+
+			if i - last_saved > config.stop_iterations:
+				print 'Stop'
+				break
+
+			

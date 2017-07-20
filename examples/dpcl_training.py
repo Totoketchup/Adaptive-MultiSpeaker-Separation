@@ -29,7 +29,7 @@ if __name__ == "__main__":
 	print 'Model DPCL created'
 	dpcl_model.init()
 
-	for i in range(100):
+	for i in range(config.max_iterations):
 		print 'Step #' ,i
 		X, Y, Ind = Mixer.get_batch(64)
 		x_mixture =[]

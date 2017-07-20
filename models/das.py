@@ -58,7 +58,7 @@ class DAS:
 			self.audio_writer = tf.summary.audio(name= "input", tensor = self.X_raw, sample_rate = config.fs)
 
 			self.prediction
-			self.cost
+			self.training_cost
 			self.optimize
 
 			self.saver = tf.train.Saver()
@@ -92,6 +92,7 @@ class DAS:
 	def prediction(self):
 		# DAS network
 
+		shape = tf.shape(self.X)
 		k = [1, 32, 64, 128]
 		out_dim = k[-1]//(len(k)*len(k))
 
@@ -99,11 +100,11 @@ class DAS:
 		# Input shape = [B, T, F]
 		Residual_Net([self.T, self.F], self.training, [1, 32, 64, 128], 3),
 		# Output shape = [B, T/4, F/4, 128]
-		Reshape([-1, k[-1]/(len(k)*len(k))]),
-		#Conv1D([1, k[-1], 4*self.E]),
-		Dense(k[-1]/(len(k)*len(k)), self.E),
+		Reshape([shape[0],(self.T*self.F)/16, k[-1]]),
+		Conv1D([1, k[-1], 16*self.E]),
+		#Dense(k[-1]/(len(k)*len(k)), self.E),
 		# Output shape = [B, T/4, F/4, 4*E]
-		Reshape([-1, self.T, self.F, self.E])
+		Reshape([shape[0], self.T, self.F, self.E])
 		# Output shape = [B, T, F, E]
 		]
 
@@ -122,6 +123,7 @@ class DAS:
 	def cost(self):
 		# Definition of cost for DAS model
 
+		shape = tf.shape(self.X)
 		# V [B, T, F, E]
 		V = self.prediction
 		V = tf.expand_dims(V, 3)
@@ -142,26 +144,35 @@ class DAS:
 
 		prod = tf.reduce_sum(Ws * V * U, 4)
 
+		centroids_cost = tf.nn.l2_loss(tf.matmul(self.speaker_centroids,tf.transpose(self.speaker_centroids)))
 
-		cost = - tf.log(tf.nn.sigmoid(self.Y * prod))
+		cost = - tf.log(tf.nn.sigmoid(self.Y * prod)) #-  self.l *centroids_cost
 
 		cost = tf.reduce_mean(cost, 3)
 		cost = tf.reduce_mean(cost, 0)
 		cost = tf.reduce_mean(cost)
 
-		centroids_cost = tf.nn.l2_loss(tf.matmul(self.speaker_centroids,tf.transpose(self.speaker_centroids)))
-		cost = cost - self.l * centroids_cost
-
-		tf.summary.scalar('cost', cost)
-
 		return cost
+
+	@ops.scope
+	def training_cost(self):
+		cost = self.cost
+		tf.summary.scalar('training cost', cost)
+		return cost
+
+	@ops.scope
+	def validation_cost(self):
+		cost = self.cost
+		tf.summary.scalar('validation cost', cost)
+		return cost
+
 
 	@ops.scope
 	def optimize(self):
 		return tf.train.AdamOptimizer().minimize(self.cost)
 
 	def train(self, X_train, Y_train, Ind_train, x, step):
-		cost, _, summary = self.sess.run([self.cost, self.optimize, self.merged],
+		cost, _, summary = self.sess.run([self.training_cost, self.optimize, self.merged],
 			{self.X: X_train, self.Y: Y_train, self.Ind:Ind_train, self.X_raw: x, self.training : True})
 		self.train_writer.add_summary(summary, step)
 		return cost
@@ -173,4 +184,11 @@ class DAS:
 	def embeddings(self, X):
 		V = self.sess.run(self.prediction, {self.X: X, self.training: False})
 		return V
+
+	def valid(self, X, X_raw, Y, I, step):
+		cost, summary = self.sess.run([self.validation_cost, self.merged], {self.X: X, self.Y: Y, self.Ind:I, self.X_raw:X_raw, self.training: False} )
+		self.train_writer.add_summary(summary, step)
+		return cost
+
+
 

@@ -21,3 +21,6 @@ embedding_size = 40
 threshold = 1e-8
 chunk_size = 40
 batch_size = 32
+batch_test = 1
+stop_iterations = 10000
+max_iterations = 1000000
