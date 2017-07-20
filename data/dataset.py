@@ -67,13 +67,13 @@ class H5PY_RW:
 
 
 	def open_h5_dataset(self, filename, subset=None):
-	"""
-	Open a LibriSpeech H5PY file.
-	
-	Inputs:
-		filename: name of h5 file
-		subset: subset of speakers used, default = None (all in the file)
-	"""
+		"""
+		Open a LibriSpeech H5PY file.
+		
+		Inputs:
+			filename: name of h5 file
+			subset: subset of speakers used, default = None (all in the file)
+		"""
 		self.h5 = h5py.File(filename, 'r')
 		
 		if subset == None:
@@ -86,14 +86,13 @@ class H5PY_RW:
 			items += [key + '/' + val  for val in self.h5[key]]
 
 		self.raw_items = items
-		self.index_key = 0
 		self.index_item = 0
 
 
 	def set_chunk(self, chunk_size):
-	"""
-	Define the size of the chunk: each spectrogram is chunked with 'chunk_size'
-	"""
+		"""
+		Define the size of the chunk: each spectrogram is chunked with 'chunk_size'
+		"""
 		self.chunk_size = chunk_size
 		items = []
 		for item in self.raw_items:
@@ -102,9 +101,9 @@ class H5PY_RW:
 		self.items = items
 
 	def next(self):
-	"""
-	Return next chunked item
-	"""
+		"""
+		Return next chunked item
+		"""
 		item_path = self.items[self.index_item]
 		split = item_path.split('/')
 
@@ -123,6 +122,41 @@ class H5PY_RW:
 
 		return X, key
 
+	def next_in_split(self, splits, split_index):
+		"""
+		Return next chunked item in the indicate split
+		Input:
+			splits: ratio of each split (array)
+			index: split index
+		"""
+		print len(self.items)
+		if not hasattr(self, 'index_item_split'):
+			self.index_item_split = np.zeros((len(splits),), dtype = np.int32)
+			for i in range(1,len(splits)):
+				self.index_item_split[i] = int(sum(splits[0:i])*len(self.items))
+
+		print self.index_item_split
+
+		item_path = self.items[self.index_item_split[split_index]]
+		split = item_path.split('/')
+
+		# Speaker indice
+		key = int(split[0])
+
+		# Which part to chunk
+		i = int(split[2])
+
+		item_path = '/'.join(split[:2])
+		X = self.h5[item_path][i*self.chunk_size : (i+1)*self.chunk_size]
+
+		self.index_item_split[split_index]+=1
+		if self.index_item_split[split_index] >= int(sum(splits[0:split_index+1])*len(self.items)):
+			print 'ojo'
+			self.index_item_split[split_index] = int(sum(splits[0:split_index])*len(self.items))
+
+		return X, key
+
+
 	def shuffle(self):
 		np.random.shuffle(self.items)
 
@@ -140,31 +174,38 @@ class H5PY_RW:
 
 class Mixer:
 
-	def __init__(self, datasets, mixing_type='add', mask_positive_value=1, mask_negative_value=-1):
-	"""
-	Mix multiple H5PY file reader
-	Inputs:
-		datasets: array of H5PY reader
-		mixing_type: 'add' (Default), 'mean'
-		mask_positive_value: Bin value if the spectrogram bin belong to the mask
-		mask_negative_value: Bin value if the spectrogram bin does not belong to the mask
-	"""
+	def __init__(self, datasets, splits = [0.8, 0.1, 0.1], mixing_type='add', mask_positive_value=1, mask_negative_value=-1):
+		"""
+		Mix multiple H5PY file reader
+		Inputs:
+			datasets: array of H5PY reader
+			mixing_type: 'add' (Default), 'mean'
+			splits: Percentage for Training Set (Default 0.8), for Testing set (Default 0.1), for Validation Set (Default 0.1)
+			mask_positive_value: Bin value if the spectrogram bin belong to the mask
+			mask_negative_value: Bin value if the spectrogram bin does not belong to the mask
+		"""
 		self.datasets = datasets
 		self.type = mixing_type
 		self.create_labels()
+		self.mixing_type = mixing_type
 		self.mask_negative_value = mask_negative_value
 		self.mask_positive_value = mask_negative_value
+		self.splits = splits
+		self.split_index = 0 # Training split by default
 
 	def shuffle(self):
 		for dataset in self.datasets:
 			dataset.shuffle()
+
+	def select_split(self, index):
+		self.split_index = index
 
 	def next(self):
 		X_d = []
 		key_d = []
 
 		for dataset in self.datasets:
-			X, key = dataset.next()
+			X, key = dataset.next_in_split(self.splits, self.split_index)
 			X_d.append(X)
 			key_d.append(key)
 
@@ -178,9 +219,9 @@ class Mixer:
 		for i, row in enumerate(Y_pos):
 			for j, value in enumerate(row):
 				Y[i, j, value] = self.mask_positive_value
-		if mixing_type == 'add':
+		if self.mixing_type == 'add':
 			X_d = np.sum(X_d, axis=0)
-		else if mixing_type == 'mean':
+		elif self.mixing_type == 'mean':
 			X_d = np.mean(X_d, axis=0)
 
 		return X_d, Y, np.array(key_d)

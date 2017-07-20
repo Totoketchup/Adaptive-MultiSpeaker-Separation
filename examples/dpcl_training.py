@@ -38,9 +38,6 @@ if __name__ == "__main__":
 			_, x_recons = istft_(x.T)
 			x_mixture.append(x_recons)
 
-		X = X[:,:,:128]
-		Y = Y[:,:,:128,:]
-
 		# Scale the model inputs
 		X = np.sqrt(np.abs(X))
 		X = (X - X.min())/(X.max() - X.min())

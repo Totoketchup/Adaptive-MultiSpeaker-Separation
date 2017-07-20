@@ -14,7 +14,7 @@ import tensorflow as tf
 
 class DPCL:
 
-	def __init__(self, fftsize=config.fftsize//2, E=config.embedding_size, threshold=config.threshold):
+	def __init__(self, fftsize=config.fftsize//2+1, E=config.embedding_size, threshold=config.threshold):
 
 		self.F = fftsize    # Freqs size
 		self.E = E          # Embedding size
