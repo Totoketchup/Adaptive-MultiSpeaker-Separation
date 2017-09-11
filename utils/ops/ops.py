@@ -226,9 +226,9 @@ class Residual:
     def __init__(self, layers):
         self.layers = layers;
         self.downsample = False;
-        if layers[0].d_in != layers[0].d_out:
+        if layers[0].strides[0] != 1: #layers[0].d_in != layers[0].d_out:
             self.downsample = True;
-            self.conv_op = Conv((1,1,layers[0].d_in,layers[0].d_out), strides = layers[0].strides)
+            self.conv_op = Conv2D(layers[0].filters, (1,1), layers[0].strides)
             
     def f_prop(self, x):
         o = x;
@@ -246,20 +246,26 @@ class Residual_Net:
         self.F = input_shape[1]
         self.name = name
         blocks = []
+        filter_shape = (3,3)
+        print input_shape
         for i in range(len(k)-1):
-            strides = [1, 2, 2, 1]
+            strides = (2,2)
             T = int(self.T/pow(2,i))
-            F = int(self.F/pow(2,i))# + self.F%(self.F/pow(2,i))) 
-            
+            F = int(self.F/pow(2,i)) + self.F%(self.F/pow(2,i))
+            print 'F ', F
+            print 'T ', T
             for n in range(N):
                 if i == 0 or n != 0:
-                    strides = [1, 1, 1, 1]
+                    strides = (1,1)
+                print strides
                 blocks.append([
-                    Conv((3, 3, k[i+int(n!=0)], k[i+1]), strides=strides), # TxFx1 -> TxFx32
+                    Conv2D(k[i+1], filter_shape, strides),
+                    #Conv((3, 3, k[i+int(n!=0)], k[i+1]), strides=strides), # TxFx1 -> TxFx32
                     BatchNorm((T, F, k[i+1])),
                     Activation(tf.nn.relu),
                     Dropout(0.7, training),
-                    Conv((3, 3,  k[i+1],  k[i+1])), # TxFx32 -> TxFx32
+                    Conv2D(k[i+1], filter_shape, (1,1)),
+                    #Conv((3, 3,  k[i+1],  k[i+1])), # TxFx32 -> TxFx32
                     BatchNorm((T, F,  k[i+1])),
                     Activation(tf.nn.relu),
                 ])
@@ -301,6 +307,20 @@ class Conv:
         u = tf.nn.conv2d(x, self.W, strides=self.strides, padding=self.padding) + self.b
         return self.function(u)
 
+class Conv2D:                             
+    def __init__(self, filters, kernel, strides=(1,1), padding='same',
+        kernel_initializer=tf.contrib.layers.xavier_initializer_conv2d(),
+        name='conv2d'):
+        self.filters = filters
+        self.kernel = kernel
+        self.strides = strides
+        self.padding = padding
+        self.name = name
+        self.kernel_initializer = kernel_initializer
+        
+    def f_prop(self, x):
+        return tf.layers.conv2d(x, self.filters, kernel_size=self.kernel, strides=self.strides,padding= self.padding,
+        kernel_initializer=self.kernel_initializer)
 
 class Conv1D:
     def __init__(self, filter_shape, function=lambda x: x, stride=1, padding='SAME', name='Conv1D'):
