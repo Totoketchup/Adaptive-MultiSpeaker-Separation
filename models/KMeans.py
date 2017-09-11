@@ -12,14 +12,13 @@ import numpy as np
 
 class KMeans:
 
-	def __init__(self, nb_clusters, T, batch_size= config.batch_size, alpha= 5, F=config.fftsize//2, E=config.embedding_size, threshold= config.threshold):
+	def __init__(self, nb_clusters, input_dim, batch_size= config.batch_size, alpha= 5, E=config.embedding_size, threshold= config.threshold):
 
 		self.nb_clusters = nb_clusters
-		self.T = T
-		self.F = F
+		self.input_dim = input_dim
 		self.E = E
 		self.alpha = alpha
-		self.nb_iteration = 100
+		self.nb_iteration = 10
 		self.batch_size = batch_size
 
 		self.graph = tf.Graph()
@@ -27,7 +26,7 @@ class KMeans:
 		with self.graph.as_default():
 			# Spectrogram, embeddings
 			# shape = [batch, T*F , E ]
-			self.X = tf.placeholder("float", [batch_size, T*F, E])
+			self.X = tf.placeholder("float", [batch_size, self.input_dim, self.E])
 
 			self.Ws = tf.cast(self.X - threshold > 0, self.X.dtype) * self.X
 
@@ -38,9 +37,9 @@ class KMeans:
 				stddev=tf.sqrt(2/float(E))),
 				name='centroids')
 
-			self.labels_ = tf.zeros([batch_size, T*F], dtype=tf.int32, name='labels')
+			self.labels_ = tf.zeros([batch_size, self.input_dim], dtype=tf.int32, name='labels')
 
-			self.assignments = tf.zeros([batch_size, T*F, nb_clusters])
+			self.assignments = tf.zeros([batch_size, self.input_dim, nb_clusters])
 
 			self.network
 
@@ -83,7 +82,7 @@ class KMeans:
 
 			self.centroids = tf.reduce_sum(self.assignments*Ws*X, axis= 1)/tf.reduce_sum(self.assignments*Ws, axis=1)
 
-		return tf.reshape(tf.argmax(self.assignments, axis=2), [self.batch_size, self.T, self.F])
+		return tf.argmax(self.assignments, axis=2)
 
 	def fit(self, X_train):
 		labels, centroids = self.sess.run([self.network, self.centroids], {self.X: X_train})
@@ -91,12 +90,14 @@ class KMeans:
 
 
 if __name__ == "__main__":
-	T = 40
-	X = np.random.rand(1, T*config.fftsize//2, config.embedding_size) + 3* np.random.rand(1, T*config.fftsize//2, config.embedding_size)
+	nb_samples = 100000
 
-	kmean = KMeans(2, T, batch_size=1)
+	X1 = np.random.random_sample((nb_samples/2, 2))
+	X2 = np.random.random_sample((nb_samples/2, 2)) + 2
+	X = np.reshape(np.concatenate((X1,X2), axis=0), (1, nb_samples ,2))
+
+	kmean = KMeans(2, nb_samples, batch_size=1, E=2)
 	kmean.init()
 
 	label, centroids = kmean.fit(X)
 	print centroids
-	print label[0][0]
