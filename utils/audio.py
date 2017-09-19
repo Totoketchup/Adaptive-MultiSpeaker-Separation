@@ -26,6 +26,3 @@ def downsample(audio_data, sample_rate, new_sample_rate):
 def create_spectrogram(x, sr, fs=config.fs, fftsize=config.fftsize, overlap=config.fftsize//config.overlap, window=config.window, padded=True):
     x = downsample(x, sr, fs) # Downsampling the original signal
     return stft_(x, fs, fftsize, overlap, window, padded) # Compute the STFT of the downsampled signal
-
-# def show_spectrogram(X):
-#     
