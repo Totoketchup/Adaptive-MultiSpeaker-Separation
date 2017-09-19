@@ -1,3 +1,4 @@
 *.pyc
 data/LibriSpeech
 *.h5py
+log/

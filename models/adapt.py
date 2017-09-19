@@ -59,7 +59,7 @@ class Adapt:
 
 		# X_raw : [ B , T , 1]
 		X_in = tf.expand_dims(self.X_raw, 2)
-		self.input_shape = tf.shape(X_in)
+		self.input_shape = tf.shape(self.X_raw)
         
         # 1 Dimensional convolution along T axis with a window length = 1024
         # And N filters
@@ -79,16 +79,17 @@ class Adapt:
 		self.P = M / tf.expand_dims(X,3)
         
         # Max Pooling
-		y, self.argmax = tf.nn.max_pool_with_argmax(M, (1, max_pool_value, 1, 1), strides=[1, max_pool_value, 1, 1], padding="SAME")
+		y, self.argmax = tf.nn.max_pool_with_argmax(M, (1, self.max_pool_value, 1, 1), strides=[1, self.max_pool_value, 1, 1], padding="SAME")
         
-		return tf.squeeze(y, [3])
+		return y
 
 	@ops.scope
 	def separator(self):
 		## ##
 		## Signal separator network for testing.
 		## ##
-		shape = tf.shape(self.front)
+		input = tf.squeeze(self.front [3])
+		shape = tf.shape(input)
 		layers = [
 			Dense(self.N, 500, tf.nn.softplus),
 			Dense(500, 500, tf.nn.softplus),
@@ -100,7 +101,7 @@ class Adapt:
 				x = layer.f_prop(x)
 			return x
 
-		separator_out = f_props(layers, tf.reshape(self.front, [-1,self.N]))
+		separator_out = f_props(layers, tf.reshape(input, [-1,self.N]))
 		return tf.expand_dims(tf.reshape(separator_out, shape),3)
 
 	@ops.scope
@@ -108,17 +109,21 @@ class Adapt:
 		# Back-End 
 
 		# Unpooling (the previous max pooling)
-		unpooled = unpool(self.separator, self.argmax, ksize=[1, self.max_pool_value, 1, 1], scope='unpool')
+		unpooled = unpool(self.front, self.argmax, ksize=[1, self.max_pool_value, 1, 1], scope='unpool')
 		
 		out = unpooled * self.P
 
-		out = tf.reshape(out, [1, self.input_shape[0], self.N, 1])
-		return tf.nn.conv2d_transpose(tf.transpose(out, [0,1,3,2]), filter=tf.expand_dims(self.WC1,0), output_shape=[1, self.input_shape[0], 1, 1], strides=[1,1,1,1])
+		out = tf.reshape(out, [self.input_shape[0], self.input_shape[1], self.N, 1])
+		out= tf.nn.conv2d_transpose(tf.transpose(out, [0,1,3,2]), filter=tf.expand_dims(self.WC1,0), output_shape=[self.input_shape[0], self.input_shape[1], 1, 1], strides=[1,1,1,1])
+
+		return tf.reshape(out, self.input_shape)
 
 	@ops.scope
 	def cost(self):
 		# Definition of cost for Adapt model
-		cost = tf.nn.l2_loss(self.X_raw - self.back) + 0.01*tf.norm(self.X_raw)
+		reg = 0.01*tf.norm(self.X_raw, axis=1)
+		cost = tf.reduce_sum(tf.pow(self.X_raw - self.back, 2), axis=1) + reg
+		cost = tf.reduce_mean(cost)
 		tf.summary.scalar('training cost', cost)
 		return cost
 
@@ -132,22 +137,36 @@ class Adapt:
 	def train(self, X, step):
 		summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_raw: X})
 		self.train_writer.add_summary(summary, step)
-		return 
+		return cost
+    
+	def test(self, X):
+		cost = self.sess.run(self.back, {self.X_raw: X})
+		return cost
+    
 
 
 if __name__ == "__main__":
+	N = 256
+	sub = 400  
+	batch_size = 4
 
 	data, fs = sf.read('test.flac')
-	data = data[0:20*256]
+	data = data[0:len(data)-len(data)%(N*sub)]
+	data = np.array(np.split(data,sub))
 	shape = data.shape
-	data = data[np.newaxis, :]
+	#data = data[np.newaxis, :]
 	print data.shape
 	ada = Adapt()
 	ada.init()
     
-	for i in range(1000):
-		_ , y = ada.output(data, i)
-		print y
+	for u in range(1):
+		for i in range(sub/batch_size):
+			y = ada.train(data[i:(i+1)*batch_size, :], (sub/batch_size)*u+i)
+			print y
+    
+	X_reconstruct = ada.test(data)
+	sf.write('test_recons.flac', np.flatten(X_reconstruct), fs)
+
         
 	# y = np.reshape(y, (195, 256))
 	print y.shape
