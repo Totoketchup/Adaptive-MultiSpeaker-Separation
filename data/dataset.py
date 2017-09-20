@@ -4,7 +4,7 @@ import data_tools
 import soundfile as sf
 import os
 import config
-from utils.audio import create_spectrogram
+from utils.audio import create_spectrogram, downsample
 from sets import Set
 from utils.tools import print_progress
 
@@ -65,6 +65,55 @@ class H5PY_RW:
 
 		print 'Dataset for the subset: ' + subset + ' has been built'
 
+	def create_raw_audio_dataset(self, output_fn, subset=config.data_subset, data_root=config.data_root):
+		"""
+		Create a H5 file from the LibriSpeech dataset and the subset given:
+
+		Inputs:
+			output_fn: filename for the created file
+			subset: LibriSpeech subset : 'dev-clean' , ...
+			data_root: LibriSpeech folder path
+
+		"""
+
+		# Extract the information about this subset (speakers, chapters)
+		# Dictionary with the following shape: 
+		# {speaker_key: {chapters: [...], sex:'M/F', ... } }
+		speakers_info = data_tools.read_data_header(subset)
+
+		with h5py.File(output_fn,'w') as data_file:
+
+			for (key, elements) in speakers_info.items():
+				if key not in data_file:
+					# Create an H5 Group for each key/speaker
+					data_file.create_group(key)
+
+				# Current speaker folder path
+				folder = data_root+'/'+subset+'/'+key
+
+				print_progress(0, len(elements['chapters']), prefix = 'Speaker '+key+' :', suffix = 'Complete')
+
+				# For all the chapters read by this speaker
+				for i, chapter in enumerate(elements['chapters']): 
+					# Find all .flac audio
+					for root, dirs, files in os.walk(folder+'/'+chapter): 
+						for file in files:
+							if file.endswith(".flac"):
+
+								path = os.path.join(root,file)
+								raw_audio, sr = sf.read(path)
+
+								raw_audio = downsample(raw_audio, sr, config.fs)
+
+								data_file[key].create_dataset(file,
+									data=raw_audio,
+									compression="gzip",
+									compression_opts=0)
+
+					print_progress(i + 1, len(elements['chapters']), prefix = 'Speaker '+key+' :', suffix = 'Complete')
+
+
+		print 'Dataset for the subset: ' + subset + ' has been built'
 
 	def open_h5_dataset(self, filename, subset=None):
 		"""
@@ -254,9 +303,9 @@ class Mixer:
 	def get_labels(self):
 		return self.dico
 
-
-# H5 = H5PY_RW()
-# # H5.open_h5_dataset('test.h5py')
+if __name__ == "__main__":
+	H5 = H5PY_RW()
+	H5.create_raw_audio_dataset('test_raw.h5py')
 
 # # for (X, key) in H5:
 # #     continue
