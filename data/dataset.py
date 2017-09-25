@@ -220,7 +220,7 @@ class H5PY_RW:
 
 class Mixer:
 
-	def __init__(self, datasets, splits = [0.8, 0.1, 0.1], mixing_type='add', mask_positive_value=1, mask_negative_value=-1):
+	def __init__(self, datasets, with_mask=True, with_inputs=False, splits = [0.8, 0.1, 0.1], mixing_type='add', mask_positive_value=1, mask_negative_value=-1):
 		"""
 		Mix multiple H5PY file reader
 		Inputs:
@@ -233,6 +233,8 @@ class Mixer:
 		self.datasets = datasets
 		self.type = mixing_type
 		self.create_labels()
+		self.with_mask = with_mask
+		self.with_inputs = with_inputs
 		self.mixing_type = mixing_type
 		self.mask_negative_value = mask_negative_value
 		self.mask_positive_value = mask_negative_value
@@ -255,34 +257,58 @@ class Mixer:
 			X_d.append(X)
 			key_d.append(key)
 
-		
-		X_d = np.array(X_d)
+		key_d = np.array(key_d)
+		X_non_mix = np.array(X_d)
 
-		Y_pos = np.argmax(X_d, axis=0)
-
-		Y = np.full((X_d.shape[1], X_d.shape[2], len(self.datasets)), self.mask_negative_value)
-
-		for i, row in enumerate(Y_pos):
-			for j, value in enumerate(row):
-				Y[i, j, value] = self.mask_positive_value
 		if self.mixing_type == 'add':
-			X_d = np.sum(X_d, axis=0)
+			X_mix = np.sum(X_non_mix, axis=0)
 		elif self.mixing_type == 'mean':
-			X_d = np.mean(X_d, axis=0)
+			X_mix = np.mean(X_non_mix, axis=0)
 
-		return X_d, Y, np.array(key_d)
+		if self.with_mask:
+			Y_pos = np.argmax(X_non_mix, axis=0)
+
+			Y = np.full((X_non_mix.shape[1], X_non_mix.shape[2], len(self.datasets)), self.mask_negative_value)
+
+			for i, row in enumerate(Y_pos):
+				for j, value in enumerate(row):
+					Y[i, j, value] = self.mask_positive_value 
+
+			return X_mix, Y, key_d
+
+		if self.with_inputs:
+			return X_non_mix, X_mix, key_d
+		else:
+			return X_mix, key_d
 
 	def get_batch(self, batch_size):
-		X = []
-		Y = []
+		X_mix = []
 		Ind = []
+
+		if self.with_mask:
+			Y = []
+		if self.with_inputs:
+			X_non_mix = []
+
+
 		for i in range(batch_size):
-			x, y, ind = self.next()
-			X.append(x)
-			Y.append(y)
+			if self.with_mask:
+				x, y, ind = self.next()
+				Y.append(y)
+			elif self.with_inputs:
+				x_non_mix, x_mix, ind = self.next()
+				X_non_mix.append(x_non_mix)
+
+			X_mix.append(x_mix)
 			Ind.append([self.dico[j] for j in ind])
 
-		return np.array(X), np.array(Y), np.array(Ind)
+		if self.with_mask:
+			return np.array(X_mix), np.array(Y), np.array(Ind)
+
+		if self.with_inputs:
+			return np.array(X_non_mix), np.array(X_mix), np.array(Ind)
+
+		return np.array(X), np.array(Ind)
 
 	def create_labels(self):
 		# Create a set of all the speaker indicies 

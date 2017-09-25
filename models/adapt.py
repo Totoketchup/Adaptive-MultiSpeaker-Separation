@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # My Model 
 from utils.ops import ops
 from utils.ops.ops import Residual_Net, Conv1D, Reshape, Dense, unpool, f_props
@@ -27,12 +28,26 @@ class Adapt:
 
 		with self.graph.as_default():
 			# Batch of raw mixed audio - Input data
-			# shape = [ batch size , samples ]
-			self.X_raw = tf.placeholder("float", [None, None])
+			# shape = [ batch size , samples ] = [ B , L ]
+			self.X_mix = tf.placeholder("float", [None, None])
 
-			# Batch of raw non-mixed audio
-			# shape = [ batch size , number of speakers, samples ]
-			self.X_in = tf.placeholder("float", [None, 2, None])
+			if pretraining:
+				# Batch of raw non-mixed audio
+				# shape = [ batch size , number of speakers, samples ] = [ B, S , L]
+				self.X_non_mix = tf.placeholder("float", [None, None, None])
+				self.X_non_mix_t = tf.transpose(self.X_non_mix, [1, 0, 2])
+				self.shape_non_mix = tf.shape(self.X_non_mix_t)
+				self.S = self.shape_non_mix[0]
+				self.B = self.shape_non_mix[1]
+				self.L = self.shape_non_mix[2]
+
+				# shape = [ S*B , L ]
+				self.X_in_ = tf.reshape(self.X_non_mix_t, [self.B*self.S, self.L])
+
+				# shape = [ B*(1 + S), L ] = [ B + B*S , L]
+				self.x = tf.concat([self.X_mix, self.X_in_], axis=0)
+			else:
+				self.x = self.X_mix
 
 			# Network Variables:
 			self.WC1 = tf.Variable(tf.random_normal([1024, 1, self.N], stddev=0.35))
@@ -69,18 +84,12 @@ class Adapt:
 	def front(self):
 		# Front-End Adapt
 
-		# X_raw : [ B , T , 1]
-		in_mix = tf.expand_dims(self.X_raw, 2)
-		self.input_shape = tf.shape(self.X_raw)
+		# x : [ B or B*(1+S) , L , 1]
+		in_mix = tf.expand_dims(self.x, 2)
+		self.front_input_shape = tf.shape(self.x)
 
 		output = self.front_func(in_mix)
-
-		if self.pretraining:
-			in_raw =  tf.expand_dims(tf.transpose(self.X_in, [1,0,2]), 3)
-			y_raw, _, _  = tf.map_fn(self.front_func, in_raw, swap_memory=True, dtype=(tf.float32, tf.float32, tf.int64))
-
-			return output, y_raw
-
+		
 		return output
 
 
@@ -89,8 +98,9 @@ class Adapt:
 		# And N = 256 filters
 		X = tf.nn.conv1d(input_tensor, self.WC1, stride=1, padding="SAME")
 
-		# X : [ B , T , N]
+		# X : [ B or B(1+S) , T , N]
 		X_abs = tf.abs(X)
+		self.T = tf.shape(X_abs)[1]
 
 		# Smoothing the 'STFT' like created by the previous OP
 		M = tf.nn.conv2d(tf.expand_dims(X_abs, 3), self.smoothing_filter, strides=[1, 1, 1, 1], padding="SAME")
@@ -98,17 +108,14 @@ class Adapt:
 		M = tf.nn.softplus(M)
 
 		# Matrix for the reconstruction process P = M / X => X * P = M
+		# shape = [ B or B(1+S), T , N, 1]
 		P = M / tf.expand_dims(X, 3)
-
 		# Max Pooling
 		# with tf.device('/GPU'):
 		y, argmax = tf.nn.max_pool_with_argmax(M, (1, self.max_pool_value, 1, 1),
 													strides=[1, self.max_pool_value, 1, 1], padding="SAME")
-
-		with tf.device("/cpu:0"):
-			a = tf.identity(argmax)
 		
-		return y, P, a
+		return y, P, argmax
 
 	@ops.scope
 	def separator(self):
@@ -116,17 +123,32 @@ class Adapt:
 		## Signal separator network for testing.
 		## ##
 		if self.pretraining:
-			(separator_in, P_in, argmax_in), separator_in_raw = self.front
-			self.separator_out = tf.expand_dims(separator_in,0) - separator_in_raw 
-			shapu = tf.shape(self.X_in)[1]
-			return self.separator_out, tf.tile(tf.expand_dims(P_in, 0),[shapu,1,1,1,1]), tf.tile(tf.expand_dims(argmax_in, 0),[shapu,1,1,1,1])
-		else:	
-			separator_input, P, argmax = self.front
-			separator_out = self.separator_func(separator_input)
-			return separator_out_raw, P_raw, argmax_raw
+			# shape = [B(1+S), T_, N, 1], shape = [B(1+S), T , N, 1], [B(1+S), T_ , N, 1]
+			separator_in, P_in, argmax_in = self.front
+			self.T_p = tf.shape(separator_in)[1]
 
-		# PRETRAINING SEPARATOR
+			# Splitting Mixed and Non Mixed data , from (B + B*S, ..) to ((B , ..), (B*S, ...) 
+			split = [self.B, self.B*self.S]
+			print separator_in
+			# shape = [ B, T_, N , 1], shape = [ B*S, T_, N , 1]
+			separator_in_mixed, separator_in_non_mixed  = tf.split(separator_in, split, axis=0)
+			# shape = [ B, T_, N , 1]
+			P_in, _  = tf.split(P_in, split)
+			argmax_in, _  = tf.split(argmax_in, split)
 
+			# shape = [ B, 1, T_, N, 1]
+			separator_in_mixed = tf.expand_dims(separator_in_mixed, 1)
+			shape = [self.B, self.S, self.T_p, self.N, 1]
+			separator_in_non_mixed = tf.reshape(separator_in_non_mixed, shape)
+			# shape = [B , S , T_, N, 1]
+			self.separator_out = separator_in_mixed - separator_in_non_mixed 
+			
+			self.separator_out = tf.reshape(self.separator_out, [self.B*self.S, self.T_p, self.N, 1])
+			return self.separator_out, P_in, argmax_in
+		else:
+			return None
+
+	# PRETRAINING SEPARATOR
 	def separator_func(self, tensor_input):
 
 		input = tf.squeeze(tensor_input, [3])
@@ -145,10 +167,12 @@ class Adapt:
 	@ops.scope
 	def back(self):
 		# Back-End
-		if self.pretraining:
-			return tf.map_fn(self.back_func, self.separator, swap_memory=True, dtype=tf.float32)
-		else:
-			return back_func(self.separator)
+		back_in, P_in, argmax_in = self.separator
+
+		argmax_in = tf.tile(argmax_in, [self.S,1,1,1])
+		P_in = tf.tile(P_in, [self.S,1,1,1])
+
+		return self.back_func((back_in, P_in, argmax_in))
 
 
 	def back_func(self, input_tensor):
@@ -160,34 +184,39 @@ class Adapt:
 
 		out = unpooled * P
 
-		out = tf.reshape(out, [self.input_shape[0], self.input_shape[1], self.N, 1])
+		out = tf.reshape(out, [self.B*self.S, self.T, self.N, 1])
 		out = tf.nn.conv2d_transpose(tf.transpose(out, [0, 1, 3, 2]), filter=tf.expand_dims(self.WC1, 0),
-									 output_shape=[self.input_shape[0], self.input_shape[1], 1, 1],
+									 output_shape=[self.B*self.S, self.L, 1, 1],
 									 strides=[1, 1, 1, 1])
 
-		return tf.reshape(out, self.input_shape)
+		return tf.reshape(out, [self.B, self.S, self.L])
 
 	@ops.scope
 	def cost(self):
 		# Definition of cost for Adapt model
-		self.reg = 0.001 * tf.norm(self.X_raw, axis=1)
+		# shape = [B, 1]
+		self.reg = 0.001 * tf.norm(self.X_mix, axis=1)
+
+		#input_shape = [B, S, L]
 		if self.pretraining:
-			cost = tf.map_fn(self.cost_func, (tf.transpose(self.X_in, [1,0,2]), self.back), dtype=tf.float32)
+			# shape = [B, S]
+			# Doing l2 norm on L axis
+			cost = tf.reduce_sum(tf.pow(self.X_non_mix - self.back, 2), axis=2)
+			# shape = [B]
+			# Compute mean over the speakers
+			cost = tf.reduce_mean(cost, 1) #+ self.reg
+			# shape = ()
+			# Compute mean over batches
 			cost = tf.reduce_mean(cost, 0)
 		else:
 			# TODO
 			# cost = tf.reduce_sum(tf.pow(X_in - X_reconstruct, 2), axis=1) + self.reg
 			cost = tf.reduce_mean(cost)
+
 		tf.summary.scalar('training cost', cost)
-		return cost
+		return cost/1e5
 
 
-	def cost_func(self, input_tensor):
-		X_in, X_reconstruct = input_tensor
-		# Definition of cost for Adapt model
-		cost = tf.reduce_sum(tf.pow(X_in - X_reconstruct, 2), axis=1) + self.reg
-		cost = tf.reduce_mean(cost)
-		return cost
 	@ops.scope
 	def optimize(self):
 		return tf.train.AdamOptimizer().minimize(self.cost)
@@ -196,12 +225,12 @@ class Adapt:
 		self.saver.save(self.sess, os.path.join('log/adaptive/', "adaptive_model.ckpt"))  # , step)
 
 	def train(self, X_mix,X_in, step):
-		summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_raw: X_mix, self.X_in:X_in})
+		summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_in})
 		self.train_writer.add_summary(summary, step)
 		return cost
 
 	def test(self, X, X_in):
-		cost = self.sess.run(self.cost, {self.X_raw: X, self.X_in: X_in})
+		cost = self.sess.run(self.cost, {self.X_mix: X, self.X_non_mix: X_in})
 		return cost
 
 
@@ -220,7 +249,7 @@ if __name__ == "__main__":
 	ada = Adapt()
 	ada.init()
 
-	for u in range(1):
+	for u in range(100):
 		for i in range(sub / batch_size):
 			d = data[i*batch_size:(i + 1) * batch_size, :]
 			d_in = np.transpose(np.array([d,d]),(1,0,2))
