@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import h5py
 import numpy as np
 import data_tools
@@ -103,7 +104,9 @@ class H5PY_RW:
 								path = os.path.join(root,file)
 								raw_audio, sr = sf.read(path)
 
-								raw_audio = downsample(raw_audio, sr, config.fs)
+								# raw_audio = downsample(raw_audio, sr, config.fs)
+
+								raw_audio = (raw_audio - np.mean(raw_audio))/np.std(raw_audio)
 
 								data_file[key].create_dataset(file,
 									data=raw_audio,
@@ -125,46 +128,58 @@ class H5PY_RW:
 		"""
 		self.h5 = h5py.File(filename, 'r')
 		
+		# Define the the keys for each speaker
 		if subset == None:
-			self.keys = [key for key in self.h5]
+			self.keys = [key for key in self.h5] # All
 		else:
-			self.keys = subset
+			self.keys = subset # Subset of the H5 file
 
+
+		# Define all the items related to each key/speaker
 		items = []
 		for key in self.keys:
 			items += [key + '/' + val  for val in self.h5[key]]
 
 		self.raw_items = items
+		self.items = items
 		self.index_item = 0
 
 
 	def set_chunk(self, chunk_size):
 		"""
-		Define the size of the chunk: each spectrogram is chunked with 'chunk_size'
+		Define the size of the chunk: each data is chunked with 'chunk_size'
 		"""
+
 		self.chunk_size = chunk_size
 		items = []
+
+		# Chunk along the first axis (might add a parameter for this , TODO)
 		for item in self.raw_items:
 			L = self.h5[item].shape[0]//chunk_size
 			items += [item +'/' + str(part) for part in range(L)]
+
+		# Update the items into chunked items
 		self.items = items
 
 	def next(self):
 		"""
 		Return next chunked item
 		"""
-
 		item_path = self.items[self.index_item]
 		split = item_path.split('/')
 
+		if hasattr(self, 'chunk_size'):
+			# Which part to chunk
+			i = int(split[2])
+
+			# Cut the data according to the chunk
+			item_path = '/'.join(split[:2])
+			X = self.h5[item_path][i*self.chunk_size : (i+1)*self.chunk_size]
+		else:
+		 	X = self.h5[item_path]
+
 		# Speaker indice
 		key = int(split[0])
-
-		# Which part to chunk
-		i = int(split[2])
-
-		item_path = '/'.join(split[:2])
-		X = self.h5[item_path][i*self.chunk_size : (i+1)*self.chunk_size]
 
 		self.index_item+=1
 		if self.index_item >= len(self.items):
@@ -184,17 +199,22 @@ class H5PY_RW:
 			for i in range(1,len(splits)):
 				self.index_item_split[i] = int(sum(splits[0:i])*len(self.items))
 
+
 		item_path = self.items[self.index_item_split[split_index]]
 		split = item_path.split('/')
 
 		# Speaker indice
 		key = int(split[0])
 
-		# Which part to chunk
-		i = int(split[2])
+		if hasattr(self, 'chunk_size'):
+			# Which part to chunk
+			i = int(split[2])
 
-		item_path = '/'.join(split[:2])
-		X = self.h5[item_path][i*self.chunk_size : (i+1)*self.chunk_size]
+			# Cut the data according to the chunk
+			item_path = '/'.join(split[:2])
+			X = self.h5[item_path][i*self.chunk_size : (i+1)*self.chunk_size]
+		else:
+		 	X = self.h5[item_path]
 
 		self.index_item_split[split_index]+=1
 		if self.index_item_split[split_index] >= int(sum(splits[0:split_index+1])*len(self.items)):
@@ -331,7 +351,7 @@ class Mixer:
 
 if __name__ == "__main__":
 	H5 = H5PY_RW()
-	H5.create_raw_audio_dataset('test_raw.h5py')
+	H5.create_raw_audio_dataset('test_raw_16k.h5py')
 
 # # for (X, key) in H5:
 # #     continue
