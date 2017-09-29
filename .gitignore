@@ -2,3 +2,4 @@
 data/LibriSpeech
 *.h5py
 log/
+log_model/

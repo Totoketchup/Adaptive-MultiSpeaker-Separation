@@ -1,11 +1,15 @@
 from data.dataset import H5PY_RW, Mixer
 from models.adapt import Adapt
 from data.data_tools import read_data_header, males_keys, females_keys
-from utils.audio import istft_
 
 import config
 import numpy as np
-import tensorflow as tf
+# import tensorflow as tf
+# import soundfile as sf
+
+def normalize(y):
+	y = y - np.mean(y)
+	return y/np.std(y)
 
 if __name__ == "__main__":
 
@@ -13,13 +17,13 @@ if __name__ == "__main__":
 
 	Males = H5PY_RW()
 	Males.open_h5_dataset('test_raw.h5py', subset = males_keys(H5_dico))
-	Males.set_chunk(7*512)
+	Males.set_chunk(5*7*512)
 	Males.shuffle()
 	print 'Male voices loaded: ', Males.length(), ' items'
 
 	Females = H5PY_RW()
 	Females.open_h5_dataset('test_raw.h5py', subset = females_keys(H5_dico))
-	Females.set_chunk(7*512)
+	Females.set_chunk(5*7*512)
 	Females.shuffle()
 	print 'Female voices loaded: ', Females.length(), ' items'
 
@@ -31,23 +35,22 @@ if __name__ == "__main__":
 
 	cost_valid_min = 1e10
 	Mixer.select_split(0)
-
+	learning_rate = 0.1
 	for i in range(config.max_iterations):
-		print 'Step #' ,i
-		X_in, X_mix, Ind = Mixer.get_batch(2)
-		c = adapt_model.train(X_mix, X_in, i)
-		print c
 
-		# if (i+1) % config.batch_test == 0:
+		# X_in = normalize(X_in)
+		# X_mix = normalize(X_mix)
+		X_in, X_mix, Ind = Mixer.get_batch(1)
+		c = adapt_model.train(X_mix, X_in,learning_rate/(10*(i%1000+1)), i)
+		# c = adapt_model.test(X_mix, X_in)
 
-		# 	# Cost obtained with the current model on the validation set
-		# 	cost_valid = das_model.valid(X_valid, X_raw_valid, Y_valid, Ind_valid, i)
-			
-		# 	if i%20 == 0: #cost_valid < cost_valid_min:
-		# 		print 'DAS model saved at iteration number ', i,' with cost = ', cost_valid 
-		# 		cost_valid_min = cost_valid
-		# 		das_model.save(i)
-		# 		last_saved = i
+		print 'Step #'  ,i,' ', c 
+
+		if i%20 == 0: #cost_valid < cost_valid_min:
+			print 'DAS model saved at iteration number ', i,' with cost = ', c 
+			# cost_valid_min = cost_valid
+			adapt_model.save(i)
+			last_saved = i
 
 		# 	if i - last_saved > config.stop_iterations:
 		# 		print 'Stop'

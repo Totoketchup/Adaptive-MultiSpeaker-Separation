@@ -36,8 +36,8 @@ if __name__ == "__main__":
 	for x in X_valid:
 			_, x_recons = istft_(x.T)
 			X_raw_valid.append(x_recons)
-	X_valid = X_valid[:,:,:128]
-	Y_valid = Y_valid[:,:,:128,:]
+	# X_valid = X_valid[:,:,:128]
+	# Y_valid = Y_valid[:,:,:128,:]
 	X_valid = np.sqrt(np.abs(X_valid))
 	X_valid = (X_valid - X_valid.min())/(X_valid.max() - X_valid.min())
 
@@ -53,8 +53,8 @@ if __name__ == "__main__":
 			_, x_recons = istft_(x.T)
 			x_mixture.append(x_recons)
 
-		X = X[:,:,:128]
-		Y = Y[:,:,:128,:]
+		# X = X[:,:,:128]
+		# Y = Y[:,:,:128,:]
 
 		# Scale the model inputs
 		X = np.sqrt(np.abs(X))
@@ -67,7 +67,7 @@ if __name__ == "__main__":
 			# Cost obtained with the current model on the validation set
 			cost_valid = das_model.valid(X_valid, X_raw_valid, Y_valid, Ind_valid, i)
 			
-			if cost_valid < cost_valid_min:
+			if i%20 == 0: #cost_valid < cost_valid_min:
 				print 'DAS model saved at iteration number ', i,' with cost = ', cost_valid 
 				cost_valid_min = cost_valid
 				das_model.save(i)
