@@ -38,6 +38,7 @@ class Adapt:
 			# shape = [ batch size , samples ] = [ B , L ]
 			self.X_mix = tf.placeholder("float", [None, None])
 			self.learning_rate = tf.placeholder("float")
+			tf.summary.scalar('learning rate', self.learning_rate)
 
 			if pretraining:
 				# Batch of raw non-mixed audio
@@ -50,12 +51,23 @@ class Adapt:
 				self.L = self.shape_non_mix[2]
 
 				# shape = [ S*B , L ]
-				self.X_non_mix_left = tf.reshape(self.X_non_mix[:, 0:(self.S-1) , :], [self.B*(self.S-1), self.L])
-				self.X_non_mix_right  = tf.reshape(self.X_non_mix[:, (self.S-1):self.S , :], [self.B*1, self.L])
+				self.X_non_mix_left = tf.reshape(self.X_non_mix[:, 0:1, :], [self.B, self.L])
+				self.X_non_mix_right  = tf.reduce_sum(self.X_non_mix[:, (self.S-1):self.S , :], axis=[1])
 				
-				# shape = [ B*(1 + S - 1), L ] = [ B*S , L]
+				# Rolling test		
+				init = tf.concat([tf.slice(self.X_non_mix,[0, self.S-1, 0], [-1, 1, -1]),
+					tf.slice(self.X_non_mix,[0, 0, 0], [-1, self.S-1, -1])], axis=1)	
+
+				i = (tf.constant(1), init)
+				cond = lambda i, x: tf.less(i, self.S-1)
+				body = lambda i, x: (i + 1, x + tf.concat([tf.slice(x,[0, self.S-1, 0], [-1, 1, -1]),tf.slice(x,[0, 0, 0], [-1, self.S-1, -1])], axis=1))
+				_, X_added_signal = tf.while_loop(cond, body, i)
+				# Shape added signal = [B*S, L]
+				X_added_signal = tf.reshape(X_added_signal, [self.B*self.S, self.L])
+
+				# shape = [ B*(1 + S), L ]
 				self.length = self.B*(self.S+1)
-				self.x = tf.concat([self.X_mix, self.X_non_mix_left, self.X_non_mix_right], axis=0)
+				self.x = tf.concat([self.X_mix, X_added_signal], axis=0)
 			else:
 				self.x = self.X_mix
 
@@ -76,9 +88,11 @@ class Adapt:
 			self.cost
 			self.optimize
 
-			self.audio_writer_mix = tf.summary.audio(name= "input_mix", tensor = self.X_mix, sample_rate = config.fs)
-			self.audio_writer_non_mixed = tf.summary.audio(name= "input_non_mix", tensor = self.X_non_mix[:, 0, :], sample_rate = config.fs)
-			self.audio_separated = tf.summary.audio(name= "input_separated", tensor = self.back[:, 0, :], sample_rate = config.fs)
+			tf.summary.audio(name= "input/mix", tensor = self.X_mix, sample_rate = config.fs)
+			tf.summary.audio(name= "input/non_mix_1", tensor = self.X_non_mix[:, 0, :], sample_rate = config.fs)
+			tf.summary.audio(name= "input/non_mix_2", tensor = self.X_non_mix[:, 1, :], sample_rate = config.fs)
+			tf.summary.audio(name= "output/separated_1", tensor = self.back[:, 0, :], sample_rate = config.fs)
+			tf.summary.audio(name= "output/separated_2", tensor = self.back[:, 1, :], sample_rate = config.fs)
 
 			self.image_spectro = tf.summary.image(name= "spectrogram", tensor = self.front[0])
 			self.saver = tf.train.Saver()
@@ -104,12 +118,10 @@ class Adapt:
 	def front(self):
 		# Front-End Adapt
 
-		# x : [ B or B*(1+S) , L , 1]
-		in_mix = tf.expand_dims(self.x, 2)
-		self.front_input_shape = tf.shape(self.x)
-		in_mix = tf.expand_dims(in_mix, 1)
+		# x : [ B or B*(1+S) , 1, L , 1]
+		input_front =  tf.expand_dims(tf.expand_dims(self.x, 2), 1)
 
-		output = self.front_func(in_mix)
+		output = self.front_func(input_front)
 
 		return output
 
@@ -118,21 +130,23 @@ class Adapt:
 		# 1 Dimensional convolution along T axis with a window length = 1024
 		# And N = 256 filters
 		X = tf.nn.conv2d(input_tensor, self.WC1, strides=[1, 1, 1, 1], padding="SAME")
-		# print X
-		X = tf.reshape(X, [self.length, -1, self.N])
-		self.X_cost = X
-		# X : [ B or B*S , T , N]
+
+		X = tf.reshape(X, [self.length, -1, self.N, 1])
+		self.X_cost = X[:, :, :, 0]
+
+		# X : [ B or self.length , T , N]
 		X_abs = tf.abs(X)
 		self.T = tf.shape(X_abs)[1]
 
 		# Smoothing the 'STFT' like created by the previous OP
-		M = tf.nn.conv2d(tf.expand_dims(X_abs, 3), self.smoothing_filter, strides=[1, 1, 1, 1], padding="SAME")
+		M = tf.nn.conv2d(X_abs, self.smoothing_filter, strides=[1, 1, 1, 1], padding="SAME")
 
 		M = tf.nn.softplus(M)
 
 		# Matrix for the reconstruction process P = X / M => X = P * M
-		# shape = [ B or B(1+S), T , N, 1]
-		P = tf.expand_dims(X, 3) / M
+		# shape = [ B or self.length, T , N, 1]
+		P = X / M
+
 		# Max Pooling
 		# with tf.device('/GPU'):
 		y, argmax = tf.nn.max_pool_with_argmax(M, (1, self.max_pool_value, 1, 1),
@@ -148,11 +162,11 @@ class Adapt:
 		if self.pretraining:
 			# shape = [B*S, T_, N, 1], shape = [B(1+S), T , N, 1], [B(1+S), T_ , N, 1]
 			separator_in, P_in, argmax_in = self.front
-			self.T_p = tf.shape(separator_in)[1]
+			self.T_max_pooled = tf.shape(separator_in)[1]
 
 			# shape = [ B, T_, N , 1], shape = [ B*(S-1), T_, N , 1]
 			separator_in_mixed = separator_in[0:self.B, :, : , :]
-			separator_in_non_mixed_left_right = separator_in[self.B:, :, : , :]
+			separator_in_added = separator_in[self.B:, :, : , :]
 
 			# shape = [ B, T_, N , 1]
 			P_in = P_in[0:self.B, :, : , :]
@@ -160,15 +174,17 @@ class Adapt:
 
 			argmax_in = tf.tile(argmax_in, [self.S,1,1,1]) 
 			P_in = tf.tile(P_in, [self.S,1,1,1])
+			
 			# shape = [ B, 1, T_, N, 1]
 			separator_in_mixed = tf.expand_dims(separator_in_mixed, 1)
-			shape = [self.B, self.S, self.T_p, self.N, 1] # EXPAND ?
-			separator_in_non_mixed_left_right = tf.reshape(separator_in_non_mixed_left_right, shape)
 
-			# shape = [B , S , T_, N, 1]
-			self.separator_out = separator_in_mixed - separator_in_non_mixed_left_right
+			# shape = [ B*S, 1, T_, N, 1]
+			separator_in_added = tf.reshape(separator_in_added, [self.B, self.S, self.T_max_pooled, self.N, 1])
+
+			# shape = [B*S , 1 , T_, N, 1]
+			self.separator_out = separator_in_mixed - separator_in_added
 			
-			self.separator_out = tf.reshape(self.separator_out, [self.B*self.S, self.T_p, self.N, 1])
+			self.separator_out = tf.reshape(self.separator_out, [self.B*self.S, self.T_max_pooled, self.N, 1])
 			return self.separator_out, P_in, argmax_in
 		else:
 			return None
@@ -209,9 +225,9 @@ class Adapt:
 
 		out = unpooled * P
 
-		out = tf.reshape(out, [self.B, self.S, self.T, self.N])
+		out = tf.reshape(out, [self.B*self.S, 1, self.T, self.N])
 		out = tf.nn.conv2d_transpose(out , filter=self.WC1,
-									 output_shape=[self.B, self.S, self.L, 1],
+									 output_shape=[self.B*self.S, 1, self.L, 1],
 									 strides=[1, 1, 1, 1])
 
 		a =  tf.reshape(out, [self.B, self.S, self.L])
@@ -224,14 +240,13 @@ class Adapt:
 	def cost(self):
 		# Definition of cost for Adapt model
 		# shape = [B*S, T_, N]
-		self.reg = tf.norm(self.X_cost, axis=[1 ,2])
-		self.reg = 0.0001*tf.reduce_mean(self.reg, 0)
+		self.reg = tf.norm(self.X_cost, ord=1, axis=[1 ,2]) # norm 1
+		self.reg = 0.01*tf.reduce_mean(self.reg, 0)
 
 		if self.pretraining:
 			# input_shape = [B, S, L]
-			# Doing l2 norm on L axis
-			self.cost_1 = tf.reduce_sum(tf.pow(tf.reverse(self.X_non_mix, axis=[1]) - self.back, 2), axis=2) / tf.cast(self.L, tf.float32)
-			
+			# Doing l2 norm on L axis : 
+			self.cost_1 = tf.reduce_sum(tf.pow(self.X_non_mix - self.back, 2), axis=2)
 			# shape = [B, S]
 			# Compute mean over the speakers
 			cost = tf.reduce_mean(self.cost_1, 1)
@@ -254,12 +269,12 @@ class Adapt:
 
 	@ops.scope
 	def optimize(self):
-		return tf.train.AdamOptimizer(self.learning_rate).minimize(self.cost)
+		return tf.train.RMSPropOptimizer(self.learning_rate).minimize(self.cost)
 
 	def save(self, step):
 		self.saver.save(self.sess, os.path.join('log_model/', self.runID+"-model.ckpt"))  # , step)
 
-	def train(self, X_mix,X_in, learning_rate, step):
+	def train(self, X_mix, X_in, learning_rate, step):
 		summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_in, self.learning_rate:learning_rate})
 		self.train_writer.add_summary(summary, step)
 		return cost

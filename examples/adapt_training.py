@@ -17,13 +17,13 @@ if __name__ == "__main__":
 
 	Males = H5PY_RW()
 	Males.open_h5_dataset('test_raw.h5py', subset = males_keys(H5_dico))
-	Males.set_chunk(5*7*512)
+	Males.set_chunk(5*9*512)
 	Males.shuffle()
 	print 'Male voices loaded: ', Males.length(), ' items'
 
 	Females = H5PY_RW()
 	Females.open_h5_dataset('test_raw.h5py', subset = females_keys(H5_dico))
-	Females.set_chunk(5*7*512)
+	Females.set_chunk(5*9*512)
 	Females.shuffle()
 	print 'Female voices loaded: ', Females.length(), ' items'
 
@@ -35,14 +35,16 @@ if __name__ == "__main__":
 
 	cost_valid_min = 1e10
 	Mixer.select_split(0)
-	learning_rate = 0.1
+	learning_rate = 0.0005
 	for i in range(config.max_iterations):
+		X_in, X_mix, Ind = Mixer.get_batch(1)
 
 		# X_in = normalize(X_in)
 		# X_mix = normalize(X_mix)
-		X_in, X_mix, Ind = Mixer.get_batch(1)
-		c = adapt_model.train(X_mix, X_in,learning_rate/(10*(i%1000+1)), i)
+		c = adapt_model.train(X_mix, X_in,learning_rate, i)
 		# c = adapt_model.test(X_mix, X_in)
+		# if (i+1)%100==0:
+		# 	learning_rate /= 10
 
 		print 'Step #'  ,i,' ', c 
 
