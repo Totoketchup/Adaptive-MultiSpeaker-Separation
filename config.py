@@ -4,6 +4,7 @@
 
 data_root = 'data/LibriSpeech'
 data_subset = 'dev-clean'
+model_dir = 'log_model'
 
 #########################
 ## AUDIO CONFIGURATION ##

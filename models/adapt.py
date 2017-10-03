@@ -16,22 +16,26 @@ import numpy as np
 import haikunator
 
 
+name = 'AdaptiveNet'
 
 #############################################
 #     Adaptive Front and Back End Model     #
 #############################################
 
 class Adapt:
-	def __init__(self, pretraining=True):
+	def __init__(self, pretraining=True, runID=None):
 		self.N = 256
-		self.max_pool_value = self.N
+		self.max_pool_value = 128
 		self.pretraining = True
 		self.graph = tf.Graph()
+		
 
-
-		# Run ID for tensorboard
-		self.runID = 'AdaptiveNet-' + haikunator.Haikunator().haikunate()
-		print 'ID : {}'.format(self.runID)
+		if runID == None:
+			# Run ID for tensorboard
+			self.runID = name + '-' + haikunator.Haikunator().haikunate()
+			print 'ID : {}'.format(self.runID)
+		else:
+			self.runID = runID
 
 		with self.graph.as_default():
 			# Batch of raw mixed audio - Input data
@@ -50,10 +54,6 @@ class Adapt:
 				self.S = self.shape_non_mix[1]
 				self.L = self.shape_non_mix[2]
 
-				# shape = [ S*B , L ]
-				self.X_non_mix_left = tf.reshape(self.X_non_mix[:, 0:1, :], [self.B, self.L])
-				self.X_non_mix_right  = tf.reduce_sum(self.X_non_mix[:, (self.S-1):self.S , :], axis=[1])
-				
 				# Rolling test		
 				init = tf.concat([tf.slice(self.X_non_mix,[0, self.S-1, 0], [-1, 1, -1]),
 					tf.slice(self.X_non_mix,[0, 0, 0], [-1, self.S-1, -1])], axis=1)	
@@ -62,11 +62,12 @@ class Adapt:
 				cond = lambda i, x: tf.less(i, self.S-1)
 				body = lambda i, x: (i + 1, x + tf.concat([tf.slice(x,[0, self.S-1, 0], [-1, 1, -1]),tf.slice(x,[0, 0, 0], [-1, self.S-1, -1])], axis=1))
 				_, X_added_signal = tf.while_loop(cond, body, i)
+
 				# Shape added signal = [B*S, L]
 				X_added_signal = tf.reshape(X_added_signal, [self.B*self.S, self.L])
 
 				# shape = [ B*(1 + S), L ]
-				self.length = self.B*(self.S+1)
+				self.B_tot = self.B*(self.S+1)
 				self.x = tf.concat([self.X_mix, X_added_signal], axis=0)
 			else:
 				self.x = self.X_mix
@@ -131,7 +132,7 @@ class Adapt:
 		# And N = 256 filters
 		X = tf.nn.conv2d(input_tensor, self.WC1, strides=[1, 1, 1, 1], padding="SAME")
 
-		X = tf.reshape(X, [self.length, -1, self.N, 1])
+		X = tf.reshape(X, [self.B_tot, -1, self.N, 1])
 		self.X_cost = X[:, :, :, 0]
 
 		# X : [ B or self.length , T , N]
@@ -160,17 +161,17 @@ class Adapt:
 		## Signal separator network for testing.
 		## ##
 		if self.pretraining:
-			# shape = [B*S, T_, N, 1], shape = [B(1+S), T , N, 1], [B(1+S), T_ , N, 1]
+			# shape = [B*(S+1), T_, N, 1], shape = [B(1+S), T , N, 1], [B(1+S), T_ , N, 1]
 			separator_in, P_in, argmax_in = self.front
 			self.T_max_pooled = tf.shape(separator_in)[1]
 
-			# shape = [ B, T_, N , 1], shape = [ B*(S-1), T_, N , 1]
-			separator_in_mixed = separator_in[0:self.B, :, : , :]
+			# shape = [ B, T_, N , 1]
+			separator_in_mixed = separator_in[:self.B, :, : , :]
 			separator_in_added = separator_in[self.B:, :, : , :]
 
 			# shape = [ B, T_, N , 1]
-			P_in = P_in[0:self.B, :, : , :]
-			argmax_in = argmax_in[0:self.B, :, : , :]
+			P_in = P_in[:self.B, :, : , :]
+			argmax_in = argmax_in[:self.B, :, : , :]
 
 			argmax_in = tf.tile(argmax_in, [self.S,1,1,1]) 
 			P_in = tf.tile(P_in, [self.S,1,1,1])
@@ -178,7 +179,7 @@ class Adapt:
 			# shape = [ B, 1, T_, N, 1]
 			separator_in_mixed = tf.expand_dims(separator_in_mixed, 1)
 
-			# shape = [ B*S, 1, T_, N, 1]
+			# shape = [ B, S, T_, N, 1]
 			separator_in_added = tf.reshape(separator_in_added, [self.B, self.S, self.T_max_pooled, self.N, 1])
 
 			# shape = [B*S , 1 , T_, N, 1]
@@ -219,6 +220,13 @@ class Adapt:
 	def back_func(self, input_tensor):
 		# Back-End
 		back_input, P, argmax = input_tensor
+
+		# layers = [
+		# 	Dense(self.N, self.N)
+		# ]
+
+		# adj = f_props(layers, tf.reshape(back_input, [-1, self.N]))
+		# back_input = tf.reshape(adj,[self.B*self.S, self.T_max_pooled, self.N, 1])
 
 		# Unpooling (the previous max pooling)
 		unpooled = unpool(back_input, argmax, ksize=[1, self.max_pool_value, 1, 1], scope='unpool')
@@ -273,6 +281,12 @@ class Adapt:
 
 	def save(self, step):
 		self.saver.save(self.sess, os.path.join('log_model/', self.runID+"-model.ckpt"))  # , step)
+
+	@staticmethod
+	def load(runID, pretraining=True):
+		adapt = Adapt(pretraining=pretraining, runID=runID)
+		adapt.saver.restore(adapt.sess, config.model_dir + '/' + name + '-' + runID + "-model.ckpt")
+		return adapt
 
 	def train(self, X_mix, X_in, learning_rate, step):
 		summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_in, self.learning_rate:learning_rate})
