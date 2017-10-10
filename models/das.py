@@ -1,12 +1,13 @@
 # My Model 
 from utils.ops import ops
-from utils.ops.ops import Residual_Net, Conv1D, Reshape, Dense
+from utils.ops.ops import Residual_Net, Conv1D, Reshape, Dense, f_props
 from tensorflow.contrib.tensorboard.plugins import projector
 # from utils.postprocessing.reconstruction import 
 
 import os
 import config
 import tensorflow as tf
+import time 
 
 #############################################
 #       Deep Adaptive Separator Model       #
@@ -14,7 +15,8 @@ import tensorflow as tf
 
 class DAS:
 
-	def __init__(self, S, T, fftsize=config.fftsize//2, E=config.embedding_size, threshold=config.threshold, l=0.2):
+
+	def __init__(self, S, T, fftsize=config.fftsize//2 + 1, E=config.embedding_size, threshold=config.threshold, l=0.2):
 
 		self.F = fftsize    # Freqs size
 		self.E = E          # Embedding size
@@ -28,7 +30,7 @@ class DAS:
 		with self.graph.as_default():
 			# Batch of spectrogram chunks - Input data
 			# shape = [ batch size , chunk size, F ]
-			self.X = tf.placeholder("float", [None, None, self.F])
+			self.X = tf.placeholder("float", [None, None, None])
 
 			# Batch of spectrogram chunks - Input data
 			# shape = [ batch size , samples ]
@@ -46,7 +48,7 @@ class DAS:
 			# currently learning or not
 			self.training = tf.placeholder(tf.bool)
 
-			self.Ws = tf.cast(self.X - threshold > 0, self.X.dtype) * self.X
+			self.Ws = tf.cast(self.X > 0, self.X.dtype) * self.X
 
 			# The centroids used for each speaker
 			# shape = [ #tot_speakers, embedding size]
@@ -93,27 +95,19 @@ class DAS:
 		# DAS network
 
 		shape = tf.shape(self.X)
+		T = shape[1]
+		F = shape[2]
+
 		k = [1, 32, 64, 128]
-		out_dim = k[-1]//(len(k)*len(k))
+		# out_dim = k[-1]//(len(k)*len(k))
+		# F_out = int(self.F/pow(2,2)) + self.F%(self.F/pow(2,2))
 
 		layers = [
-		# Input shape = [B, T, F]
-		Residual_Net([self.T, self.F], self.training, [1, 32, 64, 128], 3),
-		# Output shape = [B, T/4, F/4, 128]
-		Reshape([shape[0],(self.T*self.F)/16, k[-1]]),
-		Conv1D([1, k[-1], 16*self.E]),
-		#Dense(k[-1]/(len(k)*len(k)), self.E),
-		# Output shape = [B, T/4, F/4, 4*E]
+		Residual_Net([T, F], self.training, k, len(k)-1),
+		Reshape([-1, k[-1]]),
+		Dense(k[-1], self.E),
 		Reshape([shape[0], self.T, self.F, self.E])
-		# Output shape = [B, T, F, E]
 		]
-
-		def f_props(layers, x):
-			for i, layer in enumerate(layers):
-				print layer.name
-				x = layer.f_prop(x)
-				print x.shape
-			return x
 
 		y = f_props(layers, tf.expand_dims(self.X,3))
 
@@ -123,7 +117,6 @@ class DAS:
 	def cost(self):
 		# Definition of cost for DAS model
 
-		shape = tf.shape(self.X)
 		# V [B, T, F, E]
 		V = self.prediction
 		V = tf.expand_dims(V, 3)
@@ -143,43 +136,45 @@ class DAS:
 		# Now W [B, T, F, 1, 1]
 
 		prod = tf.reduce_sum(Ws * V * U, 4)
-
 		centroids_cost = tf.nn.l2_loss(tf.matmul(self.speaker_centroids,tf.transpose(self.speaker_centroids)))
-
+		
 		cost = - tf.log(tf.nn.sigmoid(self.Y * prod)) #-  self.l *centroids_cost
-
+		self.tt = V
 		cost = tf.reduce_mean(cost, 3)
 		cost = tf.reduce_mean(cost, 0)
 		cost = tf.reduce_mean(cost)
+
+
+		self.valid_cost = 1.0*cost
 
 		return cost
 
 	@ops.scope
 	def training_cost(self):
-		cost = self.cost
-		tf.summary.scalar('training cost', cost)
-		return cost
+		cost_train = self.cost
+		tf.summary.scalar('training cost', cost_train)
+		return cost_train
 
 	@ops.scope
 	def validation_cost(self):
-		cost = self.cost
-		tf.summary.scalar('validation cost', cost)
-		return cost
+		cost_valid = self.valid_cost
+		tf.summary.scalar('validation cost', cost_valid)
+		return cost_valid
 
 
 	@ops.scope
 	def optimize(self):
-		return tf.train.AdamOptimizer().minimize(self.cost)
+		return tf.train.AdamOptimizer(0.000).minimize(self.cost)
 
 	def train(self, X_train, Y_train, Ind_train, x, step):
-		cost, _, summary = self.sess.run([self.training_cost, self.optimize, self.merged],
+		cost, other,_, summary = self.sess.run([self.training_cost, self.tt, self.optimize, self.merged],
 			{self.X: X_train, self.Y: Y_train, self.Ind:Ind_train, self.X_raw: x, self.training : True})
 		self.train_writer.add_summary(summary, step)
-		return cost
+		return cost, other
 
 
 	def save(self, step):
-		self.saver.save(self.sess, os.path.join('log/', "deep_adaptive_separator_model.ckpt"), step)
+		self.saver.save(self.sess, os.path.join('log/', "deep_adaptive_separator_model.ckpt"))#, step)
 
 	def embeddings(self, X):
 		V = self.sess.run(self.prediction, {self.X: X, self.training: False})

@@ -209,7 +209,8 @@ class Dropout:
         self.train = train
 
     def f_prop(self, x):
-        return tf.cond(self.train, lambda: tf.nn.dropout(x, self.prob), lambda: x)
+        # return tf.cond(self.train, lambda: tf.nn.dropout(x, self.prob), lambda: x)
+        return tf.nn.dropout(x, self.prob, name='dropout_res')
 
 class Reshape:
     def __init__(self, shape, name = 'Reshape'):
@@ -235,21 +236,29 @@ class Abs:
         return tf.abs(x)
 
 
+# class BatchNorm:
+#     def __init__(self, shape, epsilon=np.float32(1e-5)):
+#         self.gamma = tf.Variable(tf.ones(shape, dtype='float32'), validate_shape=False, name='gamma')
+#         self.beta  = tf.Variable(tf.zeros(shape, dtype='float32'), validate_shape=False, name='beta')
+#         self.epsilon = epsilon
+
+#     def f_prop(self, x):
+#         if len(x.get_shape()) == 2:
+#             mean, var = tf.nn.moments(x, axes=0, keepdims=True)
+#             std = tf.sqrt(var + self.epsilon)
+#         elif len(x.get_shape()) == 4:
+#             mean, var = tf.nn.moments(x, axes=(0,1,2), keep_dims=True)
+#             std = tf.sqrt(var + self.epsilon)
+#         normalized_x = (x - mean) / std
+#         print normalized_x
+#         return self.gamma * normalized_x + self.beta
+
 class BatchNorm:
     def __init__(self, shape, epsilon=np.float32(1e-5)):
-        self.gamma = tf.Variable(np.ones(shape, dtype='float32'), name='gamma')
-        self.beta  = tf.Variable(np.zeros(shape, dtype='float32'), name='beta')
-        self.epsilon = epsilon
+        self.shape = shape
 
     def f_prop(self, x):
-        if len(x.get_shape()) == 2:
-            mean, var = tf.nn.moments(x, axes=0, keepdims=True)
-            std = tf.sqrt(var + self.epsilon)
-        elif len(x.get_shape()) == 4:
-            mean, var = tf.nn.moments(x, axes=(0,1,2), keep_dims=True)
-            std = tf.sqrt(var + self.epsilon)
-        normalized_x = (x - mean) / std
-        return self.gamma * normalized_x + self.beta
+        return tf.layers.batch_normalization(x)
 
 class BLSTM:
     def __init__(self, hid_dim, name):
@@ -284,10 +293,15 @@ class Residual:
     def f_prop(self, x):
         o = x;
         for layer in self.layers:
+            print layer
             o = layer.f_prop(o)
 
         if self.downsample:
-            x =  self.conv_op.f_prop(x) # Add the input to the residual learning 
+            x =  self.conv_op # Add the input to the residual learning 
+
+        if(tf.shape(x)[-1] != tf.shape(o)[-1]):
+            x = Conv2D(self.layers[0].filters, (1,1), self.layers[0].strides).f_prop(x)
+
         return o + x;
 
 class Residual_Net:
@@ -298,25 +312,20 @@ class Residual_Net:
         self.name = name
         blocks = []
         filter_shape = (3,3)
-        print input_shape
         for i in range(len(k)-1):
-            strides = (2,2)
-            T = int(self.T/pow(2,i))
-            F = int(self.F/pow(2,i)) + self.F%(self.F/pow(2,i))
-            print 'F ', F
-            print 'T ', T
+            # strides = (2,2)
+            strides = (1,1)
+            T = tf.cast(self.T/pow(2,i), tf.int32)
+            F = tf.cast(self.F/pow(2,i) + self.F%(self.F/pow(2,i)), tf.int32)
             for n in range(N):
                 if i == 0 or n != 0:
                     strides = (1,1)
-                print strides
                 blocks.append([
                     Conv2D(k[i+1], filter_shape, strides),
-                    #Conv((3, 3, k[i+int(n!=0)], k[i+1]), strides=strides), # TxFx1 -> TxFx32
                     BatchNorm((T, F, k[i+1])),
                     Activation(tf.nn.relu),
                     Dropout(0.7, training),
                     Conv2D(k[i+1], filter_shape, (1,1)),
-                    #Conv((3, 3,  k[i+1],  k[i+1])), # TxFx32 -> TxFx32
                     BatchNorm((T, F,  k[i+1])),
                     Activation(tf.nn.relu),
                 ])
@@ -329,6 +338,7 @@ class Residual_Net:
     def f_prop(self, x):
         for layer in self.layers:
             x = layer.f_prop(x)
+        print x
         return x
 
  
@@ -493,10 +503,10 @@ class Conv_LSTM:
             c_tm1 = c_h_tm1[0] # Cell state ct-1
             h_tm1 = c_h_tm1[1] # Output state ht-1
             
-            g_f = tf.nn.sigmoid(op(h_tm1, self.W_f) + op(x, self.W_fin) + self.b_f)
-            i = tf.nn.sigmoid(op(h_tm1, self.W_i) + op(x, self.W_iin) + self.b_i)
-            g_o = tf.nn.sigmoid(op(h_tm1, self.W_o) + op(x, self.W_oin) + self.b_o)
-            g_c = tf.nn.tanh(op(h_tm1, self.W_c) + op(x, self.W_cin) + self.b_c)
+            g_f = tf.nn.sigmoid(self.op(h_tm1, self.W_f) + self.op(x, self.W_fin) + self.b_f)
+            i = tf.nn.sigmoid(self.op(h_tm1, self.W_i) + self.op(x, self.W_iin) + self.b_i)
+            g_o = tf.nn.sigmoid(self.op(h_tm1, self.W_o) + self.op(x, self.W_oin) + self.b_o)
+            g_c = tf.nn.tanh(self.op(h_tm1, self.W_c) + self.op(x, self.W_cin) + self.b_c)
             
             c_t = c_tm1 * g_f + i * g_c
             h_t = tf.nn.tanh(c_t) * g_o
