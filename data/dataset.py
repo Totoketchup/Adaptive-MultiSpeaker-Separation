@@ -91,7 +91,6 @@ class H5PY_RW:
 
 				# Current speaker folder path
 				folder = data_root+'/'+subset+'/'+key
-
 				print_progress(0, len(elements['chapters']), prefix = 'Speaker '+key+' :', suffix = 'Complete')
 
 				# For all the chapters read by this speaker
@@ -287,13 +286,8 @@ class Mixer:
 
 		if self.with_mask:
 			Y_pos = np.argmax(X_non_mix, axis=0)
-
-			Y = np.full((X_non_mix.shape[1], X_non_mix.shape[2], len(self.datasets)), self.mask_negative_value)
-
-			for i, row in enumerate(Y_pos):
-				for j, value in enumerate(row):
-					Y[i, j, value] = self.mask_positive_value 
-
+			Y_pos[Y_pos == 0 ] = self.mask_negative_value
+			Y = np.array([Y_pos, -Y_pos]).transpose((1,2,0))
 			return X_mix, Y, key_d
 
 		if self.with_inputs:
@@ -313,7 +307,7 @@ class Mixer:
 
 		for i in range(batch_size):
 			if self.with_mask:
-				x, y, ind = self.next()
+				x_mix, y, ind = self.next()
 				Y.append(y)
 			elif self.with_inputs:
 				x_non_mix, x_mix, ind = self.next()
