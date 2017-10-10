@@ -1,6 +1,6 @@
 # My Model 
 from utils.ops import ops
-from utils.ops.ops import BLSTM, Conv1D, Reshape, Normalize
+from utils.ops.ops import BLSTM, Conv1D, Reshape, Normalize, f_props
 from tensorflow.contrib.tensorboard.plugins import projector
 # from utils.postprocessing.reconstruction import 
 
@@ -14,55 +14,80 @@ import tensorflow as tf
 
 class DPCL:
 
-	def __init__(self, fftsize=config.fftsize//2+1, E=config.embedding_size, threshold=config.threshold):
+	def __init__(self, fftsize=config.fftsize//2+1, E=config.embedding_size, threshold=config.threshold, graph=None):
 
 		self.F = fftsize    # Freqs size
 		self.E = E          # Embedding size
 		self.threshold = threshold # Threshold for silent weights
 		
-		self.graph = tf.Graph()
+		if graph == None:
+			self.graph = tf.Graph()
+		else:
+			self.graph = graph
 
-		with self.graph.as_default():
-			# Batch of spectrogram chunks - Input data
-			# shape = [ batch size , chunk size, F ]
-			self.X = tf.placeholder("float", [None, None, self.F])
+		# with self.graph.as_default():
+		# Batch of spectrogram chunks - Input data
+		# shape = [ batch size , chunk size, F ]
+		self.X = tf.placeholder("float", [None, None, self.F], name='input_dpcl')
 
-			# Batch of spectrogram chunks - Input data
-			# shape = [ batch size , samples ]
-			self.X_raw = tf.placeholder("float", [None, None])
+		# Batch of spectrogram chunks - Input data
+		# shape = [ batch size , samples ]
+		# self.X_raw = tf.placeholder("float", [None, None], name='input_raw_audio_dpcl')
+		# self.audio_writer = tf.summary.audio(name= "input", tensor = self.X_raw, sample_rate = config.fs)
 
-			# Batch of Masks (bins label)
-			# shape = [ batch size, chunk size, F, #speakers ]
-			self.Y = tf.placeholder("float", [None, None, self.F, None])
+		# Batch of Masks (bins label)
+		# shape = [ batch size, chunk size, F, #speakers ]
+		self.Y = tf.placeholder("float", [None, None, self.F, None], name='input_masks_dpcl')
 
-			self.Ws = tf.cast(self.X - threshold > 0, self.X.dtype) * self.X
+		self.Ws = tf.cast(self.X - threshold > 0, self.X.dtype) * self.X
 
-			self.audio_writer = tf.summary.audio(name= "input", tensor = self.X_raw, sample_rate = config.fs)
-			# Format: tensorflow/tensorboard/plugins/projector/projector_config.proto
-			config_ = projector.ProjectorConfig()
+		# Format: tensorflow/tensorboard/plugins/projector/projector_config.proto
+		config_ = projector.ProjectorConfig()
 
-			# You can add multiple embeddings. Here we add only one.
-			self.embedding = config_.embeddings.add()
+		# You can add multiple embeddings. Here we add only one.
+		self.embedding = config_.embeddings.add()
 
-			self.prediction
-			self.cost
-			self.optimize
+		self.prediction
+		self.cost
+		self.optimize
 
-			self.saver = tf.train.Saver()
-			self.merged = tf.summary.merge_all()
+		self.saver = tf.train.Saver()
+		self.merged = tf.summary.merge_all()
 
-			# Link this tensor to its metadata file (e.g. labels).
+		# Link this tensor to its metadata file (e.g. labels).
 
-			self.train_writer = tf.summary.FileWriter('log/', self.graph)
+		self.train_writer = tf.summary.FileWriter('log/', self.graph)
 
-			# The next line writes a projector_config.pbtxt in the LOG_DIR. TensorBoard will
-			# read this file during startup.
-			projector.visualize_embeddings(self.train_writer, config_)
+		# The next line writes a projector_config.pbtxt in the LOG_DIR. TensorBoard will
+		# read this file during startup.
+		projector.visualize_embeddings(self.train_writer, config_)
 
 
-		# Create a session for this model based on the constructed graph
-		self.sess = tf.Session(graph = self.graph)
+		# # Create a session for this model based on the constructed graph
+		# self.sess = tf.Session(graph = self.graph)
 
+	def __init__(self, input, graph, B, S, F, E=config.embedding_size, threshold=config.threshold):
+
+		self.B = B
+		self.S = S
+		self.F = F    # Freqs size
+		self.E = E          # Embedding size
+		self.threshold = threshold # Threshold for silent weights
+		self.graph = graph
+		self.input = input
+
+
+		self.X = tf.reshape(self.input[:self.B, :, :], [self.B, -1, self.F])
+
+		self.X_non_mix = tf.reshape(self.input[self.B:, :, :, :], [self.B, self.S, -1, self.F])
+		self.X_non_mix = tf.transpose(self.X_non_mix, [0,2,3,1])
+		print self.X_non_mix
+		argmax = tf.argmax(self.X_non_mix, axis=3)
+		print argmax
+		self.Y = tf.one_hot(argmax, 2, 1.0, 0.0)
+		print 'y = ', self.Y
+		self.prediction
+		self.cost
 
 	def init(self):
 		with self.graph.as_default():
@@ -81,20 +106,13 @@ class DPCL:
 		BLSTM(600, 'BLSTM_2'),
 		# Input shape = [B, T, F, 600]
 		Conv1D([1, 600, self.E*self.F]),
-		Reshape([shape[0], shape[1], self.F, self.E]),
+		Reshape([self.B, shape[1], self.F, self.E]),
 		Normalize(3)
 		]
 
-		def f_props(layers, x):
-			for i, layer in enumerate(layers):
-				print layer.name
-				x = layer.f_prop(x)
-				print x.shape
-			return x
-
 		y = f_props(layers, self.X)
 		
-		self.embedding.tensor_name = y.name
+		# self.embedding.tensor_name = y.name
 
 		return y
 
@@ -104,7 +122,7 @@ class DPCL:
 
 		# Get the shape of the input
 		shape = tf.shape(self.Y)
-
+		print self.prediction
 		# Reshape the targets to be of shape (batch, T*F, c) and the vectors to
 		# have shape (batch, T*F, K)
 		Y = tf.reshape(self.Y, [shape[0], shape[1]*shape[2], shape[3]])
@@ -136,13 +154,12 @@ class DPCL:
 		cost = tf.reduce_mean(cost)
 
 		tf.summary.scalar('cost', cost)
-		
 		return cost
 
 
 	@ops.scope
 	def optimize(self):
-		return tf.train.AdamOptimizer().minimize(self.cost)
+		return tf.train.AdamOptimizer(0).minimize(self.cost)
 
 	def train(self, X_train, Y_train, x, step):
 		cost, _, summary = self.sess.run([self.cost, self.optimize, self.merged],

@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
 	cost_valid_min = 1e10
 	Mixer.select_split(0)
-	learning_rate = 0.001
+	learning_rate = 0.005
 
 	for i in range(config.max_iterations):
 		X_in, X_mix, Ind = Mixer.get_batch(1)
