@@ -1,25 +1,22 @@
-import csv
-import config
+import tensorflow as tf
+import numpy as np
 
-subset = {}
-with open('data/LibriSpeech/SPEAKERS.TXT') as csvfile:
-    spamreader = csv.reader(csvfile, delimiter='|')
-    for row in spamreader:
-    	if row[0].startswith(';'):
-    		continue
-    	if row[2].strip() == config.data_subset:
-    		subset[row[0].strip()] = {'sex':row[1].strip()}
+x = tf.constant(np.random.randint(10 , size=(2,3,4,2)))
+shape = tf.shape(x)
+y = tf.argmax(x, axis=3)
 
-for key in subset:
-	subset[key]['chapters'] = [];
+# print tf.ones(y.get_shape())
+# u = tf.scatter_nd(tf.cast(y, tf.int32), tf.ones(y.get_shape()), [24, 2])
+u = tf.one_hot(y, 2, 1.0, -1.0)
 
-with open('data/LibriSpeech/CHAPTERS.TXT') as csvfile:
-    spamreader = csv.reader(csvfile, delimiter='|')
-    for row in spamreader:
-    	if row[0].startswith(';'):
-    		continue
-    	if row[3].strip() == "dev-clean":
-    		subset[row[1].strip()]['chapters'].append(row[0].strip())
+init = tf.global_variables_initializer()
 
-for (key, elements) in subset.items():
-	print(key,'  ',elements)
+with tf.Session() as session:
+    session.run(init)
+    x_, y_, u_ = session.run([x, y, u])
+    print x_
+    print x_.shape
+    print y_
+    print y_.shape
+    print u_
+    print u_.shape

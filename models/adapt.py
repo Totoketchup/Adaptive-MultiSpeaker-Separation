@@ -23,13 +23,14 @@ name = 'AdaptiveNet'
 #############################################
 
 class Adapt:
-	def __init__(self, pretraining=True, runID=None):
+	def __init__(self, pretraining=True, runID=None, separator=None):
 		self.N = 256
 		self.max_pool_value = 128
-		self.l = 0.01
+		self.l = 0.001
 		self.pretraining = pretraining
-		self.graph = tf.Graph()
-		self.sepnet = None #TODO
+		
+		if separator != None:
+			self.sepNet = separator
 		
 
 		if runID == None:
@@ -38,6 +39,9 @@ class Adapt:
 			print 'ID : {}'.format(self.runID)
 		else:
 			self.runID = name + '-' + runID
+
+
+		self.graph = tf.Graph()
 
 		with self.graph.as_default():
 
@@ -52,45 +56,7 @@ class Adapt:
 			self.B = shape_in[0]
 			self.L = shape_in[1]
 
-			if pretraining:
-
-				# Batch of raw non-mixed audio
-				# shape = [ batch size , number of speakers, samples ] = [ B, S, L]
-				self.X_non_mix = tf.placeholder("float", [None, None, None])
-
-				self.shape_non_mix = tf.shape(self.X_non_mix)
-
-				self.S = self.shape_non_mix[1]
-
-				# The following part is doing: (example with 4 elements) 
-				# We have : X_mixed = [a+b+c+d]
-				#
-				# input : X_non_mix = [ a, b, c, d]
-				# output : Y = [b+c+d, a+c+d, a+b+d, a+b+c]
-				# 
-				# With broadcasting at the end of the front end layer, naming F(x) the front end function
-				# We can compute: D = F(X_mix) - F(Y) equivalent to perfect separation for each signal from
-				# the mixed input.
-				# Rolling test	
-				init = tf.concat([tf.slice(self.X_non_mix,[0, self.S-1, 0], [-1, 1, -1]),
-					tf.slice(self.X_non_mix,[0, 0, 0], [-1, self.S-1, -1])], axis=1)	
-
-				i = (tf.constant(1), init)
-				cond = lambda i, x: tf.less(i, self.S-1)
-				body = lambda i, x: (i + 1, x + tf.concat([tf.slice(x,[0, self.S-1, 0], [-1, 1, -1]),tf.slice(x,[0, 0, 0], [-1, self.S-1, -1])], axis=1))
-				_, X_added_signal = tf.while_loop(cond, body, i)
-
-				# Shape added signal = [B*S, L]
-				X_added_signal = tf.reshape(X_added_signal, [self.B*self.S, self.L])
-
-				# shape = [ B*(1 + S), L ]
-				self.B_tot = self.B*(self.S+1)
-				self.x = tf.concat([self.X_mix, X_added_signal], axis=0)
-			else:
-				self.x = self.X_mix
-				self.B_tot = self.B
-
-			# Network Variables:
+						# Network Variables:
 			with tf.name_scope('conv'):
 				self.W = tf.get_variable("W",shape=[1, 1024, 1, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 				variable_summaries(self.W)
@@ -99,21 +65,68 @@ class Adapt:
 				self.filter_size = 4.0
 				self.smoothing_filter = tf.get_variable("smoothing_filter",shape=[1, int(self.filter_size), 1, 1], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 				variable_summaries(self.smoothing_filter)
+			
 
-			self.front
-			self.separator
-			self.back
-			self.cost
-			self.optimize
+			# Batch of raw non-mixed audio
+			# shape = [ batch size , number of speakers, samples ] = [ B, S, L]
+			self.X_non_mix = tf.placeholder("float", [None, None, None])
+			self.shape_non_mix = tf.shape(self.X_non_mix)
+			self.S = self.shape_non_mix[1]
 
-			tf.summary.audio(name= "input/mix", tensor = self.X_mix, sample_rate = config.fs)
 			tf.summary.audio(name= "input/non_mix_1", tensor = self.X_non_mix[:, 0, :], sample_rate = config.fs)
 			tf.summary.audio(name= "input/non_mix_2", tensor = self.X_non_mix[:, 1, :], sample_rate = config.fs)
-			tf.summary.audio(name= "output/separated_1", tensor = self.back[:, 0, :], sample_rate = config.fs)
-			tf.summary.audio(name= "output/separated_2", tensor = self.back[:, 1, :], sample_rate = config.fs)
+			tf.summary.audio(name= "input/mix", tensor = self.X_mix, sample_rate = config.fs)
+
+		
+			# The following part is doing: (example with 4 elements) 
+			# We have : X_mixed = [a+b+c+d]
+			#
+			# input : X_non_mix = [ a, b, c, d]
+			# output : Y = [b+c+d, a+c+d, a+b+d, a+b+c]
+			# 
+			# With broadcasting at the end of the front end layer, naming F(x) the front end function
+			# We can compute: D = F(X_mix) - F(Y) equivalent to perfect separation for each signal from
+			# the mixed input.
+			# Rolling test	
+			init = tf.concat([tf.slice(self.X_non_mix,[0, self.S-1, 0], [-1, 1, -1]),
+				tf.slice(self.X_non_mix,[0, 0, 0], [-1, self.S-1, -1])], axis=1)	
+
+			i = (tf.constant(1), init)
+			cond = lambda i, x: tf.less(i, self.S-1)
+			body = lambda i, x: (i + 1, x + tf.concat([tf.slice(x,[0, self.S-1, 0], [-1, 1, -1]),
+				tf.slice(x,[0, 0, 0], [-1, self.S-1, -1])], axis=1))
+			_, X_added_signal = tf.while_loop(cond, body, i)
+
+			# Shape added signal = [B*S, L]
+			X_added_signal = tf.reshape(X_added_signal, [self.B*self.S, self.L])
+
+			# shape = [ B*(1 + S), L ]
+			self.B_tot = self.B*(self.S+1)
+			self.x = tf.concat([self.X_mix, X_added_signal], axis=0)
+
+			if pretraining:
+				
+				self.front
+				self.separator
+				self.back
+				self.cost
+				self.optimize
+
+				tf.summary.audio(name= "output/separated_1", tensor = self.back[:, 0, :], sample_rate = config.fs)
+				tf.summary.audio(name= "output/separated_2", tensor = self.back[:, 1, :], sample_rate = config.fs)
+
+			else:
+				self.front
+				if separator != None:
+					self.sepNet = separator(self.front[0], self.graph,B=self.B, S=self.S, F=self.N, E=config.embedding_size, threshold=config.threshold)
+				self.separator
+				self.cost
+				self.optimize
+
+
 
 			self.image_spectro = tf.summary.image(name= "spectrogram", tensor = self.front[0])
-			self.saver = tf.train.Saver()
+			self.saver = tf.train.Saver([self.W, self.smoothing_filter])
 			self.merged = tf.summary.merge_all()
 
 			self.train_writer = tf.summary.FileWriter('log/'+self.runID, self.graph)
@@ -170,7 +183,6 @@ class Adapt:
 	@ops.scope
 	def separator(self):
 
-
 		if self.pretraining:
 			######################################
 			##
@@ -206,71 +218,77 @@ class Adapt:
 			return self.separator_out, P_in, argmax_in
 		else:
 			#TODO not finished, have to load a network for the separation task
-			sep_out = self.sepnet.separate(self.front[0])
-			return sep_out, P_in, argmax_in
-
+			return self.sepNet.prediction
 
 	@ops.scope
 	def back(self):
 		# Back-End
-		input_tensor, P, argmax = self.separator
+		if self.pretraining:
+			input_tensor, P, argmax = self.separator
 
-		# layers = [
-		# 	Dense(self.N, self.N)
-		# ]
+			# layers = [
+			# 	Dense(self.N, self.N)
+			# ]
 
-		# adj = f_props(layers, tf.reshape(back_input, [-1, self.N]))
-		# back_input = tf.reshape(adj,[self.B*self.S, self.T_max_pooled, self.N, 1])
+			# adj = f_props(layers, tf.reshape(back_input, [-1, self.N]))
+			# back_input = tf.reshape(adj,[self.B*self.S, self.T_max_pooled, self.N, 1])
 
-		# Unpooling (the previous max pooling)
-		unpooled = unpool(input_tensor, argmax, ksize=[1, self.max_pool_value, 1, 1], scope='unpool')
+			# Unpooling (the previous max pooling)
+			unpooled = unpool(input_tensor, argmax, ksize=[1, self.max_pool_value, 1, 1], scope='unpool')
 
-		output = unpooled * P
+			output = unpooled * P
 
-		output = tf.reshape(output, [self.B*self.S, 1, self.T, self.N])
-		output = tf.nn.conv2d_transpose(output , filter=self.W,
-									 output_shape=[self.B*self.S, 1, self.L, 1],
-									 strides=[1, 1, 1, 1])
+			output = tf.reshape(output, [self.B*self.S, 1, self.T, self.N])
+			output = tf.nn.conv2d_transpose(output , filter=self.W,
+										 output_shape=[self.B*self.S, 1, self.L, 1],
+										 strides=[1, 1, 1, 1])
 
-		return tf.reshape(output, [self.B, self.S, self.L])
+			return tf.reshape(output, [self.B, self.S, self.L])
+		else:
+			return None
 
 	@ops.scope
 	def cost(self):
-		# Definition of cost for Adapt model
+		if self.pretraining:
+			# Definition of cost for Adapt model
 
-		# Regularisation
-		# shape = [ B_tot, T, N]
-		self.reg = tf.norm(self.X_cost, ord=1, axis=[1 ,2]) # norm 1
-		self.reg = self.l*tf.reduce_mean(self.reg, 0) # mean over batches
+			# Regularisation
+			# shape = [ B_tot, T, N]
+			self.reg = tf.norm(self.X_cost, ord=1, axis=[1 ,2]) # norm 1
+			self.reg = self.l*tf.reduce_mean(self.reg, 0) # mean over batches
 
-		# input_shape = [B, S, L]
-		# Doing l2 norm on L axis : 
-		self.cost_1 = tf.reduce_sum(tf.pow(self.X_non_mix - self.back, 2), axis=2)
-		# shape = [B, S]
-		# Compute mean over the speakers
-		cost = tf.reduce_mean(self.cost_1, 1)
+			# input_shape = [B, S, L]
+			# Doing l2 norm on L axis : 
+			self.cost_1 = tf.reduce_sum(tf.pow(self.X_non_mix - self.back, 2), axis=2)
+			# shape = [B, S]
+			# Compute mean over the speakers
+			cost = tf.reduce_mean(self.cost_1, 1)
 
-		# shape = [B]
-		# Compute mean over batches
-		MSE = tf.reduce_mean(cost, 0) 
-		cost = MSE + self.reg
+			# shape = [B]
+			# Compute mean over batches
+			MSE = tf.reduce_mean(cost, 0) 
+			cost = MSE + self.reg
 
-		tf.summary.scalar('MSE loss', MSE)
-		tf.summary.scalar('Regularization', self.reg)
-		tf.summary.scalar('Training cost', cost)
-		return cost
+			tf.summary.scalar('MSE loss', MSE)
+			tf.summary.scalar('Regularization', self.reg)
+			tf.summary.scalar('Training cost', cost)
+			return cost
+		else:
+			return self.sepNet.cost
+
 
 
 	@ops.scope
 	def optimize(self):
-		return tf.train.RMSPropOptimizer(self.learning_rate).minimize(self.cost)
+		return tf.train.AdamOptimizer(self.learning_rate).minimize(self.cost)
 
 	def save(self, step):
 		self.saver.save(self.sess, os.path.join('log_model/', self.runID + "-model.ckpt"))  # , step)
 
 	@staticmethod
-	def load(runID, pretraining=True):
-		adapt = Adapt(pretraining=pretraining, runID=runID)
+	def load(runID, pretraining, separator=None):
+		adapt = Adapt(pretraining=pretraining, runID=None, separator=separator)
+		adapt.init()
 		adapt.saver.restore(adapt.sess, config.model_dir + '/' + name + '-' + runID + "-model.ckpt")
 		return adapt
 
