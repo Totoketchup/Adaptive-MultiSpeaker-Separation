@@ -66,28 +66,23 @@ class DPCL:
 		# # Create a session for this model based on the constructed graph
 		# self.sess = tf.Session(graph = self.graph)
 
-	def __init__(self, input, graph, B, S, F, E=config.embedding_size, threshold=config.threshold):
+	def __init__(self, input_tensor, adapt, E=config.embedding_size, threshold=config.threshold):
 
-		self.B = B
-		self.S = S
-		self.F = F    # Freqs size
-		self.E = E          # Embedding size
+		self.B = adapt.B
+		self.S = adapt.S
+		self.F = adapt.N    # Freqs size
+		self.E = E    # Embedding size
 		self.threshold = threshold # Threshold for silent weights
-		self.graph = graph
-		self.input = input
+		self.graph = adapt.graph
 
+		self.X, self.X_non_mix = input_tensor
+		with tf.name_scope('create_masks'):
+			argmax = tf.argmax(self.X_non_mix, axis=3)
+			self.Y = tf.one_hot(argmax, 2, 1.0, 0.0)
 
-		self.X = tf.reshape(self.input[:self.B, :, :], [self.B, -1, self.F])
-
-		self.X_non_mix = tf.reshape(self.input[self.B:, :, :, :], [self.B, self.S, -1, self.F])
-		self.X_non_mix = tf.transpose(self.X_non_mix, [0,2,3,1])
-		print self.X_non_mix
-		argmax = tf.argmax(self.X_non_mix, axis=3)
-		print argmax
-		self.Y = tf.one_hot(argmax, 2, 1.0, 0.0)
-		print 'y = ', self.Y
 		self.prediction
 		self.cost
+
 
 	def init(self):
 		with self.graph.as_default():
@@ -101,10 +96,8 @@ class DPCL:
 		shape = tf.shape(self.X)
 
 		layers = [
-		# Input shape = [B, T, F]
 		BLSTM(600, 'BLSTM_1'),
 		BLSTM(600, 'BLSTM_2'),
-		# Input shape = [B, T, F, 600]
 		Conv1D([1, 600, self.E*self.F]),
 		Reshape([self.B, shape[1], self.F, self.E]),
 		Normalize(3)

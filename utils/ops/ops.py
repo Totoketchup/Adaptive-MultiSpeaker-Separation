@@ -17,6 +17,15 @@ def scope(function):
         return getattr(self,attribute)
     return decorator
 
+def get_scope_variable(scope_name, var, shape=None, initializer=None):
+    with tf.variable_scope(scope_name) as scope:
+        try:
+            v = tf.get_variable(var, shape, initializer=initializer)
+        except ValueError:
+            scope.reuse_variables()
+            v = tf.get_variable(var)
+    return v
+
 def variable_summaries(var):
     # Attach a lot of summaries to a Tensor (for TensorBoard visualization)
     with tf.name_scope('summaries'):

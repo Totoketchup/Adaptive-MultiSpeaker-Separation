@@ -1,10 +1,13 @@
 ########################
 ## DATA CONFIGURATION ##
 ########################
+import os
 
+workdir = os.path.dirname(__file__)
 data_root = 'data/LibriSpeech'
 data_subset = 'dev-clean'
-model_dir = 'log_model'
+dev_clean_speakers = 40
+log_dir=os.path.join(workdir,'log')
 
 #########################
 ## AUDIO CONFIGURATION ##

@@ -125,7 +125,8 @@ class H5PY_RW:
 			filename: name of h5 file
 			subset: subset of speakers used, default = None (all in the file)
 		"""
-		self.h5 = h5py.File(filename, 'r')
+		path = os.path.join(config.workdir, filename)
+		self.h5 = h5py.File(path, 'r')
 		
 		# Define the the keys for each speaker
 		if subset == None:
@@ -142,6 +143,7 @@ class H5PY_RW:
 		self.raw_items = items
 		self.items = items
 		self.index_item = 0
+		return self
 
 
 	def set_chunk(self, chunk_size):
@@ -159,6 +161,7 @@ class H5PY_RW:
 
 		# Update the items into chunked items
 		self.items = items
+		return self
 
 	def next(self):
 		"""
@@ -224,6 +227,7 @@ class H5PY_RW:
 
 	def shuffle(self):
 		np.random.shuffle(self.items)
+		return self
 
 	def speakers(self):
 		return self.keys
