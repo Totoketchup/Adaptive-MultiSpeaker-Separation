@@ -122,7 +122,7 @@ class Adapt:
 				self.back
 				self.cost
 				self.optimize
-				print 'Ready'
+
 				tf.summary.audio(name= "output/separated_1", tensor = self.back[:, 0, :], sample_rate = config.fs)
 				tf.summary.audio(name= "output/separated_2", tensor = self.back[:, 1, :], sample_rate = config.fs)
 
@@ -130,7 +130,6 @@ class Adapt:
 				self.front
 
 			self.image_spectro = tf.summary.image(name= "spectrogram", tensor = self.front[0])
-			self.saver = tf.train.Saver([self.W, self.smoothing_filter])
 			
 		# Create a session for this model based on the constructed graph
 		config_ = tf.ConfigProto()
@@ -143,11 +142,21 @@ class Adapt:
 		with self.graph.as_default():
 			self.merged = tf.summary.merge_all()
 			self.train_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID), self.graph)
+			self.saver = tf.train.Saver()
+
 		# if self.sepNet != None:
 		# 	config_ = projector.ProjectorConfig()
 		# 	embedding = config_.embeddings.add()
 		# 	embedding.tensor_name = self.sepNet.prediction.name
 		# 	projector.visualize_embeddings(self.train_writer, config_)
+
+
+	def create_saver(self):
+		with self.graph.as_default():
+			self.saver = tf.train.Saver()
+
+	def restore_model(self, folder, runID):
+		self.saver.restore(self.sess, os.path.join(config.log_dir, folder, name+'-'+runID, 'model.ckpt'))
 
 
 	def init(self):
@@ -195,28 +204,28 @@ class Adapt:
 
 	@ops.scope
 	def separator(self):
+		# shape = [B_tot, T_, N, 1], shape = [B(1+S), T , N, 1], [B(1+S), T_ , N, 1]
+		separator_in, P_in, argmax_in = self.front
 
+		# shape = [ B, T_, N , 1]
+		P_in = P_in[:self.B, :, : , :]
+		argmax_in = argmax_in[:self.B, :, : , :]
+
+		argmax_in = tf.tile(argmax_in, [self.S,1,1,1]) 
+		P_in = tf.tile(P_in, [self.S,1,1,1])
+			
 		if self.pretraining:
 			######################################
 			##
 			## Signal separator for pretraining 
 			##
 			######################################
-
-			# shape = [B_tot, T_, N, 1], shape = [B(1+S), T , N, 1], [B(1+S), T_ , N, 1]
-			separator_in, P_in, argmax_in = self.front
+			
 			self.T_max_pooled = tf.shape(separator_in)[1]
 
 			# shape = [ B, T_, N , 1]
 			separator_in_mixed = separator_in[:self.B, :, : , :]
 			separator_in_added = separator_in[self.B:, :, : , :]
-
-			# shape = [ B, T_, N , 1]
-			P_in = P_in[:self.B, :, : , :]
-			argmax_in = argmax_in[:self.B, :, : , :]
-
-			argmax_in = tf.tile(argmax_in, [self.S,1,1,1]) 
-			P_in = tf.tile(P_in, [self.S,1,1,1])
 			
 			# shape = [ B, 1, T_, N, 1]
 			separator_in_mixed = tf.expand_dims(separator_in_mixed, 1)
@@ -230,35 +239,31 @@ class Adapt:
 			self.separator_out = tf.reshape(self.separator_out, [self.B*self.S, self.T_max_pooled, self.N, 1])
 			return self.separator_out, P_in, argmax_in
 		else:
-			return self.sepNet.prediction
+			return self.sepNet.output, P_in, argmax_in
 
 	@ops.scope
 	def back(self):
 		# Back-End
-		if self.pretraining:
-			input_tensor, P, argmax = self.separator
+		input_tensor, P, argmax = self.separator
 
-			# Unpooling (the previous max pooling)
-			unpooled = unpool(input_tensor, argmax, ksize=[1, self.max_pool_value, 1, 1], scope='unpool')
+		# Unpooling (the previous max pooling)
+		unpooled = unpool(input_tensor, argmax, ksize=[1, self.max_pool_value, 1, 1], scope='unpool')
 
-			output = unpooled * P
+		output = unpooled * P
 
-			output = tf.reshape(output, [self.B*self.S, 1, self.T, self.N])
-			output = tf.nn.conv2d_transpose(output , filter=self.W,
-										 output_shape=[self.B*self.S, 1, self.L, 1],
-										 strides=[1, 1, 1, 1])
+		output = tf.reshape(output, [self.B*self.S, 1, self.T, self.N])
+		output = tf.nn.conv2d_transpose(output , filter=self.W,
+									 output_shape=[self.B*self.S, 1, self.L, 1],
+									 strides=[1, 1, 1, 1])
 
-			output = tf.reshape(output, [self.B, self.S, self.L])
+		output = tf.reshape(output, [self.B, self.S, self.L])
 
-			return output
-		else:
-			return None
+		return output
+
 
 	@ops.scope
 	def cost(self):
-		if self.pretraining:
 			# Definition of cost for Adapt model
-
 			# Regularisation
 			# shape = [ B_tot, T, N]
 			self.reg = tf.norm(self.X_cost, ord=1, axis=[1 ,2])#/tf.cast((self.T*self.N), tf.float32) # norm 1
@@ -280,20 +285,16 @@ class Adapt:
 			tf.summary.scalar('regularization', self.reg)
 			tf.summary.scalar('training_cost', cost)
 			return cost
-		else:
-			return self.sepNet.cost
+
 
 
 
 	@ops.scope
 	def optimize(self):
-		if self.pretraining:
-			return tf.train.AdamOptimizer(self.learning_rate).minimize(self.cost)
-		else:
-			if self.trainable_variables == None:
-				self.trainable_variables = tf.global_variables()
-			print self.trainable_variables
-			return tf.train.AdamOptimizer(self.learning_rate).minimize(self.cost, var_list=self.trainable_variables)
+		if hasattr(self, 'trainable_variables') == False:
+			self.trainable_variables = tf.global_variables()
+		print self.trainable_variables
+		return tf.train.AdamOptimizer(self.learning_rate).minimize(self.cost, var_list=self.trainable_variables)
 
 
 	def save(self, step):
@@ -319,8 +320,9 @@ class Adapt:
 			X_non_mix = tf.transpose(X_non_mix, [0,2,3,1])
 
 		self.sepNet = separator_class((X, X_non_mix), self)
-		self.separator
-		self.cost
+
+	def connect_back(self):
+		self.back
 
 	def freeze_front(self):
 		training_var = tf.trainable_variables()
