@@ -11,7 +11,7 @@ from  sklearn.datasets import make_blobs
 
 class KMeans:
 
-	def __init__(self, nb_clusters, nb_iterations=50, graph=None, input_tensor=None):
+	def __init__(self, nb_clusters, centroids_init=None, nb_iterations=50, graph=None, input_tensor=None):
 
 		self.nb_clusters = nb_clusters
 		self.nb_iterations = nb_iterations
@@ -32,11 +32,15 @@ class KMeans:
 			self.input_dim = tf.shape(self.X)[1]
 			self.B = tf.shape(self.X)[0]
 
-			# Take randomly 'nb_clusters' vectors from X
-			batch_range = tf.tile(tf.reshape(tf.range(self.B, dtype=tf.int32), shape=[self.B, 1, 1]), [1, self.nb_clusters, 1])
-			random = tf.random_uniform([self.B, self.nb_clusters, 1], minval = 0, maxval = self.input_dim - 1, dtype = tf.int32)
-			indices = tf.concat([batch_range, random], axis = 2)
-			self.centroids = tf.gather_nd(self.X, indices)
+			if centroids_init is None:
+				# Take randomly 'nb_clusters' vectors from X
+				batch_range = tf.tile(tf.reshape(tf.range(self.B, dtype=tf.int32), shape=[self.B, 1, 1]), [1, self.nb_clusters, 1])
+				random = tf.random_uniform([self.B, self.nb_clusters, 1], minval = 0, maxval = self.input_dim - 1, dtype = tf.int32)
+				indices = tf.concat([batch_range, random], axis = 2)
+				self.centroids = tf.gather_nd(self.X, indices)
+			else:
+				self.centroids = tf.identity(centroids_init)
+			
 			self.network
 
 		if graph == None and input_tensor == None:
