@@ -17,31 +17,31 @@ class KMeans:
 		self.nb_iterations = nb_iterations
 
 		if input_tensor == None:
-
 			self.graph = tf.Graph()
+		else:
+			self.graph = tf.get_default_graph()
 
-			with self.graph.as_default():
+		with self.graph.as_default():
+			if input_tensor == None:
 				# Spectrogram, embeddings
 				# shape = [batch, T*F , E ]
 				self.X = tf.placeholder("float", [None, None, None])
-				self.input_dim = tf.shape(self.X)[1]
-				begin = tf.random_uniform([], minval=0, maxval=self.input_dim-self.nb_clusters, dtype=tf.int32)
-				self.centroids = tf.identity(self.X[: , begin:begin+nb_clusters, :])
-				self.network
+			else:
+				self.X = input_tensor
 
-			# Create a session for this model based on the constructed graph
-			self.sess = tf.Session(graph = self.graph)
-
-		else:
-			self.X = input_tensor
 			self.input_dim = tf.shape(self.X)[1]
-			begin = tf.random_uniform([], minval=0, maxval=self.input_dim-self.nb_clusters, dtype=tf.int32)
-			self.centroids = tf.identity(self.X[: , begin:begin+nb_clusters, :])
+			self.B = tf.shape(self.X)[0]
+
+			# Take randomly 'nb_clusters' vectors from X
+			batch_range = tf.tile(tf.reshape(tf.range(self.B, dtype=tf.int32), shape=[self.B, 1, 1]), [1, self.nb_clusters, 1])
+			random = tf.random_uniform([self.B, self.nb_clusters, 1], minval = 0, maxval = self.input_dim - 1, dtype = tf.int32)
+			indices = tf.concat([batch_range, random], axis = 2)
+			self.centroids = tf.gather_nd(self.X, indices)
 			self.network
 
-
-		
-
+		if graph == None and input_tensor == None:
+			# Create a session for this model based on the constructed graph
+			self.sess = tf.Session(graph = self.graph)
 
 
 	def init(self):
@@ -54,7 +54,7 @@ class KMeans:
 
 		i = tf.constant(0)
 		cond = lambda i, m: tf.less(i, self.nb_iterations)
-		_ , self.centroids = tf.while_loop(cond, self.body,[i, self.centroids])
+		_ , self.centroids = tf.while_loop(cond, self.body,[i, self.centroids], shape_invariants=[i.get_shape(), tf.TensorShape([None, None, None])])
 
 		return self.centroids, self.get_labels(self.centroids, self.X)
 
