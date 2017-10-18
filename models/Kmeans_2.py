@@ -5,6 +5,9 @@ import tensorflow as tf
 import numpy as np
 from  sklearn.datasets import make_blobs
 
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
+
 #############################################
 #       Deep Adaptive Separator Model       #
 #############################################
@@ -24,23 +27,25 @@ class KMeans:
 		with self.graph.as_default():
 			if input_tensor == None:
 				# Spectrogram, embeddings
-				# shape = [batch, T*F , E ]
+				# shape = [batch, L , E ]
 				self.X = tf.placeholder("float", [None, None, None])
 			else:
 				self.X = input_tensor
 
-			self.input_dim = tf.shape(self.X)[1]
 			self.B = tf.shape(self.X)[0]
+			self.L = tf.shape(self.X)[1]
+			self.E = tf.shape(self.X)[2]
 
 			if centroids_init is None:
 				# Take randomly 'nb_clusters' vectors from X
 				batch_range = tf.tile(tf.reshape(tf.range(self.B, dtype=tf.int32), shape=[self.B, 1, 1]), [1, self.nb_clusters, 1])
-				random = tf.random_uniform([self.B, self.nb_clusters, 1], minval = 0, maxval = self.input_dim - 1, dtype = tf.int32)
+				random = tf.random_uniform([self.B, self.nb_clusters, 1], minval = 0, maxval = self.L - 1, dtype = tf.int32)
 				indices = tf.concat([batch_range, random], axis = 2)
 				self.centroids = tf.gather_nd(self.X, indices)
 			else:
 				self.centroids = tf.identity(centroids_init)
-			
+
+			self.reshaped_X = tf.reshape(self.X, [self.B*self.L, self.E])
 			self.network
 
 		if graph == None and input_tensor == None:
@@ -66,14 +71,16 @@ class KMeans:
 	def body(self ,i, centroids):
 		with tf.name_scope('iteration'):
 				# Checking the closest clusters
+				# [B, L]
 				labels = self.get_labels(centroids, self.X)
 
-				# Creating the matrix equality [ B , S , TF], equality[: , s, :] = [labels == s](float32)
-				cluster_range = tf.range(0, tf.shape(centroids)[1])
-				equality = tf.map_fn(lambda r: tf.cast(tf.equal(labels, r), tf.float32), cluster_range, dtype=tf.float32)
-				equality = tf.transpose(equality, [1 , 0, 2])
+				elems_tot = (self.X, labels)
+				elems_count = (tf.ones_like(self.X), labels)
 
-				new_centroids = tf.matmul(equality, self.X)/tf.reduce_sum(equality, axis=2, keep_dims=True)
+				total = tf.map_fn(lambda x: tf.unsorted_segment_sum(x[0], x[1], self.nb_clusters), elems_tot, dtype=tf.float32)
+				count = tf.map_fn(lambda x: tf.unsorted_segment_sum(x[0], x[1], self.nb_clusters), elems_count, dtype=tf.float32)				
+				
+				new_centroids = total/count	
 				return [i+1, new_centroids]
 
 
@@ -90,12 +97,7 @@ if __name__ == "__main__":
 	nb_samples = 10000
 	E = 2
 	nb_clusters = 2
-	# X1 = np.random.random_sample((nb_samples/2, E))
-	# X2 = np.random.random_sample((nb_samples/2, E)) + 2
-	# X = np.reshape(np.concatenate((X1,X2), axis=0), (1, nb_samples ,E))
-	# X = np.reshape(np.concatenate((X, X), axis=0), (2, nb_samples ,E))
-	# print X.shape 
-
+	
 	X, y = make_blobs(n_samples=nb_samples, centers=nb_clusters, n_features=E)
 	X = X[np.newaxis,:]
 	y = y[np.newaxis,:]
