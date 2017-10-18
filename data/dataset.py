@@ -125,7 +125,7 @@ class H5PY_RW:
 			filename: name of h5 file
 			subset: subset of speakers used, default = None (all in the file)
 		"""
-		path = os.path.join(config.workdir, filename)
+		path = os.path.join(config.h5py_root, filename)
 		self.h5 = h5py.File(path, 'r')
 		
 		# Define the the keys for each speaker
@@ -326,7 +326,7 @@ class Mixer:
 		if self.with_inputs:
 			return np.array(X_non_mix), np.array(X_mix), np.array(Ind)
 
-		return np.array(X), np.array(Ind)
+		return np.array(X_mix), np.array(Ind)
 
 	def create_labels(self):
 		# Create a set of all the speaker indicies 

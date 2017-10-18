@@ -3,11 +3,25 @@
 ########################
 import os
 
+floydhub = True
+output = 'output' if floydhub else ''
+
 workdir = os.path.dirname(__file__)
+main_output_dir = os.path.join(workdir, output)
+if floydhub:
+	h5py_root = '/h5py_files'
+else:
+	h5py_root = os.path.join(workdir, 'h5py_files')
+log_dir = os.path.join(main_output_dir,'log')
+
+
+###
+## Raw data
+###
+
 data_root = 'data/LibriSpeech'
 data_subset = 'dev-clean'
 dev_clean_speakers = 40
-log_dir=os.path.join(workdir,'log')
 
 #########################
 ## AUDIO CONFIGURATION ##

@@ -55,6 +55,10 @@ class Adapt:
 			# shape = [ batch size , samples ] = [ B , L ]
 			self.X_mix = tf.placeholder("float", [None, None])
 
+			# Speakers indicies used in the mixtures
+			# shape = [ batch size, #speakers]
+			self.Ind = tf.placeholder(tf.int32, [None,None])
+
 			self.learning_rate = tf.placeholder("float")
 			tf.summary.scalar('learning_rate', self.learning_rate)
 
@@ -73,6 +77,8 @@ class Adapt:
 
 
 			self.W = get_scope_variable('conv', "W", shape=[1, 1024, 1, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
+			# self.WT = get_scope_variable('deconv', "WT", shape=[1, 1024, 1, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
+
 			variable_summaries(self.W)
 			self.smoothing_filter = get_scope_variable('smooth', "smoothing_filter", shape=[1, int(self.smooth_size), 1, 1], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 			variable_summaries(self.smoothing_filter)
@@ -306,8 +312,12 @@ class Adapt:
 		adapt.saver.restore(adapt.sess, os.path.join(config.log_dir, folder, name+'-'+runID, 'model.ckpt'))
 		return adapt
 
-	def train(self, X_mix, X_in, learning_rate, step):
-		summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_in, self.learning_rate:learning_rate})
+	def train(self, X_mix, X_in, learning_rate, step, ind_train=None):
+		if ind_train is None:
+			summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_in, self.learning_rate:learning_rate})
+		else:
+			summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_in, self.Ind:ind_train, self.learning_rate:learning_rate})
+
 		self.train_writer.add_summary(summary, step)
 		return cost
 
