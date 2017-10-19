@@ -163,9 +163,10 @@ class DAS:
 		V = tf.expand_dims(V, 3)
 		# Now V [B, T, F, 1, E]
 
-		# U [M, E]
+		# Ind [B, S, 1]
 		Ind = tf.expand_dims(self.Ind, 2)
 
+		# U [S_tot, E]
 		U = tf.gather_nd(self.speaker_centroids, Ind)
 		U = tf.expand_dims(U,1)
 		U = tf.expand_dims(U,1)

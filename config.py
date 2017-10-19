@@ -3,11 +3,11 @@
 ########################
 import os
 
-floydhub = True
+floydhub = False
 output = 'output' if floydhub else ''
 
 workdir = os.path.dirname(__file__)
-main_output_dir = os.path.join(workdir, output)
+main_output_dir = os.path.join(workdir, 'output')
 if floydhub:
 	h5py_root = '/h5py_files'
 else:
