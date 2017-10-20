@@ -157,7 +157,7 @@ class DPCL:
 		separated = tf.reshape(self.X, [self.B, -1, 1])* masks # [B ,TF, S] 
 		separated = tf.reshape(separated, [self.B, -1, self.F, self.S])
 		separated = tf.transpose(separated, [0,3,1,2])
-		separated = tf.reshape(separated, [self.B*tf.shape(separated)[1], -1, self.F, 1])
+		separated = tf.reshape(separated, [self.B*self.S, -1, self.F, 1])
 		print separated
 		return separated
 
