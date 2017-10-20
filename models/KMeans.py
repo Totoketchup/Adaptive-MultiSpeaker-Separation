@@ -1,10 +1,9 @@
 # My Model 
 from utils.ops import ops
-
-import os
 import config
 import tensorflow as tf
 import numpy as np
+from  sklearn.datasets import make_blobs
 
 #############################################
 #       Deep Adaptive Separator Model       #
@@ -12,38 +11,34 @@ import numpy as np
 
 class KMeans:
 
-	def __init__(self, nb_clusters, input_dim, batch_size= config.batch_size, alpha= 5, E=config.embedding_size, threshold= config.threshold):
+	def __init__(self, nb_clusters, alpha= 5, threshold= -1):
 
 		self.nb_clusters = nb_clusters
-		self.input_dim = input_dim
-		self.E = E
 		self.alpha = alpha
 		self.nb_iteration = 10
-		self.batch_size = batch_size
+
 
 		self.graph = tf.Graph()
 
 		with self.graph.as_default():
 			# Spectrogram, embeddings
 			# shape = [batch, T*F , E ]
-			self.X = tf.placeholder("float", [batch_size, self.input_dim, self.E])
+			self.X = tf.placeholder("float", [1, 10000, 2])
 
-			self.Ws = tf.cast(self.X - threshold > 0, self.X.dtype) * self.X
 
-			# Centroids used for each cluster
-			# shape = [ batch, T*F, embedding size]
-			self.centroids = tf.Variable(
-				tf.truncated_normal([batch_size, nb_clusters, E], 
-				stddev=tf.sqrt(2/float(E))),
-				name='centroids')
+			self.Ws = tf.cast(self.X - threshold >= 0, self.X.dtype) * self.X
 
-			self.labels_ = tf.zeros([batch_size, self.input_dim], dtype=tf.int32, name='labels')
+			self.B = tf.shape(self.X)[0]
+			self.L = tf.shape(self.X)[1]
+			self.E = tf.shape(self.X)[2]
 
-			self.assignments = tf.zeros([batch_size, self.input_dim, nb_clusters])
+			# Take randomly 'nb_clusters' vectors from X
+			batch_range = tf.tile(tf.reshape(tf.range(self.B, dtype=tf.int32), shape=[self.B, 1, 1]), [1, self.nb_clusters, 1])
+			random = tf.random_uniform([self.B, self.nb_clusters, 1], minval = 0, maxval = self.L - 1, dtype = tf.int32)
+			indices = tf.concat([batch_range, random], axis = 2)
+			self.centroids = tf.gather_nd(self.X, indices)
 
 			self.network
-
-			self.saver = tf.train.Saver()
 
 		# Create a session for this model based on the constructed graph
 		self.sess = tf.Session(graph = self.graph)
@@ -53,51 +48,63 @@ class KMeans:
 		with self.graph.as_default():
 			self.sess.run(tf.global_variables_initializer())
 
-
 	@ops.scope
 	def network(self):
 
-		# Shape (B, TF, 1, 1)
-		Ws = tf.expand_dims(self.Ws, 2)
+		i = tf.constant(0)
+		cond = lambda i, m: tf.less(i, self.nb_iteration)
+		_ , self.centroids = tf.while_loop(cond, self.body,[i, self.centroids], shape_invariants=[i.get_shape(), tf.TensorShape([None, None, None])])
 
-		# Shape (B, TF, 1, E)
+		return self.centroids, self.get_assignements(self.centroids, self.X)
+
+
+	def body(self ,i, centroids):
+		with tf.name_scope('iteration'):
+				# Checking the closest clusters
+				assignments = self.get_assignements(centroids, self.X)
+				self.test =assignments
+				# Shape (B, L, S ,1)
+
+				X_W = X*self.Ws
+
+				ass_W = tf.matmul(tf.transpose(assignments, [0,2,1]), self.Ws)
+				ass_W_X = tf.matmul(tf.transpose(assignments, [0,2,1]), X_W)
+
+				new_centroids = ass_W_X/ass_W
+				print new_centroids
+				return [i+1, new_centroids]
+
+	def get_assignements(self, centroids, X):
+		centroids = tf.expand_dims(centroids, 1)
 		X = tf.expand_dims(self.X, 2)
-
-		for i in range(self.nb_iteration):
-			# Shape (B, TF, M ,1)
-			self.assignments = tf.expand_dims(self.assignments, 3)
-			# print'Assignment ', self.assignments.shape
-			# Shape (B, 1, M, E)
-			self.centroids = tf.expand_dims(self.centroids, 1)
-			# print ' centroids ', self.centroids.shape
-			diff_norm = -self.alpha*tf.norm((X - self.centroids), axis=3)
-
-			self.assignments = tf.exp(diff_norm)/(tf.expand_dims(tf.reduce_sum(tf.exp(diff_norm), axis=2),axis=2))
-			# print 'Assignment ', self.assignments.shape
-			self.assignments = tf.expand_dims(self.assignments, 3)
-			# print 'Assignment ', self.assignments.shape
-			# print 'Centroids ', self.centroids.shape
-			# print 'X ', self.X.shape
-			# print 'Ws ', self.Ws.shape
-
-			self.centroids = tf.reduce_sum(self.assignments*Ws*X, axis= 1)/tf.reduce_sum(self.assignments*Ws, axis=1)
-
-		return tf.argmax(self.assignments, axis=2)
+		exp_X_cent_dist = tf.exp(-5.0*tf.norm(X - centroids, axis=3))
+		a = exp_X_cent_dist/tf.reduce_sum(exp_X_cent_dist, axis=2, keep_dims=True)
+		print a
+		return a
 
 	def fit(self, X_train):
-		labels, centroids = self.sess.run([self.network, self.centroids], {self.X: X_train})
-		return labels, centroids
+		c, l = self.sess.run(self.network, {self.X: X_train})
+		return c, l
 
+
+from sklearn.cluster import KMeans as km
 
 if __name__ == "__main__":
-	nb_samples = 100000
+	nb_samples = 10000
+	E = 2
+	nb_clusters = 2
+	
+	X, y = make_blobs(n_samples=nb_samples, centers=nb_clusters, n_features=E)
 
-	X1 = np.random.random_sample((nb_samples/2, 2))
-	X2 = np.random.random_sample((nb_samples/2, 2)) + 2
-	X = np.reshape(np.concatenate((X1,X2), axis=0), (1, nb_samples ,2))
-
-	kmean = KMeans(2, nb_samples, batch_size=1, E=2)
+	X_ = X[np.newaxis,:]
+	y = y[np.newaxis,:]
+	print y
+	kmean = KMeans(nb_clusters)
 	kmean.init()
-
-	label, centroids = kmean.fit(X)
+	centroids, labels = kmean.fit(X_)
 	print centroids
+	print np.sum(labels)
+	print y
+
+	kmeans = km(n_clusters=2, random_state=0).fit(X)
+	print kmeans.cluster_centers_
