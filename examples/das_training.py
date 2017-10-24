@@ -1,80 +1,108 @@
-from data.dataset import H5PY_RW, Mixer
-from models.das import DAS
-from data.data_tools import read_data_header, males_keys, females_keys
-from utils.audio import istft_
-
-import config
-import numpy as np
+import os
+import sys
 import tensorflow as tf
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+# Get your datasets
 
-if __name__ == "__main__":
+from data.dataset import H5PY_RW
+from data.data_tools import read_data_header, males_keys, females_keys
 
-	H5_dico = read_data_header()
+file = 'test_raw_16k.h5py'
+H5_dic = read_data_header()
+chunk_size = 512*10
 
-	Males = H5PY_RW()
-	Males.open_h5_dataset('test.h5py', subset = males_keys(H5_dico))
-	Males.set_chunk(config.chunk_size)
-	Males.shuffle()
-	print 'Male voices loaded: ', Males.length(), ' items'
+males = H5PY_RW().open_h5_dataset(file, subset = males_keys(H5_dic)).set_chunk(chunk_size).shuffle()
+fem = H5PY_RW().open_h5_dataset(file, subset = females_keys(H5_dic)).set_chunk(chunk_size).shuffle()
+print 'Data with', len(H5_dic), 'male and female speakers'
 
-	Females = H5PY_RW()
-	Females.open_h5_dataset('test.h5py', subset = females_keys(H5_dico))
-	Females.set_chunk(config.chunk_size)
-	Females.shuffle()
-	print 'Female voices loaded: ', Females.length(), ' items'
 
-	Mixer = Mixer([Males, Females])
-	# Mixer.select_split(2)
-	das_model = DAS(S=len(Mixer.get_labels()), T= config.chunk_size)
-	print 'Model DAS created'
-	das_model.init()
+# Mixing the dataset
 
-	Mixer.select_split(1)
-	#Validation Data
-	X_valid, Y_valid, Ind_valid = Mixer.get_batch(1)
-	X_raw_valid =[]
-	for x in X_valid:
-			_, x_recons = istft_(x.T)
-			X_raw_valid.append(x_recons)
-	# X_valid = X_valid[:,:,:128]
-	# Y_valid = Y_valid[:,:,:128,:]
-	X_valid = np.sqrt(np.abs(X_valid))
-	X_valid = (X_valid - X_valid.min())/(X_valid.max() - X_valid.min())
+from data.dataset import Mixer
 
-	cost_valid_min = 1e10
-	Mixer.select_split(0)
+mixed_data = Mixer([males, fem], with_mask=False, with_inputs=True)
 
-	for i in range(config.max_iterations):
-		print 'Step #' ,i
-		X, Y, Ind = Mixer.get_batch(1)
-		x_mixture =[]
+# Training set selection
+mixed_data.select_split(0)
 
-		for x in X:
-			_, x_recons = istft_(x.T)
-			x_mixture.append(x_recons)
+# Model pretrained loading
 
-		# X = X[:,:,:128]
-		# Y = Y[:,:,:128,:]
+N = 256
+max_pool = 128
+batch_size = 8
+learning_rate = 0.001
 
-		# Scale the model inputs
-		X = np.sqrt(np.abs(X))
-		X = (X - X.min())/(X.max() - X.min())
+config_model = {}
+config_model["type"] = "pretraining"
 
-		das_model.train(X, Y, Ind, x_mixture, i)
+config_model["batch_size"] = batch_size
+config_model["chunk_size"] = chunk_size
 
-		if (i+1) % config.batch_test == 0:
+config_model["N"] = N
+config_model["maxpool"] = max_pool
+config_model["window"] = 1024
 
-			# Cost obtained with the current model on the validation set
-			cost_valid = das_model.valid(X_valid, X_raw_valid, Y_valid, Ind_valid, i)
-			
-			if i%20 == 0: #cost_valid < cost_valid_min:
-				print 'DAS model saved at iteration number ', i,' with cost = ', cost_valid 
-				cost_valid_min = cost_valid
-				das_model.save(i)
-				last_saved = i
+config_model["smooth_size"] = 20
 
-			if i - last_saved > config.stop_iterations:
-				print 'Stop'
-				break
+config_model["alpha"] = learning_rate
+config_model["reg"] = 1e-4
+config_model["beta"] = 0.1
+config_model["rho"] = 0.01
 
-			
+idd = ''.join('-{}={}-'.format(key, val) for key, val in sorted(config_model.items()))
+batch_size = 1
+config_model["batch_size"] = batch_size
+config_model["type"] = "DAS_train_front"
+
+from models.adapt import Adapt
+import config
+
+full_id = 'soft-base-9900'+idd
+
+folder='DAS_train_front'
+model = Adapt(config_model=config_model,pretraining=False)
+model.create_saver()
+
+path = os.path.join(config.workdir, 'floydhub_model', "pretraining")
+# path = os.path.join(config.log_dir, "pretraining")
+model.restore_model(path, full_id)
+
+## Connect DAS model to the front end
+
+from models.das import DAS
+
+with model.graph.as_default():
+	model.connect_front(DAS)
+	model.sepNet.output = model.sepNet.prediction
+	model.cost = model.sepNet.cost
+	model.freeze_front()
+	model.optimize
+	model.tensorboard_init()
+
+from itertools import compress
+with model.graph.as_default():
+	global_vars = tf.global_variables()
+	is_not_initialized = model.sess.run([~(tf.is_variable_initialized(var)) \
+								   for var in global_vars])
+	not_initialized_vars = list(compress(global_vars, is_not_initialized))
+	if len(not_initialized_vars):
+		init = tf.variables_initializer(not_initialized_vars)
+
+
+# Model creation
+
+# Pretraining the model 
+
+nb_iterations = 1000
+
+#initialize the model
+model.sess.run(init)
+
+for i in range(nb_iterations):
+	X_in, X_mix, Ind = mixed_data.get_batch(batch_size)
+	c = model.train(X_mix, X_in,learning_rate, i, ind_train=Ind)
+	print 'Step #'  ,i,' loss=', c 
+
+	if i%20 == 0: #cost_valid < cost_valid_min:
+		print 'DAS model saved at iteration number ', i,' with cost = ', c 
+		model.save(i)
