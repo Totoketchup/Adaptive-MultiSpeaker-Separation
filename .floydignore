@@ -17,3 +17,5 @@ log
 log_model
 *.h5py
 output/*
+log/
+# floydhub_model/
