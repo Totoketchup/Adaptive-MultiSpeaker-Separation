@@ -9,6 +9,7 @@ import os
 import config
 import tensorflow as tf
 import haikunator
+from itertools import compress
 
 
 name = 'AdaptiveNet'
@@ -152,6 +153,34 @@ class Adapt:
 		with self.graph.as_default():
 			self.sess.run(tf.global_variables_initializer())
  
+	def non_initialized_variables(self):
+		with self.graph.as_default():
+			global_vars = tf.global_variables()
+			is_not_initialized = self.sess.run([~(tf.is_variable_initialized(var)) \
+										   for var in global_vars])
+			not_initialized_vars = list(compress(global_vars, is_not_initialized))
+			if len(not_initialized_vars):
+				init = tf.variables_initializer(not_initialized_vars)
+				return init
+
+	def connect_only_front_to_separator(self, separator, freeze_front=True):
+		with self.graph.as_default():
+			self.connect_front(separator)
+			self.sepNet.output = self.sepNet.prediction
+			self.cost = self.sepNet.cost
+			if freeze_front:
+				self.freeze_front()
+			self.optimize
+			self.tensorboard_init()
+
+	def connect_front_back_to_separator(self, separator):
+		with self.graph.as_default():
+			self.connect_front(separator)
+			self.sepNet.prediction
+			self.sepNet.output = self.sepNet.separate
+			self.separator
+			self.back
+			self.cost
 
 	##
 	## Front End creating STFT like data + P Matrix

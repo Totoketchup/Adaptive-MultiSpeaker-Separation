@@ -4,10 +4,10 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 # Get your datasets
 
 from data.dataset import H5PY_RW
-from data.data_tools import read_data_header, males_keys, females_keys
+from data.data_tools import read_metadata, males_keys, females_keys
 
 file = 'test_raw_16k.h5py'
-H5_dic = read_data_header()
+H5_dic = read_metadata()
 chunk_size = 512*10
 
 males = H5PY_RW().open_h5_dataset(file, subset = males_keys(H5_dic)).set_chunk(chunk_size).shuffle()

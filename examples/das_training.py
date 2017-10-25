@@ -67,26 +67,12 @@ path = os.path.join(config.workdir, 'floydhub_model', "pretraining")
 # path = os.path.join(config.log_dir, "pretraining")
 model.restore_model(path, full_id)
 
-## Connect DAS model to the front end
 
 from models.das import DAS
 
-with model.graph.as_default():
-	model.connect_front(DAS)
-	model.sepNet.output = model.sepNet.prediction
-	model.cost = model.sepNet.cost
-	model.freeze_front()
-	model.optimize
-	model.tensorboard_init()
+model.connect_only_front_to_separator(DAS)
 
-from itertools import compress
-with model.graph.as_default():
-	global_vars = tf.global_variables()
-	is_not_initialized = model.sess.run([~(tf.is_variable_initialized(var)) \
-								   for var in global_vars])
-	not_initialized_vars = list(compress(global_vars, is_not_initialized))
-	if len(not_initialized_vars):
-		init = tf.variables_initializer(not_initialized_vars)
+init = model.non_initialized_variables()
 
 
 # Model creation

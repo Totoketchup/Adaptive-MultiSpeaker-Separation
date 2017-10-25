@@ -30,10 +30,10 @@ class KMeans:
 				# Spectrogram, embeddings
 				# shape = [batch, L , E ]
 				self.X_in = tf.placeholder("float", [None, None, None])
-				self.b = tf.shape(self.X_in)[0]
 			else:
-				self.X = input_tensor
+				self.X_in = input_tensor
 
+			self.b = tf.shape(self.X_in)[0]
 			self.X = tf.tile(self.X_in, [self.nb_tries, 1, 1])
 
 			self.B = tf.shape(self.X)[0]
