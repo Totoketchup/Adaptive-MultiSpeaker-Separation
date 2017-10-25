@@ -123,10 +123,12 @@ if __name__ == "__main__":
 	for i in range(TOTAL):	
 		X, y = make_blobs(n_samples=nb_samples, centers=nb_clusters, n_features=E, cluster_std=2.0)
 		X_ = X[np.newaxis,:]
+		X_ = np.concatenate([X_,X_], axis=0)
 		y = y[np.newaxis,:]
 		
 		kmean.init()
 		centroids, labels = kmean.fit(X_)
+		print centroids.shape
 		centroids = np.reshape(centroids, (nb_clusters, E))
 		kmeans = km(n_clusters=nb_clusters, random_state=0, ).fit(X)
 		error = np.sum(np.square(np.sort(centroids,0) - np.sort(kmeans.cluster_centers_,0)))

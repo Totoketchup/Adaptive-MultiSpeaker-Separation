@@ -288,8 +288,7 @@ class Adapt:
 		if ind_train is None:
 			summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_in, self.learning_rate:learning_rate})
 		else:
-			summary, _, cost, test = self.sess.run([self.merged, self.optimize, self.cost, self.graph.get_tensor_by_name("cost/test:0")], {self.X_mix: X_mix, self.X_non_mix:X_in, self.Ind:ind_train, self.learning_rate:learning_rate})
-		print test
+			summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_in, self.Ind:ind_train, self.learning_rate:learning_rate})
 		self.train_writer.add_summary(summary, step)
 		return cost
 

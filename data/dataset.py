@@ -10,10 +10,36 @@ from sets import Set
 from utils.tools import print_progress
 
 class H5PY_RW:
-	def __init__(self):
-		self.current = None
+
+	def __init__(self, filename, subset=None):
+		"""
+		Open a LibriSpeech H5PY file.
+		
+		Inputs:
+			filename: name of h5 file
+			subset: subset of speakers used, default = None (all in the file)
+		"""
+		path = os.path.join(config.h5py_root, filename)
+		self.h5 = h5py.File(path, 'r')
+		
+		# Define the the keys for each speaker
+		if subset == None:
+			self.keys = [key for key in self.h5] # All
+		else:
+			self.keys = subset # Subset of the H5 file
 
 
+		# Define all the items related to each key/speaker
+		items = []
+		for key in self.keys:
+			items += [key + '/' + val  for val in self.h5[key]]
+
+		self.raw_items = items # Original definition of items, never modified
+		self.items = items # current definition of items, modified according to 'chunk' parameter
+		self.index_item = 0 # current index 
+
+
+	@staticmethod
 	def create_h5_dataset(self, output_fn, subset=config.data_subset, data_root=config.data_root):
 		"""
 		Create a H5 file from the LibriSpeech dataset and the subset given:
@@ -28,7 +54,7 @@ class H5PY_RW:
 		# Extract the information about this subset (speakers, chapters)
 		# Dictionary with the following shape: 
 		# {speaker_key: {chapters: [...], sex:'M/F', ... } }
-		speakers_info = data_tools.read_data_header(subset)
+		speakers_info = data_tools.read_metadata(subset)
 
 		with h5py.File(output_fn,'w') as data_file:
 
@@ -66,6 +92,7 @@ class H5PY_RW:
 
 		print 'Dataset for the subset: ' + subset + ' has been built'
 
+	@staticmethod
 	def create_raw_audio_dataset(self, output_fn, subset=config.data_subset, data_root=config.data_root):
 		"""
 		Create a H5 file from the LibriSpeech dataset and the subset given:
@@ -80,7 +107,7 @@ class H5PY_RW:
 		# Extract the information about this subset (speakers, chapters)
 		# Dictionary with the following shape: 
 		# {speaker_key: {chapters: [...], sex:'M/F', ... } }
-		speakers_info = data_tools.read_data_header(subset)
+		speakers_info = data_tools.read_metadata(subset)
 
 		with h5py.File(output_fn,'w') as data_file:
 
@@ -117,34 +144,6 @@ class H5PY_RW:
 
 		print 'Dataset for the subset: ' + subset + ' has been built'
 
-	def open_h5_dataset(self, filename, subset=None):
-		"""
-		Open a LibriSpeech H5PY file.
-		
-		Inputs:
-			filename: name of h5 file
-			subset: subset of speakers used, default = None (all in the file)
-		"""
-		path = os.path.join(config.h5py_root, filename)
-		self.h5 = h5py.File(path, 'r')
-		
-		# Define the the keys for each speaker
-		if subset == None:
-			self.keys = [key for key in self.h5] # All
-		else:
-			self.keys = subset # Subset of the H5 file
-
-
-		# Define all the items related to each key/speaker
-		items = []
-		for key in self.keys:
-			items += [key + '/' + val  for val in self.h5[key]]
-
-		self.raw_items = items
-		self.items = items
-		self.index_item = 0
-		return self
-
 
 	def set_chunk(self, chunk_size):
 		"""
@@ -154,7 +153,11 @@ class H5PY_RW:
 		self.chunk_size = chunk_size
 		items = []
 
-		# Chunk along the first axis (might add a parameter for this , TODO)
+		# Chunk along the first axis
+		# Define items like this:
+		# items = ['speaker_key/audio_file/part_according_to_chunk']
+		# For example, with 3 parts:
+		# items = ['speaker_key/audio_file/0', 'speaker_key/audio_file/1', 'speaker_key/audio_file/2']
 		for item in self.raw_items:
 			L = self.h5[item].shape[0]//chunk_size
 			items += [item +'/' + str(part) for part in range(L)]
@@ -168,19 +171,19 @@ class H5PY_RW:
 		Return next chunked item
 		"""
 		item_path = self.items[self.index_item]
-		split = item_path.split('/')
+		split = item_path.split('/') # [ 'key', 'file', 'part']
 
 		if hasattr(self, 'chunk_size'):
 			# Which part to chunk
 			i = int(split[2])
 
 			# Cut the data according to the chunk
-			item_path = '/'.join(split[:2])
+			item_path = '/'.join(split[:2]) # [key/file]
 			X = self.h5[item_path][i*self.chunk_size : (i+1)*self.chunk_size]
 		else:
 		 	X = self.h5[item_path]
 
-		# Speaker indice
+		# Speaker key
 		key = int(split[0])
 
 		self.index_item+=1
@@ -245,7 +248,7 @@ class Mixer:
 
 	def __init__(self, datasets, with_mask=True, with_inputs=False, splits = [0.8, 0.1, 0.1], mixing_type='add', mask_positive_value=1, mask_negative_value=-1):
 		"""
-		Mix multiple H5PY file reader
+		Mix multiple H5PY file writer/reader (H5PY_RW)
 		Inputs:
 			datasets: array of H5PY reader
 			mixing_type: 'add' (Default), 'mean'
@@ -350,7 +353,3 @@ class Mixer:
 if __name__ == "__main__":
 	H5 = H5PY_RW()
 	H5.create_raw_audio_dataset('test_raw_16k.h5py')
-
-# # for (X, key) in H5:
-# #     continue
-# H5.create_h5_dataset('test2.h5py')
