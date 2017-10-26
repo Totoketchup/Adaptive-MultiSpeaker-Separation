@@ -1,12 +1,14 @@
 # Deep Adaptive Separator - DAS
 
 This repository contains the following Deep Learning architectures for the Multi-Speaker SeparationPproblem:
-- Deep Adaptive Separator - DAS ( Lack the adaptive network )
-- Permutation Invariant Training - PIT ( In construction )
+- Deep Adaptive Separator - DAS
+- Simple Dense Separator
+- L41 Model
 - Deep Clustering V1 - DPCL
 - Deep Clustering V2 - DPCL ( In construction )
-- L41 Model ( In construction )
+- Permutation Invariant Training - PIT ( In construction )
 - Deep Attractive Network - DAN ( In construction )
+
 
 #### Libraries used:
 ```
