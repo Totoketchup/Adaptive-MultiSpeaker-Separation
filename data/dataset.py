@@ -228,7 +228,8 @@ class H5PY_RW:
 		return X, key
 
 
-	def shuffle(self):
+	def shuffle(self, seed=1):
+		np.random.seed(seed)
 		np.random.shuffle(self.items)
 		return self
 
@@ -246,7 +247,7 @@ class H5PY_RW:
 
 class Mixer:
 
-	def __init__(self, datasets, with_mask=True, with_inputs=False, splits = [0.8, 0.1, 0.1], mixing_type='add', mask_positive_value=1, mask_negative_value=-1):
+	def __init__(self, datasets, shuffling=False, with_mask=True, with_inputs=False, splits = [0.8, 0.1, 0.1], mixing_type='add', mask_positive_value=1, mask_negative_value=-1):
 		"""
 		Mix multiple H5PY file writer/reader (H5PY_RW)
 		Inputs:
@@ -266,13 +267,16 @@ class Mixer:
 		self.mask_positive_value = mask_negative_value
 		self.splits = splits
 		self.split_index = 0 # Training split by default
+		if shuffling:
+			self.shuffle()
 
 	def shuffle(self):
-		for dataset in self.datasets:
-			dataset.shuffle()
+		for i, dataset in enumerate(self.datasets):
+			dataset.shuffle(i+1)
 
 	def select_split(self, index):
 		self.split_index = index
+		return self
 
 	def next(self):
 		X_d = []
@@ -295,10 +299,11 @@ class Mixer:
 			Y_pos = np.argmax(X_non_mix, axis=0)
 			Y_pos[Y_pos == 0 ] = self.mask_negative_value
 			Y = np.array([Y_pos, -Y_pos]).transpose((1,2,0))
-			return X_mix, Y, key_d
 
 		if self.with_inputs:
 			return X_non_mix, X_mix, key_d
+		elif self.with_inputs and self.with_mask:
+			return X_mix, Y, key_d, X_non_mix
 		else:
 			return X_mix, key_d
 

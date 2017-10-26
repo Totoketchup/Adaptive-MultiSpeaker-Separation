@@ -1,6 +1,7 @@
 import numpy as np
 import tensorflow as tf
 import functools
+from itertools import compress
 
 
 rng = np.random.RandomState(1234)
@@ -16,6 +17,7 @@ def scope(function):
                 setattr(self,attribute,function(self))
         return getattr(self,attribute)
     return decorator
+
 
 def get_scope_variable(scope_name, var, shape=None, initializer=None):
     with tf.variable_scope(scope_name) as scope:

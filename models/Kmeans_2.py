@@ -20,16 +20,16 @@ class KMeans:
 		self.nb_iterations = nb_iterations
 		self.nb_tries = nb_tries
 
-		if input_tensor == None:
+		if input_tensor is None:
 			self.graph = tf.Graph()
 		else:
 			self.graph = tf.get_default_graph()
 
 		with self.graph.as_default():
-			if input_tensor == None:
+			if input_tensor is None:
 				# Spectrogram, embeddings
 				# shape = [batch, L , E ]
-				self.X_in = tf.placeholder("float", [None, None, None])
+				self.X_in = tf.placeholder("float", [None, None, None], name='Kmeans_input')
 			else:
 				self.X_in = input_tensor
 

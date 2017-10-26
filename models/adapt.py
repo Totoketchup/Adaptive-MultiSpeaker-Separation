@@ -10,6 +10,7 @@ import config
 import tensorflow as tf
 import haikunator
 from itertools import compress
+from tensorflow.python.saved_model import builder as saved_model_builder
 
 
 name = 'AdaptiveNet'
@@ -57,13 +58,15 @@ class Adapt:
 
 			# Batch of raw mixed audio - Input data
 			# shape = [ batch size , samples ] = [ B , L ]
-			self.X_mix = tf.placeholder("float", [None, None])
+			self.X_mix = tf.placeholder("float", [None, None], name='mix_input')
 
 			# Speakers indicies used in the mixtures
 			# shape = [ batch size, #speakers]
-			self.Ind = tf.placeholder(tf.int32, [None,None])
+			self.Ind = tf.placeholder(tf.int32, [None,None], name='indicies')
 
-			self.learning_rate = tf.placeholder("float")
+			self.training = tf.placeholder(tf.bool, name='is_training')
+
+			self.learning_rate = tf.placeholder("float", name='learning_rate')
 			tf.summary.scalar('learning_rate', self.learning_rate)
 
 			shape_in = tf.shape(self.X_mix)
@@ -79,18 +82,24 @@ class Adapt:
 
 			# Batch of raw non-mixed audio
 			# shape = [ batch size , number of speakers, samples ] = [ B, S, L]
-			self.X_non_mix = tf.placeholder("float", [None, None, None])
-			self.shape_non_mix = tf.shape(self.X_non_mix)
-			self.S = self.shape_non_mix[1]
+			self.X_non_mix = tf.placeholder("float", [None, None, None], name='non_mix_input')
+			# self.shape_non_mix = tf.shape(self.X_non_mix)
+			self.S = 2
 
-	
+
 			with tf.name_scope('preprocessing'):
 				if pretraining:
 					self.x = tf.reshape(self.X_non_mix, [self.B*self.S, self.L])
 					self.B_tot = self.B*self.S
 				else:
-					self.x = tf.concat([self.X_mix,  tf.reshape(self.X_non_mix, [self.B*self.S, self.L])], axis=0)
-					self.B_tot = self.B*(self.S+1)
+					self.x = tf.cond(self.training, 
+						lambda: tf.concat([self.X_mix,  tf.reshape(self.X_non_mix, [self.B*self.S, self.L])], axis=0),
+						lambda: self.X_mix
+						)
+					self.B_tot = tf.cond(self.training, 
+						lambda: self.B*(self.S+1),
+						lambda: self.B
+						)
 
 			if pretraining:
 				self.front
@@ -118,14 +127,14 @@ class Adapt:
 				variable_summaries(self.smoothing_filter)
 
 
-			tf.summary.audio(name= "input/", tensor = self.x, sample_rate = config.fs)
+			# tf.summary.audio(name= "input/", tensor = self.x, sample_rate = config.fs)
 
-			# tf.summary.audio(name= "output/separated_1", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs)
+			# # tf.summary.audio(name= "output/separated_1", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs)
 
-			trs = lambda x : tf.transpose(x, [0, 2, 1, 3])
-			tf.summary.image(name= "M", tensor = trs(self.M))
-			tf.summary.image(name= "X_abs", tensor = trs(self.X_abs_sum))
-			tf.summary.image(name= "P", tensor = trs(self.front[1]))
+			# trs = lambda x : tf.transpose(x, [0, 2, 1, 3])
+			# tf.summary.image(name= "M", tensor = trs(self.M))
+			# tf.summary.image(name= "X_abs", tensor = trs(self.X_abs_sum))
+			# tf.summary.image(name= "P", tensor = trs(self.front[1]))
 			# tf.summary.image(name= "unpooled", tensor = trs(self.unpooled))
 			# tf.summary.image(name= "mask", tensor = trs(self.mask))
 			# tf.summary.image(name= "reconstructed", tensor = trs(self.recons))
@@ -147,6 +156,36 @@ class Adapt:
 
 	def restore_model(self, path, runID):
 		self.saver.restore(self.sess, os.path.join(path, name+'-'+runID, 'model.ckpt'))
+
+	def savedModel(self):
+		with self.graph.as_default():
+			path = os.path.join(config.log_dir,self.folder ,self.runID, 'SavedModel')
+			builder = saved_model_builder.SavedModelBuilder(path)
+
+			# Build signatures
+			input_tensor_info = tf.saved_model.utils.build_tensor_info(self.X_mix)
+			output_tensor_info = tf.saved_model.utils.build_tensor_info(self.back)
+
+			signature = tf.saved_model.signature_def_utils.build_signature_def(
+				inputs={
+					'mixed_audio':
+					input_tensor_info
+				},
+				outputs={
+					'unmixed_audio':
+					output_tensor_info
+				}
+				)
+
+
+			builder.add_meta_graph_and_variables(
+				self.sess, ['validating'],
+				signature_def_map={'separate_audio':signature}
+				)
+
+			builder.save()
+			print 'Successfully exported model to %s' % path
+
 
 
 	def init(self):
@@ -255,7 +294,7 @@ class Adapt:
 									 output_shape=[self.B*self.S, 1, self.L, 1],
 									 strides=[1, 1, 1, 1])
 		self.out = output
-		output = tf.reshape(output, [self.B, self.S, self.L])
+		output = tf.reshape(output, [self.B, self.S, self.L], name='back_output')
 
 		return output
 
@@ -294,11 +333,11 @@ class Adapt:
 			self.cost = self.MSE + self.sparse_reg + self.reg
 
 
-			tf.summary.scalar('loss', self.MSE)
-			tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
-			tf.summary.scalar('sparse_reg', self.sparse_reg)
-			tf.summary.scalar('regularization', self.reg)
-			tf.summary.scalar('training_cost', self.cost)
+			# tf.summary.scalar('loss', self.MSE)
+			# tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
+			# tf.summary.scalar('sparse_reg', self.sparse_reg)
+			# tf.summary.scalar('regularization', self.reg)
+			# tf.summary.scalar('training_cost', self.cost)
 
 			return self.cost
 
@@ -313,11 +352,11 @@ class Adapt:
 	def save(self, step):
 		self.saver.save(self.sess, os.path.join(config.log_dir,self.folder ,self.runID, "model.ckpt"))  # , step)
 
-	def train(self, X_mix, X_in, learning_rate, step, ind_train=None):
+	def train(self, X_mix, X_in, learning_rate, step, training=True, ind_train=None):
 		if ind_train is None:
-			summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_in, self.learning_rate:learning_rate})
+			summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_in, self.training:training, self.learning_rate:learning_rate})
 		else:
-			summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_in, self.Ind:ind_train, self.learning_rate:learning_rate})
+			summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_in, self.training:training, self.Ind:ind_train, self.learning_rate:learning_rate})
 		self.train_writer.add_summary(summary, step)
 		return cost
 
@@ -331,12 +370,13 @@ class Adapt:
 	def connect_front(self, separator_class):
 		# Separate Mixed and Non Mixed 'spectrograms'
 		with tf.name_scope('split_front'):
+
 			X = tf.reshape(self.front[0][:self.B, :, :], [self.B, -1, self.N])
 
-			X_non_mix = tf.reshape(self.front[0][self.B:, :, :, :], [self.B, self.S, -1, self.N])
-			X_non_mix = tf.transpose(X_non_mix, [0,2,3,1])
+			X_non_mix = tf.cond(self.training, lambda: tf.transpose(tf.reshape(self.front[0][self.B:, :, :, :], [self.B, self.S, -1, self.N]), [0,2,3,1]), lambda: X)
 
-		self.sepNet = separator_class((X, X_non_mix), self)
+			input = tf.cond(self.training, lambda: (X, X_non_mix), lambda: (X, X),strict=False)
+		self.sepNet = separator_class(input, self)
 
 	def connect_back(self):
 		self.back

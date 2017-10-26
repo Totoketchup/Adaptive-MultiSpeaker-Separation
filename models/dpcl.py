@@ -77,11 +77,13 @@ class DPCL:
 		self.threshold = threshold # Threshold for silent weights
 		self.graph = adapt.graph
 
-		self.X, self.X_non_mix = input_tensor
-		with tf.name_scope('create_masks'):
-			argmax = tf.argmax(self.X_non_mix, axis=3)
-			self.Y = tf.one_hot(argmax, 2, 1.0, 0.0)
 
+		self.X = input_tensor[0]
+		self.X_non_mix = input_tensor[1]
+		with tf.name_scope('create_masks'):
+			self.Y = tf.cond(adapt.training, 
+				lambda: tf.one_hot(tf.argmax(self.X_non_mix, axis=3), 2, 1.0, 0.0), 
+				lambda: tf.constant(1.0))
 
 	def init(self):
 		with self.graph.as_default():
