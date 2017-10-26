@@ -347,8 +347,11 @@ class Adapt:
 	def optimize(self):
 		if hasattr(self, 'trainable_variables') == False:
 			self.trainable_variables = tf.global_variables()
-		return tf.train.RMSPropOptimizer(self.learning_rate).minimize(self.cost, var_list=self.trainable_variables)
-
+		optimizer = tf.train.RMSPropOptimizer(self.learning_rate)
+		gradients, variables = zip(*optimizer.compute_gradients(self.cost))
+		gradients, _ = tf.clip_by_global_norm(gradients, 200.0)
+		optimize = optimizer.apply_gradients(zip(gradients, variables))
+		return optimize
 
 	def save(self, step):
 		self.saver.save(self.sess, os.path.join(config.log_dir,self.folder ,self.runID, "model.ckpt"))  # , step)
