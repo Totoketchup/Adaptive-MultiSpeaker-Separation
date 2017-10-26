@@ -11,6 +11,7 @@ import tensorflow as tf
 import haikunator
 from itertools import compress
 from tensorflow.python.saved_model import builder as saved_model_builder
+from tensorflow.python.client import timeline
 
 
 name = 'AdaptiveNet'
@@ -313,33 +314,33 @@ class Adapt:
 
 	@ops.scope
 	def cost(self):
-			# Definition of cost for Adapt model
-			# Regularisation
-			# shape = [B_tot, T, N]
-			self.sparse_reg= self.beta * tf.reduce_mean(self.kl_div(self.p, self.p_hat))
-			self.reg = self.l * (tf.nn.l2_loss(self.W)) #+tf.nn.l2_loss(self.WT))
-			
-			# input_shape = [B, S, L]
-			# Doing l2 norm on L axis : 
-			self.cost_1 = 0.5 * tf.reduce_sum(tf.pow(self.X_non_mix - self.back, 2), axis=2) / tf.cast(self.L, tf.float32)
+		# Definition of cost for Adapt model
+		# Regularisation
+		# shape = [B_tot, T, N]
+		self.sparse_reg= self.beta * tf.reduce_mean(self.kl_div(self.p, self.p_hat))
+		self.reg = self.l * (tf.nn.l2_loss(self.W)) #+tf.nn.l2_loss(self.WT))
+		
+		# input_shape = [B, S, L]
+		# Doing l2 norm on L axis : 
+		self.cost_1 = 0.5 * tf.reduce_sum(tf.pow(self.X_non_mix - self.back, 2), axis=2) / tf.cast(self.L, tf.float32)
 
-			# shape = [B, S]
-			# Compute mean over the speakers
-			cost = tf.reduce_mean(self.cost_1, 1)
+		# shape = [B, S]
+		# Compute mean over the speakers
+		cost = tf.reduce_mean(self.cost_1, 1)
 
-			# shape = [B]
-			# Compute mean over batches
-			self.MSE = tf.reduce_mean(cost, 0) 
-			self.cost = self.MSE + self.sparse_reg + self.reg
+		# shape = [B]
+		# Compute mean over batches
+		self.MSE = tf.reduce_mean(cost, 0) 
+		self.cost = self.MSE + self.sparse_reg + self.reg
 
 
-			# tf.summary.scalar('loss', self.MSE)
-			# tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
-			# tf.summary.scalar('sparse_reg', self.sparse_reg)
-			# tf.summary.scalar('regularization', self.reg)
-			# tf.summary.scalar('training_cost', self.cost)
+		# tf.summary.scalar('loss', self.MSE)
+		# tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
+		# tf.summary.scalar('sparse_reg', self.sparse_reg)
+		# tf.summary.scalar('regularization', self.reg)
+		# tf.summary.scalar('training_cost', self.cost)
 
-			return self.cost
+		return self.cost
 
 
 	@ops.scope
@@ -352,11 +353,20 @@ class Adapt:
 	def save(self, step):
 		self.saver.save(self.sess, os.path.join(config.log_dir,self.folder ,self.runID, "model.ckpt"))  # , step)
 
+
 	def train(self, X_mix, X_in, learning_rate, step, training=True, ind_train=None):
+		run_metadata = tf.RunMetadata()
+
 		if ind_train is None:
-			summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_in, self.training:training, self.learning_rate:learning_rate})
+			summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_in, self.training:training, self.learning_rate:learning_rate},
+				options=tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE),
+				run_metadata=run_metadata)
+			trace = timeline.Timeline(step_stats=run_metadata.step_stats)
+			trace_file = open('timeline.ctf.json', 'w')
+			trace_file.write(trace.generate_chrome_trace_format())
 		else:
 			summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_in, self.training:training, self.Ind:ind_train, self.learning_rate:learning_rate})
+		
 		self.train_writer.add_summary(summary, step)
 		return cost
 

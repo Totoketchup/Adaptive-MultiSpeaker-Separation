@@ -15,59 +15,6 @@ import tensorflow as tf
 #############################################
 
 class DPCL:
-
-	def __init__(self, fftsize=config.fftsize//2+1, E=config.embedding_size, threshold=config.threshold, graph=None):
-
-		self.F = fftsize    # Freqs size
-		self.E = E          # Embedding size
-		self.threshold = threshold # Threshold for silent weights
-		
-		if graph == None:
-			self.graph = tf.Graph()
-		else:
-			self.graph = graph
-
-		# with self.graph.as_default():
-		# Batch of spectrogram chunks - Input data
-		# shape = [ batch size , chunk size, F ]
-		self.X = tf.placeholder("float", [None, None, self.F], name='input_dpcl')
-
-		# Batch of spectrogram chunks - Input data
-		# shape = [ batch size , samples ]
-		# self.X_raw = tf.placeholder("float", [None, None], name='input_raw_audio_dpcl')
-		# self.audio_writer = tf.summary.audio(name= "input", tensor = self.X_raw, sample_rate = config.fs)
-
-		# Batch of Masks (bins label)
-		# shape = [ batch size, chunk size, F, #speakers ]
-		self.Y = tf.placeholder("float", [None, None, self.F, None], name='input_masks_dpcl')
-
-		self.Ws = tf.cast(self.X - threshold > 0, self.X.dtype) * self.X
-
-		# Format: tensorflow/tensorboard/plugins/projector/projector_config.proto
-		config_ = projector.ProjectorConfig()
-
-		# You can add multiple embeddings. Here we add only one.
-		self.embedding = config_.embeddings.add()
-
-		self.prediction
-		self.cost
-		self.optimize
-
-		self.saver = tf.train.Saver()
-		self.merged = tf.summary.merge_all()
-
-		# Link this tensor to its metadata file (e.g. labels).
-
-		self.train_writer = tf.summary.FileWriter('log/', self.graph)
-
-		# The next line writes a projector_config.pbtxt in the LOG_DIR. TensorBoard will
-		# read this file during startup.
-		projector.visualize_embeddings(self.train_writer, config_)
-
-
-		# # Create a session for this model based on the constructed graph
-		# self.sess = tf.Session(graph = self.graph)
-
 	def __init__(self, input_tensor, adapt, E=config.embedding_size, threshold=config.threshold):
 
 		self.B = adapt.B
