@@ -220,8 +220,8 @@ class Dropout:
         self.train = train
 
     def f_prop(self, x):
-        # return tf.cond(self.train, lambda: tf.nn.dropout(x, self.prob), lambda: x)
-        return tf.nn.dropout(x, self.prob, name='dropout_res')
+        return tf.cond(self.train, lambda: tf.nn.dropout(x, self.prob), lambda: x)
+        # return tf.nn.dropout(x, self.prob, name='dropout_res')
 
 class Reshape:
     def __init__(self, shape, name = 'Reshape'):
@@ -272,9 +272,11 @@ class BatchNorm:
         return tf.layers.batch_normalization(x)
 
 class BLSTM:
-    def __init__(self, hid_dim, name):
+    def __init__(self, hid_dim, name, dropout=False, drop_val=0.2):
         self.hid_dim = hid_dim
         self.name = name
+        self.dropout = dropout
+        self.drop_val = drop_val
 
     def f_prop(self, x):
         forward_input = x
@@ -283,11 +285,15 @@ class BLSTM:
         # Forward pass
         with tf.variable_scope('forward_' + self.name):
             forward_lstm = tf.contrib.rnn.BasicLSTMCell(self.hid_dim//2)
+            if self.dropout:
+                forward_lstm = tf.contrib.rnn.DropoutWrapper(forward_lstm, self.drop_val, self.drop_val, self.drop_val)
             forward_out, _ = tf.nn.dynamic_rnn(forward_lstm, forward_input, dtype=tf.float32)
 
         # backaward pass
         with tf.variable_scope('backward_' + self.name):
             backward_lstm = tf.contrib.rnn.BasicLSTMCell(self.hid_dim//2)
+            if self.dropout:
+                backward_lstm = tf.contrib.rnn.DropoutWrapper(backward_lstm, self.drop_val, self.drop_val, self.drop_val)
             backward_out, _ = tf.nn.dynamic_rnn(backward_lstm, backward_input, dtype=tf.float32)
 
         # Concatenate the RNN outputs and return
