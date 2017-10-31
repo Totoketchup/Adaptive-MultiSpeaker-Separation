@@ -11,8 +11,6 @@ import tensorflow as tf
 import haikunator
 from itertools import compress
 from tensorflow.python.saved_model import builder as saved_model_builder
-from tensorflow.python.client import timeline
-
 
 name = 'AdaptiveNet'
 
@@ -32,7 +30,11 @@ class Adapt:
 		self.smooth_size = 4.0
 		self.p = 0.05
 		self.beta = 1.0
+		self.same_filter = False
 
+		##
+		## Model Configuration 
+		##
 		if config_model != None:
 			self.N = config_model['N']
 			self.max_pool_value = config_model['maxpool']
@@ -42,7 +44,9 @@ class Adapt:
 			self.beta = config_model['beta']
 			self.p = config_model['rho']
 			self.window = config_model['window']
-		
+			self.same_filter = config_model['same_filter']
+			self.optimizer = config_model['optimizer']
+
 		if runID == None:
 			# Run ID for tensorboard
 			self.runID = name + '-' + haikunator.Haikunator().haikunate()
@@ -53,30 +57,22 @@ class Adapt:
 			self.runID = name + '-' + runID
 
 
+
+		#Create a graph for this model
 		self.graph = tf.Graph()
 
 		with self.graph.as_default():
 
-			# Batch of raw mixed audio - Input data
-			# shape = [ batch size , samples ] = [ B , L ]
-			self.X_mix = tf.placeholder("float", [None, None], name='mix_input')
-
-			# Speakers indicies used in the mixtures
-			# shape = [ batch size, #speakers]
-			self.Ind = tf.placeholder(tf.int32, [None,None], name='indicies')
-
+			# Boolean placeholder signaling if the model is in learning/training mode
 			self.training = tf.placeholder(tf.bool, name='is_training')
 
+			# Placeholder for the learning rate
 			self.learning_rate = tf.placeholder("float", name='learning_rate')
-			tf.summary.scalar('learning_rate', self.learning_rate)
-
-			shape_in = tf.shape(self.X_mix)
-			self.B = shape_in[0]
-			self.L = shape_in[1]
 
 			with tf.name_scope('conv'):
 				self.W = get_scope_variable('conv', "W", shape=[1, self.window, 1, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
-				# self.WT = get_scope_variable('deconv', "WT", shape=[1, self.window, 1, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
+				if not self.same_filter:
+					self.WT = get_scope_variable('deconv', "WT", shape=[1, self.window, 1, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 
 			with tf.name_scope('smooth'):
 				self.smoothing_filter = get_scope_variable('smooth', "smoothing_filter", shape=[1, int(self.smooth_size), self.N, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())			
@@ -84,23 +80,38 @@ class Adapt:
 			# Batch of raw non-mixed audio
 			# shape = [ batch size , number of speakers, samples ] = [ B, S, L]
 			self.X_non_mix = tf.placeholder("float", [None, None, None], name='non_mix_input')
-			# self.shape_non_mix = tf.shape(self.X_non_mix)
-			self.S = 2
+			
+			self.S = 2 # 2 speakers used # TODO
 
+			if pretraining:
+				shape_in = tf.shape(self.X_non_mix)
+				self.B = shape_in[0]
+				self.L = shape_in[2]
 
-			with tf.name_scope('preprocessing'):
-				if pretraining:
-					self.x = tf.reshape(self.X_non_mix, [self.B*self.S, self.L])
-					self.B_tot = self.B*self.S
-				else:
-					self.x = tf.cond(self.training, 
-						lambda: tf.concat([self.X_mix,  tf.reshape(self.X_non_mix, [self.B*self.S, self.L])], axis=0),
-						lambda: self.X_mix
-						)
-					self.B_tot = tf.cond(self.training, 
-						lambda: self.B*(self.S+1),
-						lambda: self.B
-						)
+				self.x = tf.reshape(self.X_non_mix, [self.B*self.S, self.L])
+				self.B_tot = self.B*self.S
+			else:
+
+				# Batch of raw mixed audio - Input data
+				# shape = [ batch size , samples ] = [ B , L ]
+				self.X_mix = tf.placeholder("float", [None, None], name='mix_input')
+
+				# Speakers indicies used in the mixtures
+				# shape = [ batch size, #speakers]
+				self.Ind = tf.placeholder(tf.int32, [None,None], name='indicies')
+				shape_in = tf.shape(self.X_mix)
+
+				self.B = shape_in[0]
+				self.L = shape_in[1]
+
+				self.x = tf.cond(self.training, 
+					lambda: tf.concat([self.X_mix,  tf.reshape(self.X_non_mix, [self.B*self.S, self.L])], axis=0),
+					lambda: self.X_mix
+					)
+				self.B_tot = tf.cond(self.training, 
+					lambda: self.B*(self.S+1),
+					lambda: self.B
+					)
 
 			if pretraining:
 				self.front
@@ -121,16 +132,19 @@ class Adapt:
 
 	def tensorboard_init(self):
 		with self.graph.as_default():
+
 			with tf.name_scope('conv'):
 				variable_summaries(self.W)
-				# variable_summaries(self.WT)
+				if not self.same_filter : variable_summaries(self.WT)
+
 			with tf.name_scope('smooth'):
 				variable_summaries(self.smoothing_filter)
 
+			tf.summary.scalar('learning_rate', self.learning_rate)
 
-			# tf.summary.audio(name= "input/", tensor = self.x, sample_rate = config.fs)
+			tf.summary.audio(name= "input/", tensor = self.x, sample_rate = config.fs, max_outputs=2)
 
-			# # tf.summary.audio(name= "output/separated_1", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs)
+			tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back[0:2], [-1, self.L]), sample_rate = config.fs, max_outputs=2)
 
 			# trs = lambda x : tf.transpose(x, [0, 2, 1, 3])
 			# tf.summary.image(name= "M", tensor = trs(self.M))
@@ -139,6 +153,13 @@ class Adapt:
 			# tf.summary.image(name= "unpooled", tensor = trs(self.unpooled))
 			# tf.summary.image(name= "mask", tensor = trs(self.mask))
 			# tf.summary.image(name= "reconstructed", tensor = trs(self.recons))
+
+			with tf.name_scope('loss_values'):
+				tf.summary.scalar('loss', self.MSE)
+				tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
+				tf.summary.scalar('sparse_reg', self.sparse_reg)
+				tf.summary.scalar('regularization', self.reg)
+				tf.summary.scalar('training_cost', self.cost)
 
 			self.merged = tf.summary.merge_all()
 			self.train_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID), self.graph)
@@ -289,9 +310,11 @@ class Adapt:
 		self.unpooled = unpool(input_tensor, argmax, ksize=[1, self.max_pool_value, 1, 1], scope='unpool')
 
 		self.recons = self.unpooled * P
-		# self.recons = self.recons * tf.reshape(self.mask, tf.shape(self.recons))
+
 		output = tf.reshape(self.recons, [self.B*self.S, 1, self.T, self.N])
-		output = tf.nn.conv2d_transpose(output , filter=self.W,
+
+		filter_ = self.W if not self.same_filter else self.WT
+		output = tf.nn.conv2d_transpose(output , filter=filter_,
 									 output_shape=[self.B*self.S, 1, self.L, 1],
 									 strides=[1, 1, 1, 1])
 		self.out = output
@@ -317,7 +340,7 @@ class Adapt:
 		# Definition of cost for Adapt model
 		# Regularisation
 		# shape = [B_tot, T, N]
-		self.sparse_reg= self.beta * tf.reduce_mean(self.kl_div(self.p, self.p_hat))
+		self.sparse_reg = self.beta * tf.reduce_mean(self.kl_div(self.p, self.p_hat))
 		self.reg = self.l * (tf.nn.l2_loss(self.W)) #+tf.nn.l2_loss(self.WT))
 		
 		# input_shape = [B, S, L]
@@ -333,43 +356,39 @@ class Adapt:
 		self.MSE = tf.reduce_mean(cost, 0) 
 		self.cost = self.MSE + self.sparse_reg + self.reg
 
-
-		# tf.summary.scalar('loss', self.MSE)
-		# tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
-		# tf.summary.scalar('sparse_reg', self.sparse_reg)
-		# tf.summary.scalar('regularization', self.reg)
-		# tf.summary.scalar('training_cost', self.cost)
-
 		return self.cost
 
+	def select_optimizer(self,string):
+	    return {
+	        'Adam': tf.train.AdamOptimizer,
+	        'RMS': tf.train.RMSPropOptimizer,
+	    }[string]
 
 	@ops.scope
 	def optimize(self):
 		if hasattr(self, 'trainable_variables') == False:
 			self.trainable_variables = tf.global_variables()
-		optimizer = tf.train.RMSPropOptimizer(self.learning_rate)
+		optimizer = self.select_optimizer(self.optimizer)(self.learning_rate)
 		gradients, variables = zip(*optimizer.compute_gradients(self.cost))
 		gradients, _ = tf.clip_by_global_norm(gradients, 200.0)
 		optimize = optimizer.apply_gradients(zip(gradients, variables))
 		return optimize
 
 	def save(self, step):
-		self.saver.save(self.sess, os.path.join(config.log_dir,self.folder ,self.runID, "model.ckpt"))  # , step)
+		self.saver.save(self.sess, os.path.join(config.log_dir, self.folder ,self.runID, "model.ckpt"))  # , step)
 
 
-	def train(self, X_mix, X_in, learning_rate, step, training=True, ind_train=None):
-		run_metadata = tf.RunMetadata()
-
+	def train(self, X_mix, X_non_mix, learning_rate, step, ind_train=None):
 		if ind_train is None:
-			summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_in, self.training:training, self.learning_rate:learning_rate},
-				options=tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE),
-				run_metadata=run_metadata)
-			trace = timeline.Timeline(step_stats=run_metadata.step_stats)
-			trace_file = open('timeline.ctf.json', 'w')
-			trace_file.write(trace.generate_chrome_trace_format())
+			summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_non_mix, self.training:True, self.learning_rate:learning_rate})
 		else:
-			summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_in, self.training:training, self.Ind:ind_train, self.learning_rate:learning_rate})
+			summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_non_mix, self.training:True, self.Ind:ind_train, self.learning_rate:learning_rate})
 		
+		self.train_writer.add_summary(summary, step)
+		return cost
+
+	def pretrain(self, X_non_mix, learning_rate, step):
+		summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_non_mix:X_non_mix, self.training:True, self.learning_rate:learning_rate})
 		self.train_writer.add_summary(summary, step)
 		return cost
 
