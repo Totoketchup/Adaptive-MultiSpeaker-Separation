@@ -201,22 +201,19 @@ class H5PY_RW:
 		"""
 		if not hasattr(self, 'index_item_split'):
 			self.index_item_split = np.zeros((len(splits),), dtype = np.int32)
-			for i in range(1,len(splits)):
-				self.index_item_split[i] = int(sum(splits[0:i])*len(self.items))
-
 
 		item_path = self.items[self.index_item_split[split_index]]
-		split = item_path.split('/')
+		split_path = item_path.split('/')
 
 		# Speaker indice
-		key = int(split[0])
+		key = int(split_path[0])
 
 		if hasattr(self, 'chunk_size'):
 			# Which part to chunk
-			i = int(split[2])
+			i = int(split_path[2])
 
 			# Cut the data according to the chunk
-			item_path = '/'.join(split[:2])
+			item_path = '/'.join(split_path[:2])
 			X = self.h5[item_path][i*self.chunk_size : (i+1)*self.chunk_size]
 		else:
 		 	X = self.h5[item_path]
@@ -268,7 +265,15 @@ class Mixer:
 		self.splits = splits
 		self.split_index = 0 # Training split by default
 		if shuffling:
-			self.shuffle()
+			self.shuffle(1)
+
+		# Align both dataset:
+		self.size = np.amin([x.length() for x in datasets])
+		for dataset in datasets:
+			# Adjust size to the smallest dataset in order to have 
+			# regular epochs
+			dataset.items = dataset.items[0:self.size]
+		self.splits_size = [int(split_ratio*self.size) for split_ratio in splits]
 
 	def shuffle(self):
 		for i, dataset in enumerate(self.datasets):
@@ -277,6 +282,19 @@ class Mixer:
 	def select_split(self, index):
 		self.split_index = index
 		return self
+
+	def adjust_split_size_to_batchsize(self, batch_size):
+		self.batch_size = batch_size
+		self.size -= self.size%int(batch_size/self.splits[self.split_index])
+		for dataset in self.datasets:
+			# Adjust size to the batchsize for this split
+			dataset.items = dataset.items[0:self.size]
+
+	def selected_split_size(self):
+		return int(self.splits[self.split_index]*self.size)
+
+	def nb_batches(self, batch_size):
+		return int(self.splits[self.split_index]*self.size/batch_size)
 
 	def next(self):
 		X_d = []

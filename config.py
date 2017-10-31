@@ -4,9 +4,8 @@
 import os
 
 
-workdir = os.path.dirname(__file__)
-floydhub = (workdir == '/output') #We are on Floydhub
-
+workdir = os.path.dirname(os.path.abspath(__file__))
+floydhub = (workdir == '/code' or workdir == '/output') #We are on Floydhub
 
 if floydhub:
 	print 'We are on Floydhub'
@@ -15,7 +14,10 @@ else:
 	print 'We are on PC'
 	h5py_root = os.path.join(workdir, 'h5py_files')
 
-log_dir = os.path.join(workdir,'log')
+if floydhub:
+	log_dir = '/output/log'
+else:
+	log_dir = os.path.join(workdir,'log')
 
 
 ###
@@ -30,7 +32,7 @@ dev_clean_speakers = 40
 ## AUDIO CONFIGURATION ##
 #########################
 
-fs = 16000 
+fs = 8000 
 fftsize = 256
 overlap = 2
 window = 'hann'
