@@ -19,6 +19,7 @@ class H5PY_RW:
 			filename: name of h5 file
 			subset: subset of speakers used, default = None (all in the file)
 		"""
+
 		path = os.path.join(config.h5py_root, filename)
 		self.h5 = h5py.File(path, 'r')
 		
@@ -37,6 +38,105 @@ class H5PY_RW:
 		self.raw_items = items # Original definition of items, never modified
 		self.items = items # current definition of items, modified according to 'chunk' parameter
 		self.index_item = 0 # current index 
+
+		self.chunk_size = 0 # If = 0 then no chunk applied, all the audio is used
+
+	def set_chunk(self, chunk_size):
+		"""
+		Define the size of the chunk: each data is chunked with 'chunk_size'
+		"""
+
+		self.chunk_size = chunk_size
+		items = []
+
+		# Chunk along the first axis
+		# Define items like this:
+		# items = ['speaker_key/audio_file/part_according_to_chunk']
+		# For example, with 3 parts:
+		# items = ['speaker_key/audio_file/0', 'speaker_key/audio_file/1', 'speaker_key/audio_file/2']
+		for item in self.raw_items:
+			L = self.h5[item].shape[0]//chunk_size
+			items += [item +'/' + str(part) for part in range(L)]
+
+		# Update the items into chunked items
+		self.items = items
+		return self
+
+	def next(self):
+		"""
+		Return next chunked item
+		"""
+		item_path = self.items[self.index_item]
+		split = item_path.split('/') # [ 'key', 'file', 'part']
+
+		if hasattr(self, 'chunk_size'):
+			# Which part to chunk
+			i = int(split[2])
+
+			# Cut the data according to the chunk
+			item_path = '/'.join(split[:2]) # [key/file]
+			X = self.h5[item_path][i*self.chunk_size : (i+1)*self.chunk_size]
+		else:
+		 	X = self.h5[item_path]
+
+		# Speaker key
+		key = int(split[0])
+
+		self.index_item+=1
+		if self.index_item >= len(self.items):
+			self.index_item = 0
+
+		return X, key
+
+	def next_in_split(self, splits, split_index):
+		"""
+		Return next chunked item in the indicated split
+		Input:
+			splits: ratio of each split (array)
+			index: split index
+		"""
+		if not hasattr(self, 'index_item_split'):
+			self.index_item_split = np.zeros((len(splits),), dtype = np.int32)
+
+		item_path = self.items[self.index_item_split[split_index]]
+		split_path = item_path.split('/')
+
+		# Speaker indice
+		key = int(split_path[0])
+
+		if self.chunk_size !=0:
+			# Which part to chunk
+			i = int(split_path[2])
+
+			# Cut the data according to the chunk
+			item_path = '/'.join(split_path[:2])
+			X = self.h5[item_path][i*self.chunk_size : (i+1)*self.chunk_size]
+		else:
+		 	X = self.h5[item_path][:] # get the full data
+
+		self.index_item_split[split_index]+=1
+		if self.index_item_split[split_index] >= int(sum(splits[0:split_index+1])*len(self.items)):
+			self.index_item_split[split_index] = int(sum(splits[0:split_index])*len(self.items))
+
+		return X, key
+
+
+	def shuffle(self, seed=1):
+		np.random.seed(seed)
+		np.random.shuffle(self.items)
+		return self
+
+	def speakers(self):
+		return self.keys
+
+	def length(self):
+		return len(self.items)
+
+	def __iter__(self):
+		return self
+
+
+
 
 
 	@staticmethod
@@ -145,100 +245,6 @@ class H5PY_RW:
 		print 'Dataset for the subset: ' + subset + ' has been built'
 
 
-	def set_chunk(self, chunk_size):
-		"""
-		Define the size of the chunk: each data is chunked with 'chunk_size'
-		"""
-
-		self.chunk_size = chunk_size
-		items = []
-
-		# Chunk along the first axis
-		# Define items like this:
-		# items = ['speaker_key/audio_file/part_according_to_chunk']
-		# For example, with 3 parts:
-		# items = ['speaker_key/audio_file/0', 'speaker_key/audio_file/1', 'speaker_key/audio_file/2']
-		for item in self.raw_items:
-			L = self.h5[item].shape[0]//chunk_size
-			items += [item +'/' + str(part) for part in range(L)]
-
-		# Update the items into chunked items
-		self.items = items
-		return self
-
-	def next(self):
-		"""
-		Return next chunked item
-		"""
-		item_path = self.items[self.index_item]
-		split = item_path.split('/') # [ 'key', 'file', 'part']
-
-		if hasattr(self, 'chunk_size'):
-			# Which part to chunk
-			i = int(split[2])
-
-			# Cut the data according to the chunk
-			item_path = '/'.join(split[:2]) # [key/file]
-			X = self.h5[item_path][i*self.chunk_size : (i+1)*self.chunk_size]
-		else:
-		 	X = self.h5[item_path]
-
-		# Speaker key
-		key = int(split[0])
-
-		self.index_item+=1
-		if self.index_item >= len(self.items):
-			self.index_item = 0
-
-		return X, key
-
-	def next_in_split(self, splits, split_index):
-		"""
-		Return next chunked item in the indicated split
-		Input:
-			splits: ratio of each split (array)
-			index: split index
-		"""
-		if not hasattr(self, 'index_item_split'):
-			self.index_item_split = np.zeros((len(splits),), dtype = np.int32)
-
-		item_path = self.items[self.index_item_split[split_index]]
-		split_path = item_path.split('/')
-
-		# Speaker indice
-		key = int(split_path[0])
-
-		if hasattr(self, 'chunk_size'):
-			# Which part to chunk
-			i = int(split_path[2])
-
-			# Cut the data according to the chunk
-			item_path = '/'.join(split_path[:2])
-			X = self.h5[item_path][i*self.chunk_size : (i+1)*self.chunk_size]
-		else:
-		 	X = self.h5[item_path]
-
-		self.index_item_split[split_index]+=1
-		if self.index_item_split[split_index] >= int(sum(splits[0:split_index+1])*len(self.items)):
-			self.index_item_split[split_index] = int(sum(splits[0:split_index])*len(self.items))
-
-		return X, key
-
-
-	def shuffle(self, seed=1):
-		np.random.seed(seed)
-		np.random.shuffle(self.items)
-		return self
-
-	def speakers(self):
-		return self.keys
-
-	def length(self):
-		return len(self.items)
-
-	def __iter__(self):
-		return self
-
 
 
 
@@ -264,6 +270,7 @@ class Mixer:
 		self.mask_positive_value = mask_negative_value
 		self.splits = splits
 		self.split_index = 0 # Training split by default
+
 		if shuffling:
 			self.shuffle(1)
 
@@ -304,6 +311,12 @@ class Mixer:
 			X, key = dataset.next_in_split(self.splits, self.split_index)
 			X_d.append(X)
 			key_d.append(key)
+
+		if self.datasets[0].chunk_size == 0: # If there is no chunk but the full data
+			# Adjust the size of each input to the smallest one 
+			lengths = [len(x) for x in X_d]
+			min_ = np.amin(lengths)
+			X_d = [x[:min_] for x in X_d]
 
 		key_d = np.array(key_d)
 		X_non_mix = np.array(X_d)
