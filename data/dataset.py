@@ -62,32 +62,6 @@ class H5PY_RW:
 		self.items = items
 		return self
 
-	def next(self):
-		"""
-		Return next chunked item
-		"""
-		item_path = self.items[self.index_item]
-		split = item_path.split('/') # [ 'key', 'file', 'part']
-
-		if hasattr(self, 'chunk_size'):
-			# Which part to chunk
-			i = int(split[2])
-
-			# Cut the data according to the chunk
-			item_path = '/'.join(split[:2]) # [key/file]
-			X = self.h5[item_path][i*self.chunk_size : (i+1)*self.chunk_size]
-		else:
-		 	X = self.h5[item_path]
-
-		# Speaker key
-		key = int(split[0])
-
-		self.index_item+=1
-		if self.index_item >= len(self.items):
-			self.index_item = 0
-
-		return X, key
-
 	def next_in_split(self, splits, split_index):
 		"""
 		Return next chunked item in the indicated split
@@ -250,7 +224,7 @@ class H5PY_RW:
 
 class Mixer:
 
-	def __init__(self, datasets, shuffling=False, with_mask=True, with_inputs=False, splits = [0.8, 0.1, 0.1], mixing_type='add', mask_positive_value=1, mask_negative_value=-1):
+	def __init__(self, datasets, chunk_size=0, shuffling=False, with_mask=True, with_inputs=False, splits = [0.8, 0.1, 0.1], mixing_type='add', mask_positive_value=1, mask_negative_value=-1):
 		"""
 		Mix multiple H5PY file writer/reader (H5PY_RW)
 		Inputs:
@@ -270,9 +244,14 @@ class Mixer:
 		self.mask_positive_value = mask_negative_value
 		self.splits = splits
 		self.split_index = 0 # Training split by default
+		self.chunk_size = chunk_size
 
 		if shuffling:
 			self.shuffle(1)
+
+		if chunk_size !=0:
+			for dataset in datasets:
+				dataset.set_chunk(chunk_size)
 
 		# Align both dataset:
 		self.size = np.amin([x.length() for x in datasets])
@@ -296,6 +275,7 @@ class Mixer:
 		for dataset in self.datasets:
 			# Adjust size to the batchsize for this split
 			dataset.items = dataset.items[0:self.size]
+		print 'size =' ,self.size
 
 	def selected_split_size(self):
 		return int(self.splits[self.split_index]*self.size)
