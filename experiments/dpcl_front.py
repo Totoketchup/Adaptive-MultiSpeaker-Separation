@@ -4,13 +4,16 @@ from data.dataset import H5PY_RW
 from data.data_tools import read_metadata, males_keys, females_keys
 from data.dataset import Mixer
 from models.adapt import Adapt
+from models.dpcl import DPCL
 from utils.tools import getETA
 import time
 import numpy as np
 import tensorflow as tf
+import config
+import os
 
 H5_dic = read_metadata()
-chunk_size = 512*40
+chunk_size = 512*20
 
 males = H5PY_RW('test_raw.h5py', subset = males_keys(H5_dic))
 fem = H5PY_RW('test_raw.h5py', subset = females_keys(H5_dic))
@@ -23,11 +26,12 @@ mixed_data = Mixer([males, fem], chunk_size= chunk_size, with_mask=False, with_i
 
 
 ####
+#### PREVIOUS MODEL CONFIG
 ####
 
 N = 512
 max_pool = 256
-batch_size = 4
+batch_size = 8
 learning_rate = 0.001
 
 config_model = {}
@@ -51,14 +55,29 @@ config_model["same_filter"] = False
 config_model["optimizer"] = 'Adam'
 
 ####
+#### LOAD PREVIOUS MODEL
 ####
 
-adapt_model = Adapt(config_model=config_model, pretraining=True, folder='pretraining')
-adapt_model.tensorboard_init()
-adapt_model.init()
+idd = ''.join('-{}={}-'.format(key, val) for key, val in sorted(config_model.items()))
+config_model["type"] = "DPCL_train_front"
+
+
+full_id = 'jolly-sound-3162'+idd
+
+folder = 'DPCL_train_front'
+model = Adapt(config_model=config_model, pretraining=False)
+model.create_saver()
+
+path = os.path.join(config.model_root, 'log', 'pretraining')
+model.restore_model(path, full_id)
+
+model.connect_only_front_to_separator(DPCL)
+init = model.non_initialized_variables()
+
+model.sess.run(init)
 
 print 'Total name :' 
-print adapt_model.runID
+print model.runID
 
 # nb_iterations = 500
 mixed_data.adjust_split_size_to_batchsize(batch_size)
@@ -69,9 +88,9 @@ time_spent = [ 0 for _ in range(5)]
 
 for epoch in range(nb_epochs):
 	for b in range(nb_batches):
-		X_non_mix, _, _ = mixed_data.get_batch(batch_size)
+		X_non_mix, X_mix, _ = mixed_data.get_batch(batch_size)
 		t = time.time()
-		c = adapt_model.pretrain(X_non_mix, learning_rate, b)
+		c = model.train(X_mix, X_non_mix, learning_rate, b)
 		t_f = time.time()
 		time_spent = time_spent[1:] +[t_f-t]
 
@@ -80,6 +99,6 @@ for epoch in range(nb_epochs):
 		# print 'length of data =', X_non_mix.shape ,'step ', b+1, mixed_data.datasets[0].index_item_split, mixed_data.selected_split_size(),getETA(sum(time_spent)/float(np.count_nonzero(time_spent)), nb_batches, b, nb_epochs, epoch)
 
 		if b%20 == 0: #cost_valid < cost_valid_min:
-		    print 'DAS model saved at iteration number ', nb_batches*epoch + b,' with cost = ', c 
-		    adapt_model.save(b)
+			print 'DAS model saved at iteration number ', nb_batches*epoch + b,' with cost = ', c 
+			model.save(b)
 
