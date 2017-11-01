@@ -5,3 +5,7 @@ log/
 log_model/
 
 garbage\.py
+
+floydhub_model/
+
+h5py_files/
