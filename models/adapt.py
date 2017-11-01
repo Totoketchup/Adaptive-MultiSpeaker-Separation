@@ -11,7 +11,6 @@ import tensorflow as tf
 import haikunator
 from itertools import compress
 from tensorflow.python.saved_model import builder as saved_model_builder
-
 name = 'AdaptiveNet'
 
 #############################################
@@ -75,7 +74,7 @@ class Adapt:
 					self.WT = get_scope_variable('deconv', "WT", shape=[1, self.window, 1, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 
 			with tf.name_scope('smooth'):
-				self.smoothing_filter = get_scope_variable('smooth', "smoothing_filter", shape=[1, int(self.smooth_size), self.N, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())			
+				self.smoothing_filter = get_scope_variable('smooth', "smoothing_filter", shape=[int(self.smooth_size), 1, 1,1], initializer=tf.contrib.layers.xavier_initializer_conv2d())			
 
 			# Batch of raw non-mixed audio
 			# shape = [ batch size , number of speakers, samples ] = [ B, S, L]
@@ -133,18 +132,18 @@ class Adapt:
 	def tensorboard_init(self):
 		with self.graph.as_default():
 
-			with tf.name_scope('conv'):
-				variable_summaries(self.W)
-				if not self.same_filter : variable_summaries(self.WT)
+			# with tf.name_scope('conv'):
+			# 	variable_summaries(self.W)
+			# 	if not self.same_filter : variable_summaries(self.WT)
 
-			with tf.name_scope('smooth'):
-				variable_summaries(self.smoothing_filter)
+			# with tf.name_scope('smooth'):
+			# 	variable_summaries(self.smoothing_filter)
 
 			tf.summary.scalar('learning_rate', self.learning_rate)
 
 			tf.summary.audio(name= "input/", tensor = self.x, sample_rate = config.fs, max_outputs=2)
 
-			tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back[0:2], [-1, self.L]), sample_rate = config.fs, max_outputs=2)
+			# tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back[0:2], [-1, self.L]), sample_rate = config.fs, max_outputs=2)
 
 			# trs = lambda x : tf.transpose(x, [0, 2, 1, 3])
 			# tf.summary.image(name= "M", tensor = trs(self.M))
@@ -153,13 +152,13 @@ class Adapt:
 			# tf.summary.image(name= "unpooled", tensor = trs(self.unpooled))
 			# tf.summary.image(name= "mask", tensor = trs(self.mask))
 			# tf.summary.image(name= "reconstructed", tensor = trs(self.recons))
-
-			with tf.name_scope('loss_values'):
-				tf.summary.scalar('loss', self.MSE)
-				tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
-				tf.summary.scalar('sparse_reg', self.sparse_reg)
-				tf.summary.scalar('regularization', self.reg)
-				tf.summary.scalar('training_cost', self.cost)
+			if self.pretraining:
+				with tf.name_scope('loss_values'):
+					tf.summary.scalar('loss', self.MSE)
+					tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
+					tf.summary.scalar('sparse_reg', self.sparse_reg)
+					tf.summary.scalar('regularization', self.reg)
+					tf.summary.scalar('training_cost', self.cost)
 
 			self.merged = tf.summary.merge_all()
 			self.train_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID), self.graph)
@@ -255,24 +254,27 @@ class Adapt:
 
 		# 1 Dimensional convolution along T axis with a window length = 1024
 		# And N = 256 filters
-		X = tf.nn.conv2d(input_front, self.W, strides=[1, 1, 1, 1], padding="SAME")
-
-		# X : [ B_tot , T , N, 1]
+		X = tf.nn.conv2d(input_front, self.W, strides=[1, 1, 1, 1], padding="SAME", name='Conv_STFT')
+		
+		X = tf.reshape(X, [self.B_tot, -1, self.N, 1])
+		print X
 		X_abs = tf.abs(X)
-		self.T = tf.shape(X_abs)[2]
+		self.T = tf.shape(X_abs)[1]
+
+		# X_abs = tf.transpose(X_abs, [0,2,1,3])
+
+		# X_abs = 
 
 		# Smoothing the ''STFT-like'' created by the previous OP
-		M = tf.nn.conv2d(X_abs, self.smoothing_filter, strides=[1, 1, 1, 1], padding="SAME")
+		M = tf.nn.conv2d(X_abs, self.smoothing_filter, strides=[1, 1, 1, 1], padding="SAME", name="Smooth_Conv")
 
-		self.X_abs_sum = tf.reshape(X_abs, [self.B_tot, -1, self.N, 1])
-		M = tf.reshape(M, [self.B_tot, -1, self.N, 1])
-		X = tf.reshape(X, [self.B_tot, -1, self.N, 1])
+		# M = tf.reshape(M, [self.B_tot, -1, self.N, 1])
+		# X = tf.reshape(X, [self.B_tot, -1, self.N, 1])
 
 		self.p_hat = tf.reduce_sum(X, axis=[1,2,3])/(tf.cast(self.T*self.N, tf.float32))
 
 		self.M = tf.nn.softplus(M)
 
-		self.mask = tf.cast(self.X_abs_sum - 1e-2 > 0, tf.float32)
 
 		# Matrix for the reconstruction process P = X / M => X = P * M
 		# Equivalent to the STFT phase, keep important information for reconstruction (locality)
@@ -313,7 +315,7 @@ class Adapt:
 
 		output = tf.reshape(self.recons, [self.B*self.S, 1, self.T, self.N])
 
-		filter_ = self.W if not self.same_filter else self.WT
+		filter_ = self.W if self.same_filter else self.WT
 		output = tf.nn.conv2d_transpose(output , filter=filter_,
 									 output_shape=[self.B*self.S, 1, self.L, 1],
 									 strides=[1, 1, 1, 1])
@@ -341,7 +343,7 @@ class Adapt:
 		# Regularisation
 		# shape = [B_tot, T, N]
 		self.sparse_reg = self.beta * tf.reduce_mean(self.kl_div(self.p, self.p_hat))
-		self.reg = self.l * (tf.nn.l2_loss(self.W)) #+tf.nn.l2_loss(self.WT))
+		self.reg = self.l * (tf.nn.l2_loss(self.W)+tf.nn.l2_loss(self.WT))
 		
 		# input_shape = [B, S, L]
 		# Doing l2 norm on L axis : 
@@ -359,10 +361,10 @@ class Adapt:
 		return self.cost
 
 	def select_optimizer(self,string):
-	    return {
-	        'Adam': tf.train.AdamOptimizer,
-	        'RMS': tf.train.RMSPropOptimizer,
-	    }[string]
+		return {
+			'Adam': tf.train.AdamOptimizer,
+			'RMS': tf.train.RMSPropOptimizer,
+		}[string]
 
 	@ops.scope
 	def optimize(self):
@@ -370,7 +372,7 @@ class Adapt:
 			self.trainable_variables = tf.global_variables()
 		optimizer = self.select_optimizer(self.optimizer)(self.learning_rate)
 		gradients, variables = zip(*optimizer.compute_gradients(self.cost))
-		gradients, _ = tf.clip_by_global_norm(gradients, 200.0)
+		# gradients, _ = tf.clip_by_global_norm(gradients, 200.0)
 		optimize = optimizer.apply_gradients(zip(gradients, variables))
 		return optimize
 
@@ -388,8 +390,16 @@ class Adapt:
 		return cost
 
 	def pretrain(self, X_non_mix, learning_rate, step):
-		summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_non_mix:X_non_mix, self.training:True, self.learning_rate:learning_rate})
+		# options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+		# run_metadata = tf.RunMetadata()
+
+		_ ,summary, cost = self.sess.run([self.optimize, self.merged, self.cost], {self.X_non_mix:X_non_mix, self.training:True, self.learning_rate:learning_rate})#,  options=options, run_metadata=run_metadata)
 		self.train_writer.add_summary(summary, step)
+
+		# fetched_timeline = timeline.Timeline(run_metadata.step_stats)
+		# chrome_trace = fetched_timeline.generate_chrome_trace_format()
+		# with open('timeline_01.json', 'w') as f:
+		# 	f.write(chrome_trace)
 		return cost
 
 	def train_no_sum(self, X_mix, X_in, learning_rate, step, ind_train=None):
