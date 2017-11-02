@@ -31,13 +31,13 @@ mixed_data = Mixer([males, fem], chunk_size= chunk_size, with_mask=False, with_i
 
 N = 512
 max_pool = 256
-batch_size = 8
+batch_size = 1
 learning_rate = 0.001
 
 config_model = {}
 config_model["type"] = "DPCL_train_front"
 
-config_model["batch_size"] = batch_size
+config_model["batch_size"] = 8
 config_model["chunk_size"] = chunk_size
 
 config_model["N"] = N
@@ -54,17 +54,19 @@ config_model["rho"] = 0.01
 config_model["same_filter"] = False
 config_model["optimizer"] = 'Adam'
 
-####
-#### LOAD PREVIOUS MODEL
-####
-
 idd = ''.join('-{}={}-'.format(key, val) for key, val in sorted(config_model.items()))
-config_model["type"] = "DPCL_finetuning"
-
-
 full_id = 'green-sound-9629'+idd
 
+####
+#### NEW MODEL CONFIGURATION
+####
+
+config_model["type"] = "DPCL_finetuning"
+config_model["batch_size"] = batch_size
 folder = 'DPCL_finetuning'
+
+
+
 model = Adapt(config_model=config_model, pretraining=False)
 model.create_saver()
 

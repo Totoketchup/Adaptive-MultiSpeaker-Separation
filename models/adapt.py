@@ -2,7 +2,8 @@
 # My Model 
 from utils.ops import ops
 from utils.ops.ops import unpool, variable_summaries, get_scope_variable
-# from tensorflow.contrib.tensorboard.plugins import projector
+from itertools import permutations
+from tensorflow.contrib.tensorboard.plugins import projector
 # from utils.postprocessing.reconstruction import 
 # import matplotlib.pyplot as plt
 import os
@@ -143,7 +144,7 @@ class Adapt:
 
 			tf.summary.audio(name= "input/", tensor = self.x, sample_rate = config.fs, max_outputs=2)
 
-			# tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back[0:2], [-1, self.L]), sample_rate = config.fs, max_outputs=2)
+			tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs)
 
 			# trs = lambda x : tf.transpose(x, [0, 2, 1, 3])
 			# tf.summary.image(name= "M", tensor = trs(self.M))
@@ -152,13 +153,13 @@ class Adapt:
 			# tf.summary.image(name= "unpooled", tensor = trs(self.unpooled))
 			# tf.summary.image(name= "mask", tensor = trs(self.mask))
 			# tf.summary.image(name= "reconstructed", tensor = trs(self.recons))
-			if self.pretraining:
-				with tf.name_scope('loss_values'):
-					tf.summary.scalar('loss', self.MSE)
-					tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
-					tf.summary.scalar('sparse_reg', self.sparse_reg)
-					tf.summary.scalar('regularization', self.reg)
-					tf.summary.scalar('training_cost', self.cost)
+			# if self.pretraining:
+			with tf.name_scope('loss_values'):
+				tf.summary.scalar('loss', self.MSE)
+				tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
+				tf.summary.scalar('sparse_reg', self.sparse_reg)
+				tf.summary.scalar('regularization', self.reg)
+				tf.summary.scalar('training_cost', self.cost)
 
 			self.merged = tf.summary.merge_all()
 			self.train_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID), self.graph)
@@ -347,12 +348,32 @@ class Adapt:
 		
 		# input_shape = [B, S, L]
 		# Doing l2 norm on L axis : 
-		self.cost_1 = 0.5 * tf.reduce_sum(tf.pow(self.X_non_mix - self.back, 2), axis=2) / tf.cast(self.L, tf.float32)
+		if self.pretraining:
+			self.cost_1 = 0.5 * tf.reduce_sum(tf.pow(self.X_non_mix - self.back, 2), axis=2) / tf.cast(self.L, tf.float32)
+			# shape = [B, S]
+			# Compute mean over the speakers
+			cost = tf.reduce_mean(self.cost_1, 1)
+		else:
+			# Compute loss over all possible permutations
+			
+			perms = list(permutations(range(self.S))) # ex with 3: [0, 1, 2], [0, 2 ,1], [1, 0, 2], [1, 2, 0], [2, 1, 0], [2, 0, 1]
+			length_perm = len(perms)
+			perms = tf.reshape(tf.constant(perms), [1, length_perm, self.S, 1])
+			perms = tf.tile(perms, [self.B, 1, 1, 1])
 
-		# shape = [B, S]
-		# Compute mean over the speakers
-		cost = tf.reduce_mean(self.cost_1, 1)
+			batch_range = tf.tile(tf.reshape(tf.range(self.B, dtype=tf.int32), shape=[self.B, 1, 1, 1]), [1, length_perm, self.S, 1])
+			perm_range = tf.tile(tf.reshape(tf.range(length_perm, dtype=tf.int32), shape=[1, length_perm, 1, 1]), [self.B, 1, self.S, 1])
+			indicies = tf.concat([batch_range, perm_range, perms], axis=3)
 
+			# [B, P, S, L]
+			permuted_back = tf.gather_nd(tf.tile(tf.reshape(self.back, [self.B, 1, self.S, self.L]), [1, length_perm, 1, 1]), indicies) # 
+
+			X_nmr = tf.reshape(self.X_non_mix, [self.B, 1, self.S, self.L])
+
+			cost = 0.5 * tf.reduce_sum(tf.pow(X_nmr - permuted_back, 2), axis=3) / tf.cast(self.L, tf.float32)
+			cost = tf.reduce_mean(cost, axis = 2) # Take the mean among speakers
+			cost = tf.reduce_min(cost, axis = 1) # Take the permutation minimizing the cost
+		
 		# shape = [B]
 		# Compute mean over batches
 		self.MSE = tf.reduce_mean(cost, 0) 

@@ -1,7 +1,6 @@
 # My Model 
 from utils.ops import ops
 from utils.ops.ops import BLSTM, Conv1D, Reshape, Normalize, f_props
-from tensorflow.contrib.tensorboard.plugins import projector
 from models.Kmeans_2 import KMeans
 
 # from utils.postprocessing.reconstruction import 
@@ -32,6 +31,7 @@ class DPCL:
 				lambda: tf.one_hot(tf.argmax(self.X_non_mix, axis=3), 2, 1.0, 0.0), 
 				lambda: tf.constant(1.0))
 
+
 	def init(self):
 		with self.graph.as_default():
 			self.sess.run(tf.global_variables_initializer())
@@ -53,8 +53,6 @@ class DPCL:
 
 		y = f_props(layers, self.X)
 		
-		# self.embedding.tensor_name = y.name
-
 		return y
 
 	@ops.scope
@@ -100,10 +98,10 @@ class DPCL:
 	@ops.scope
 	def separate(self):
 		input_kmeans = tf.reshape(self.prediction, [self.B, -1, self.E])
-		kmeans = KMeans(nb_clusters=2, nb_iterations=50, input_tensor=input_kmeans)
+		kmeans = KMeans(nb_clusters=2, nb_iterations=10, input_tensor=input_kmeans)
 		_ , labels = kmeans.network
-		masks = tf.one_hot(labels, 2, 1.0, 0.0)
-		separated = tf.reshape(self.X, [self.B, -1, 1])* masks # [B ,TF, S] 
+		masks = tf.one_hot(labels, 2, 1.0, 0.0, name='masks')
+		separated = tf.reshape(self.X, [self.B, -1, 1]) * masks # [B ,TF, S] 
 		separated = tf.reshape(separated, [self.B, -1, self.F, self.S])
 		separated = tf.transpose(separated, [0,3,1,2])
 		separated = tf.reshape(separated, [self.B*self.S, -1, self.F, 1])
