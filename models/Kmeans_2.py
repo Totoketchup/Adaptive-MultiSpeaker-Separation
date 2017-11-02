@@ -14,7 +14,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 
 class KMeans:
 
-	def __init__(self, nb_clusters, centroids_init=None, nb_tries=10, nb_iterations=10, graph=None, input_tensor=None):
+	def __init__(self, nb_clusters, centroids_init=None, nb_tries=3, nb_iterations=10, graph=None, input_tensor=None):
 
 		self.nb_clusters = nb_clusters
 		self.nb_iterations = nb_iterations
@@ -111,31 +111,32 @@ class KMeans:
 from sklearn.cluster import KMeans as km
 
 if __name__ == "__main__":
-	nb_samples = 100
-	E = 50
-	nb_clusters = 5
+	nb_samples = 10
+	E = 2
+	nb_clusters = 2
 	error = 0
-	TOTAL = 100
+	TOTAL = 1
 	nb_err = 0.0
-	kmean = KMeans(nb_clusters, nb_tries=1, nb_iterations=20)
+	kmean = KMeans(nb_clusters, nb_tries=3, nb_iterations=10)
 	
 
 	for i in range(TOTAL):	
 		X, y = make_blobs(n_samples=nb_samples, centers=nb_clusters, n_features=E, cluster_std=2.0)
 		X_ = X[np.newaxis,:]
-		X_ = np.concatenate([X_,X_], axis=0)
+		X_ = np.concatenate([X_, X_], axis=0)
 		y = y[np.newaxis,:]
 		
 		kmean.init()
 		centroids, labels = kmean.fit(X_)
 		print centroids.shape
-		centroids = np.reshape(centroids, (nb_clusters, E))
+		print labels
+		u = tf.one_hot(labels, 2, 1.0, 0.0, name='masks')
+		masked_val = X_ * u
+		t = tf.transpose(masked_val, [0,2,1])
+		mixed = tf.reshape(t , [2*nb_clusters, -1])
+		print masked_val
+		with tf.Session().as_default():
+			print mixed.eval()
+
+		centroids = np.reshape(centroids, (2, nb_clusters, E))
 		kmeans = km(n_clusters=nb_clusters, random_state=0, ).fit(X)
-		error = np.sum(np.square(np.sort(centroids,0) - np.sort(kmeans.cluster_centers_,0)))
-		if error > 0.1:
-			print error
-			nb_err += 1.0
-
-	print nb_err / float(TOTAL)
-
-	print error
