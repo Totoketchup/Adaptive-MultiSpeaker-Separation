@@ -43,7 +43,7 @@ class DAS:
 
 			# Placeholder for the 'dropout', telling if the network is 
 			# currently learning or not
-			self.training = True # TODO
+			self.training = adapt_front.training # TODO
 
 			self.Ws = tf.cast(self.X > 0, self.X.dtype) * self.X
 
@@ -130,7 +130,7 @@ class DAS:
 		centroids = tf.gather_nd(self.speaker_centroids, Ind)
 
 		input_kmeans = tf.reshape(self.prediction, [self.B, -1, self.E])
-		kmeans = KMeans(nb_clusters=2, nb_iterations=10, input_tensor=input_kmeans)
+		kmeans = KMeans(nb_clusters=2, nb_iterations=10, input_tensor=input_kmeans, centroids_init=centroids)
 		_ , labels = kmeans.network
 		
 		masks = tf.one_hot(labels, 2, 1.0, 0.0)

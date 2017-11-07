@@ -5,7 +5,7 @@ floyd run \
 --data totoketchup/projects/das/83/output:/model \
 --env tensorflow-1.3:py2 \
 --tensorboard --gpu \
-"pip install --upgrade tensorflow-gpu==1.4rc1 && python -m experiments.dpcl_front"
+"pip install --upgrade tensorflow-gpu==1.4rc1 && python -m experiments.das_front"
 
 # THE 70 is 512 / 256 not same and good converged  'green-sound-9629'
 # The 81th is 256 / 128 and the same

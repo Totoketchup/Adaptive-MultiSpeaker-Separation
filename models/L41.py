@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 from utils.ops import ops
-from models.kmeans_2 import KMeans
+from models.Kmeans_2 import KMeans
 import config
 from utils.ops.ops import BLSTM, Conv1D, Reshape, Normalize, f_props
 class L41Model:
@@ -58,7 +58,7 @@ class L41Model:
 			# Define the speaker vectors to use during training
 			self.speaker_vectors =tf.Variable(tf.truncated_normal(
 								   [self.num_speakers,self.embedding_size],
-								   stddev=tf.sqrt(2/self.embedding_size)), name='speaker_centroids')
+								   stddev=tf.sqrt(2/float(self.embedding_size))), name='speaker_centroids')
 
 	@ops.scope
 	def prediction(self):
@@ -115,7 +115,7 @@ class L41Model:
 		"""
 
 		# Get the embedded T-F vectors from the network
-		embedding = self.network
+		embedding = self.prediction
 
 		# Reshape I so that it is of the correct dimension
 		I = tf.expand_dims( self.I, axis=2 )
@@ -149,5 +149,7 @@ class L41Model:
 		# Average the cost over all T-F elements.  Here is where weighting to
 		# account for gradient confidence can occur
 		cost = tf.reduce_mean(cost)
+
+		tf.summary.scalar('cost', cost)
 
 		return cost

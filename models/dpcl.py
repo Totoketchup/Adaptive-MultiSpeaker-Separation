@@ -52,6 +52,7 @@ class DPCL:
 		]
 
 		y = f_props(layers, self.X)
+		self.embedding = y[0, : , :] #[TF, E]
 		
 		return y
 
@@ -61,18 +62,22 @@ class DPCL:
 
 		# Get the shape of the input
 		shape = tf.shape(self.Y)
-		print self.prediction
+		B = shape[0]
+		T = shape[1]
+		F = shape[2]
+		S = shape[3]
+
 		# Reshape the targets to be of shape (batch, T*F, c) and the vectors to
 		# have shape (batch, T*F, K)
-		Y = tf.reshape(self.Y, [shape[0], shape[1]*shape[2], shape[3]])
-		V = tf.reshape(self.prediction, [shape[0], shape[1]*shape[2], self.E])
+		Y = tf.reshape(self.Y, [B, T*F, S])
+		V = tf.reshape(self.prediction, [B, T*F, self.E])
 
 		# Compute the partition size vectors
-		ones = tf.ones([shape[0], shape[1]*shape[2], 1])
+		ones = tf.ones([1, T*F, 1])
 		mul_ones = tf.matmul(tf.transpose(Y, perm=[0,2,1]), ones)
 		diagonal = tf.matmul(Y, mul_ones)
 		D = 1/tf.sqrt(diagonal)
-		D = tf.reshape(D, [shape[0], shape[1]*shape[2]])
+		D = tf.reshape(D, [B, T*F])
 
 		# Compute the matrix products needed for the cost function.  Reshapes
 		# are to allow the diagonal to be multiplied across the correct
@@ -93,6 +98,10 @@ class DPCL:
 		cost = tf.reduce_mean(cost)
 
 		tf.summary.scalar('cost', cost)
+		tf.summary.scalar('1', tf.reduce_mean(tf.norm(VTV, axis=[-2,-1])))
+		tf.summary.scalar('2', tf.reduce_mean(-2*tf.norm(VTY, axis=[-2,-1])))
+		tf.summary.scalar('3', tf.reduce_mean(tf.norm(YTY, axis=[-2,-1])))
+
 		return cost
 
 	@ops.scope
@@ -101,6 +110,7 @@ class DPCL:
 		kmeans = KMeans(nb_clusters=2, nb_iterations=10, input_tensor=input_kmeans)
 		_ , labels = kmeans.network
 		masks = tf.one_hot(labels, 2, 1.0, 0.0, name='masks')
+		self.ms = tf.reshape(masks, [self.B, -1, self.F, self.S])
 		separated = tf.reshape(self.X, [self.B, -1, 1]) * masks # [B ,TF, S] 
 		separated = tf.reshape(separated, [self.B, -1, self.F, self.S])
 		separated = tf.transpose(separated, [0,3,1,2])
