@@ -73,7 +73,7 @@ class DPCL:
 		V = tf.reshape(self.prediction, [B, T*F, self.E])
 
 		# Compute the partition size vectors
-		ones = tf.ones([1, T*F, 1])
+		ones = tf.ones([B, T*F, 1])
 		mul_ones = tf.matmul(tf.transpose(Y, perm=[0,2,1]), ones)
 		diagonal = tf.matmul(Y, mul_ones)
 		D = 1/tf.sqrt(diagonal)
