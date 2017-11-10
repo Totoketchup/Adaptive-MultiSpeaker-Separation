@@ -28,16 +28,16 @@ mixed_data = Mixer([males, fem], chunk_size= chunk_size, with_mask=False, with_i
 #### PREVIOUS MODEL CONFIG
 ####
 
-N = 512
+N = 256
 max_pool = 256
-batch_size = 8
-learning_rate = 0.001
+batch_size = 16
+learning_rate = 0.01
 
 config_model = {}
 config_model["type"] = "pretraining"
 
 config_model["batch_size"] = batch_size
-config_model["chunk_size"] = 512*40
+config_model["chunk_size"] = chunk_size
 
 config_model["N"] = N
 config_model["maxpool"] = max_pool
@@ -46,8 +46,8 @@ config_model["window"] = 1024
 config_model["smooth_size"] = 10
 
 config_model["alpha"] = learning_rate
-config_model["reg"] = 1e-4
-config_model["beta"] = 1.0
+config_model["reg"] = 1e-3
+config_model["beta"] = 0.1
 config_model["rho"] = 0.01
 
 config_model["same_filter"] = True
@@ -58,14 +58,14 @@ config_model["optimizer"] = 'Adam'
 ####
 
 idd = ''.join('-{}={}-'.format(key, val) for key, val in sorted(config_model.items()))
-config_model["type"] = "DAS_train_front"
-learning_rate = 0.1
-batch_size = 32
+config_model["type"] = "L41_train_front"
+learning_rate = 0.01
+batch_size = 64
 config_model["chunk_size"] = chunk_size
 config_model["batch_size"] = batch_size
 config_model["alpha"] = learning_rate
 
-full_id = "square-night-6094" + idd
+full_id = "long-term-4925" + idd
 #full_id = 'jolly-sound-3162'+idd
 
 folder = 'DAS_train_front'
@@ -86,19 +86,21 @@ print model.runID
 # nb_iterations = 500
 mixed_data.adjust_split_size_to_batchsize(batch_size)
 nb_batches = mixed_data.nb_batches(batch_size)
-nb_epochs = 1
+nb_epochs = 10
 
 time_spent = [ 0 for _ in range(5)]
 
 for epoch in range(nb_epochs):
 	for b in range(nb_batches):
+		step = nb_batches*epoch + b
+
 		X_non_mix, X_mix, Ind = mixed_data.get_batch(batch_size)
 		t = time.time()
-		c = model.train(X_mix, X_non_mix, learning_rate, b, ind_train=Ind)
+		c = model.train(X_mix, X_non_mix, learning_rate, step, ind_train=Ind)
 		t_f = time.time()
 		time_spent = time_spent[1:] +[t_f-t]
 
-		print 'Step #'  ,b,' loss=', c ,' ETA = ', getETA(sum(time_spent)/float(np.count_nonzero(time_spent))
+		print 'Step #'  ,step,' loss=', c ,' ETA = ', getETA(sum(time_spent)/float(np.count_nonzero(time_spent))
 			, nb_batches, b, nb_epochs, epoch)
 		# print 'length of data =', X_non_mix.shape ,'step ', b+1, mixed_data.datasets[0].index_item_split, mixed_data.selected_split_size(),getETA(sum(time_spent)/float(np.count_nonzero(time_spent)), nb_batches, b, nb_epochs, epoch)
 

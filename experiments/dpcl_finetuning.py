@@ -13,7 +13,7 @@ import config
 import os
 
 H5_dic = read_metadata()
-chunk_size = 512*20
+chunk_size = 512*40
 
 males = H5PY_RW('test_raw.h5py', subset = males_keys(H5_dic))
 fem = H5PY_RW('test_raw.h5py', subset = females_keys(H5_dic))
@@ -29,39 +29,44 @@ mixed_data = Mixer([males, fem], chunk_size= chunk_size, with_mask=False, with_i
 #### PREVIOUS MODEL CONFIG
 ####
 
-N = 512
+N = 256
 max_pool = 256
-batch_size = 1
-learning_rate = 0.001
+batch_size = 32
+learning_rate = 0.01
 
 config_model = {}
 config_model["type"] = "DPCL_train_front"
 
-config_model["batch_size"] = 8
-config_model["chunk_size"] = chunk_size
+config_model["batch_size"] = batch_size
+config_model["chunk_size"] = 512*10
 
 config_model["N"] = N
 config_model["maxpool"] = max_pool
 config_model["window"] = 1024
 
-config_model["smooth_size"] = 4
+config_model["smooth_size"] = 10
 
 config_model["alpha"] = learning_rate
-config_model["reg"] = 1e-4
-config_model["beta"] = 1.0
+config_model["reg"] = 1e-3
+config_model["beta"] = 0.1
 config_model["rho"] = 0.01
 
-config_model["same_filter"] = False
+config_model["same_filter"] = True
 config_model["optimizer"] = 'Adam'
 
 idd = ''.join('-{}={}-'.format(key, val) for key, val in sorted(config_model.items()))
-full_id = 'green-sound-9629'+idd
+# full_id = 'green-sound-9629'+idd
+full_id ='restless-moon-0600' + idd
 
 ####
 #### NEW MODEL CONFIGURATION
 ####
 
 config_model["type"] = "DPCL_finetuning"
+learning_rate = 0.001 
+batch_size = 2
+config_model["chunk_size"] = chunk_size
+config_model["alpha"] = learning_rate
 config_model["batch_size"] = batch_size
 folder = 'DPCL_finetuning'
 
@@ -78,6 +83,7 @@ model.connect_front_back_to_separator(DPCL)
 with model.graph.as_default():
     model.create_saver()
     model.restore_model(path, full_id)
+    # model.freeze_front()
     model.optimize
     model.tensorboard_init()
 

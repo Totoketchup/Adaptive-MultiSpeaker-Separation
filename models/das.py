@@ -43,7 +43,7 @@ class DAS:
 
 			# Placeholder for the 'dropout', telling if the network is 
 			# currently learning or not
-			self.training = adapt_front.training # TODO
+			self.training = adapt_front.training
 
 			self.Ws = tf.cast(self.X > 0, self.X.dtype) * self.X
 

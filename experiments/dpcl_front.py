@@ -13,7 +13,7 @@ import config
 import os
 
 H5_dic = read_metadata()
-chunk_size = 512*20
+chunk_size = 512*10
 
 males = H5PY_RW('test_raw.h5py', subset = males_keys(H5_dic))
 fem = H5PY_RW('test_raw.h5py', subset = females_keys(H5_dic))
@@ -24,15 +24,14 @@ print fem.length(), 'elements'
 
 mixed_data = Mixer([males, fem], chunk_size= chunk_size, with_mask=False, with_inputs=True)
 
-
 ####
 #### PREVIOUS MODEL CONFIG
 ####
 
-N = 512
+N = 256
 max_pool = 256
-batch_size = 8
-learning_rate = 0.001
+batch_size = 16
+learning_rate = 0.01
 
 config_model = {}
 config_model["type"] = "pretraining"
@@ -44,14 +43,14 @@ config_model["N"] = N
 config_model["maxpool"] = max_pool
 config_model["window"] = 1024
 
-config_model["smooth_size"] = 4
+config_model["smooth_size"] = 10
 
 config_model["alpha"] = learning_rate
-config_model["reg"] = 1e-4
-config_model["beta"] = 1.0
+config_model["reg"] = 1e-3
+config_model["beta"] = 0.1
 config_model["rho"] = 0.01
 
-config_model["same_filter"] = False
+config_model["same_filter"] = True
 config_model["optimizer"] = 'Adam'
 
 ####
@@ -60,9 +59,13 @@ config_model["optimizer"] = 'Adam'
 
 idd = ''.join('-{}={}-'.format(key, val) for key, val in sorted(config_model.items()))
 config_model["type"] = "DPCL_train_front"
+learning_rate = 0.01
+batch_size = 32
+config_model["batch_size"] = batch_size
+config_model["alpha"] = learning_rate
 
-
-full_id = 'jolly-sound-3162'+idd
+full_id = "long-term-4925" + idd
+#full_id = 'jolly-sound-3162'+idd
 
 folder = 'DPCL_train_front'
 model = Adapt(config_model=config_model, pretraining=False)
@@ -90,7 +93,7 @@ for epoch in range(nb_epochs):
 	for b in range(nb_batches):
 		X_non_mix, X_mix, _ = mixed_data.get_batch(batch_size)
 		t = time.time()
-		c = model.train(X_mix, X_non_mix, learning_rate, b)
+		c = model.train(X_mix, X_non_mix, learning_rate, nb_batches*epoch+b)
 		t_f = time.time()
 		time_spent = time_spent[1:] +[t_f-t]
 

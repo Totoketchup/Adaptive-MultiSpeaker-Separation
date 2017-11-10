@@ -247,7 +247,7 @@ class Mixer:
 		self.chunk_size = chunk_size
 
 		if shuffling:
-			self.shuffle(1)
+			self.shuffle()
 
 		if chunk_size !=0:
 			for dataset in datasets:
