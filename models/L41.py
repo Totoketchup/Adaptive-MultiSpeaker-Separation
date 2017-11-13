@@ -44,10 +44,10 @@ class L41Model:
 		with self.graph.as_default():
 
 			self.X, self.X_raw = input_tensor
-
+			print self.X
 			with tf.name_scope('create_masks'):
 				# # Batch of Masks (bins label)
-				# # shape = [ batch size, chunk size, F, #speakers ]
+				# # shape = [ batch size, chunk size, F, S]
 				argmax = tf.argmax(self.X_raw, axis=3)
 				self.y = tf.one_hot(argmax, 2, 1.0, -1.0)
 
@@ -97,16 +97,24 @@ class L41Model:
 		centroids = tf.gather_nd(self.speaker_vectors, Ind)
 
 		input_kmeans = tf.reshape(self.prediction, [self.B, -1, self.embedding_size])
-		kmeans = KMeans(nb_clusters=2, nb_iterations=10, input_tensor=input_kmeans)
-		_ , labels = kmeans.network
-		
-		masks = tf.one_hot(labels, 2, 1.0, 0.0)
-		separated = tf.reshape(self.X, [self.B, -1, 1])* masks # [B ,TF, S] 
+		kmeans = KMeans(nb_clusters=2, nb_iterations=10, input_tensor=input_kmeans, centroids_init=centroids, latent_space_tensor=self.X)
+		_ , labels, soft_labels = kmeans.network
+		self.masks = tf.one_hot(labels, 2, 1.0, 0.0)
+
+		separated = tf.reshape(self.X, [self.B, -1, 1])* self.masks # [B ,TF, S] 
 		separated = tf.reshape(separated, [self.B, -1, self.F, self.S])
 		separated = tf.transpose(separated, [0,3,1,2])
 		separated = tf.reshape(separated, [self.B*self.S, -1, self.F, 1])
 
 		return separated
+
+	@ops.scope
+	def enhance(self):
+		# X_mix = tf.reshape(self.X, [self.B, 1, -1, self.F])
+		# X_non_mix = tf.reshape(self.X_raw, [self.B, self.S, -1, self.F])
+		# perfect_masks = tf.divide(X_non_mix, X_mix) # [B, S, T ,F] [0 .. 1]
+
+		enhance_input = tf.concat(self.separated, self.X_raw, axis = 3)
 
 	@ops.scope
 	def cost(self):

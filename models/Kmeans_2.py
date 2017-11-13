@@ -14,11 +14,12 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 
 class KMeans:
 
-	def __init__(self, nb_clusters, centroids_init=None, nb_tries=3, nb_iterations=10, graph=None, input_tensor=None):
+	def __init__(self, nb_clusters, centroids_init=None, nb_tries=3, nb_iterations=10, graph=None, input_tensor=None, latent_space_tensor=None, ):
 
 		self.nb_clusters = nb_clusters
 		self.nb_iterations = nb_iterations
 		self.nb_tries = nb_tries
+		self.latent_space_tensor = latent_space_tensor
 
 		if input_tensor is None:
 			self.graph = tf.Graph()
@@ -48,6 +49,9 @@ class KMeans:
 				self.centroids = tf.gather_nd(self.X, indices)
 			else:
 				self.centroids = tf.identity(centroids_init)
+
+			if not self.latent_space_tensor is None:
+				self.W_0 = tf.reshape(tf.cast(self.latent_space_tensor > 1e-3, tf.float32), [self.b, self.L, 1])
 
 			self.reshaped_X = tf.reshape(self.X, [self.B*self.L, self.E])
 			self.network
@@ -81,14 +85,15 @@ class KMeans:
 
 		self.centroids = tf.gather(self.centroids, index)
 		print self.centroids
-		return self.centroids, self.get_labels(self.centroids, self.X_in)
+		labels, distances = self.get_labels(self.centroids, self.X_in)
+		return self.centroids, labels, tf.nn.softmax(distances)
 
 
 	def body(self ,i, centroids):
 		with tf.name_scope('iteration'):
 				# Checking the closest clusters
 				# [B, L]
-				labels = self.get_labels(centroids, self.X)
+				labels, _ = self.get_labels(centroids, self.X)
 
 				elems_tot = (self.X, labels)
 				elems_count = (tf.ones_like(self.X), labels)
@@ -102,8 +107,11 @@ class KMeans:
 
 	def get_labels(self, centroids, X):
 		centroids_ = tf.expand_dims(centroids, 1)
+		if not self.latent_space_tensor is None:
+			X = X*self.W_0
 		X_ = tf.expand_dims(X, 2)
-		return tf.argmin(tf.norm(X_ - centroids_, axis=3), axis=2, output_type=tf.int32)
+		distances = tf.norm(X_ - centroids_, axis=3)
+		return tf.argmin(distances, axis=2, output_type=tf.int32), distances
 
 	def fit(self, X_train):
 		return self.sess.run(self.network, {self.X_in: X_train})
@@ -111,9 +119,9 @@ class KMeans:
 from sklearn.cluster import KMeans as km
 
 if __name__ == "__main__":
-	nb_samples = 10
-	E = 2
-	nb_clusters = 2
+	nb_samples = 100
+	E = 4
+	nb_clusters = 4
 	error = 0
 	TOTAL = 1
 	nb_err = 0.0
@@ -121,22 +129,23 @@ if __name__ == "__main__":
 	
 
 	for i in range(TOTAL):	
-		X, y = make_blobs(n_samples=nb_samples, centers=nb_clusters, n_features=E, cluster_std=2.0)
+		X, y = make_blobs(n_samples=nb_samples, centers=nb_clusters, n_features=E, cluster_std=10)
 		X_ = X[np.newaxis,:]
 		X_ = np.concatenate([X_, X_], axis=0)
 		y = y[np.newaxis,:]
 		
 		kmean.init()
-		centroids, labels = kmean.fit(X_)
+		centroids, labels, soft_labels = kmean.fit(X_)
 		print centroids.shape
-		print labels
-		u = tf.one_hot(labels, 2, 1.0, 0.0, name='masks')
-		masked_val = X_ * u
-		t = tf.transpose(masked_val, [0,2,1])
-		mixed = tf.reshape(t , [2*nb_clusters, -1])
-		print masked_val
-		with tf.Session().as_default():
-			print mixed.eval()
+		# print labels
+		print soft_labels
+		# u = tf.one_hot(labels, 2, 1.0, 0.0, name='masks')
+		# masked_val = X_ * u
+		# t = tf.transpose(masked_val, [0,2,1])
+		# mixed = tf.reshape(t , [2*nb_clusters, -1])
+		# # print masked_val
+		# # with tf.Session().as_default():
+		# # 	print mixed.eval()
 
-		centroids = np.reshape(centroids, (2, nb_clusters, E))
-		kmeans = km(n_clusters=nb_clusters, random_state=0, ).fit(X)
+		# centroids = np.reshape(centroids, (2, nb_clusters, E))
+		# kmeans = km(n_clusters=nb_clusters, random_state=0, ).fit(X)
