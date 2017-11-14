@@ -49,9 +49,11 @@ class KMeans:
 				self.centroids = tf.gather_nd(self.X, indices)
 			else:
 				self.centroids = tf.identity(centroids_init)
+				self.centroids = tf.tile(self.centroids, [self.nb_tries, 1 , 1])
 
 			if not self.latent_space_tensor is None:
-				self.W_0 = tf.reshape(tf.cast(self.latent_space_tensor > 1e-3, tf.float32), [self.b, self.L, 1])
+				self.W_0_no_try = tf.reshape(tf.cast(self.latent_space_tensor > 1e-3, tf.float32), [self.b, self.L, 1])
+				self.W_0 = tf.tile(self.W_0_no_try, [self.nb_tries, 1 , 1])
 
 			self.reshaped_X = tf.reshape(self.X, [self.B*self.L, self.E])
 			self.network
@@ -85,15 +87,15 @@ class KMeans:
 
 		self.centroids = tf.gather(self.centroids, index)
 		print self.centroids
-		labels, distances = self.get_labels(self.centroids, self.X_in)
-		return self.centroids, labels, tf.nn.softmax(distances)
+		labels = self.get_labels(self.centroids, self.X_in, self.W_0_no_try)
+		return self.centroids, labels
 
 
 	def body(self ,i, centroids):
 		with tf.name_scope('iteration'):
 				# Checking the closest clusters
 				# [B, L]
-				labels, _ = self.get_labels(centroids, self.X)
+				labels = self.get_labels(centroids, self.X)
 
 				elems_tot = (self.X, labels)
 				elems_count = (tf.ones_like(self.X), labels)
@@ -105,18 +107,21 @@ class KMeans:
 				return [i+1, new_centroids]
 
 
-	def get_labels(self, centroids, X):
+	def get_labels(self, centroids, X, W_0_spe=None):
 		centroids_ = tf.expand_dims(centroids, 1)
 		if not self.latent_space_tensor is None:
-			X = X*self.W_0
+			if W_0_spe is None:
+				X = X*self.W_0
+			else:
+				X = X*W_0_spe
 		X_ = tf.expand_dims(X, 2)
 		distances = tf.norm(X_ - centroids_, axis=3)
-		return tf.argmin(distances, axis=2, output_type=tf.int32), distances
+		return tf.argmin(distances, axis=2, output_type=tf.int32)
 
 	def fit(self, X_train):
 		return self.sess.run(self.network, {self.X_in: X_train})
 
-from sklearn.cluster import KMeans as km
+# from sklearn.cluster import KMeans as km
 
 if __name__ == "__main__":
 	nb_samples = 100

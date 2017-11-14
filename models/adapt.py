@@ -437,3 +437,14 @@ class Adapt:
 		training_var.remove(self.bases)
 		training_var.remove(self.window_filter)
 		self.trainable_variables = training_var
+
+	# TODO
+	def freeze_variables(self):
+		training_var = tf.trainable_variables()
+		to_train = []
+		for var in training_var:
+			if 'enhance' in var.name:
+				to_train.append(var)
+				# with tf.name_scope(var.name[8:-2]):
+				# 	variable_summaries(var)
+		self.trainable_variables = to_train
