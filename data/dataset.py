@@ -246,12 +246,12 @@ class Mixer:
 		self.split_index = 0 # Training split by default
 		self.chunk_size = chunk_size
 
-		if shuffling:
-			self.shuffle()
-
 		if chunk_size !=0:
 			for dataset in datasets:
 				dataset.set_chunk(chunk_size)
+
+		if shuffling:
+			self.shuffle()
 
 		# Align both dataset:
 		self.size = np.amin([x.length() for x in datasets])
@@ -300,6 +300,7 @@ class Mixer:
 
 		key_d = np.array(key_d)
 		X_non_mix = np.array(X_d)
+
 
 		if self.mixing_type == 'add':
 			X_mix = np.sum(X_non_mix, axis=0)
@@ -356,6 +357,7 @@ class Mixer:
 		self.items = list(self.items)
 		self.items.sort()
 		self.dico = {}
+
 		# Assign ordered indicies to each speaker indicies
 		for i, item in enumerate(self.items):
 			self.dico[int(item)] = i
@@ -366,6 +368,58 @@ class Mixer:
 	def get_labels(self):
 		return self.dico
 
+from data_tools import read_metadata, males_keys, females_keys
 if __name__ == "__main__":
-	H5 = H5PY_RW()
-	H5.create_raw_audio_dataset('test_raw_16k.h5py')
+
+	###
+	### TEST
+	###
+
+	H5_dic = read_metadata()
+	print H5_dic
+	chunk_size = 512*100
+
+	males = H5PY_RW('test_raw.h5py', subset = males_keys(H5_dic))
+	fem = H5PY_RW('test_raw.h5py', subset = females_keys(H5_dic))
+
+	print 'Data with', len(H5_dic), 'male and female speakers'
+	print males.length(), 'elements'
+	print fem.length(), 'elements'
+
+	mixed_data = Mixer([males, fem], chunk_size= chunk_size, with_mask=False, with_inputs=True, shuffling=True)
+
+	batch_size = 128
+
+	mixed_data.adjust_split_size_to_batchsize(batch_size)
+	nb_batches = mixed_data.nb_batches(batch_size)
+
+	nb_to_speaker = mixed_data.dico
+	id_f = []
+	id_m = []
+
+	for i in range(nb_batches):
+			_,_, ind = mixed_data.get_batch(batch_size)
+			if i == 0:
+				print ind
+			for key, id_ in nb_to_speaker.iteritems():
+				for b in range(batch_size):
+					if id_ == ind[b][0]:
+						if b == 0:
+							id_m += [key]
+						assert H5_dic[str(key)]['sex'] == 'M' 
+					if id_ == ind[b][1]:
+						if b == 0:
+							id_f += [key]
+						assert H5_dic[str(key)]['sex'] == 'F' 
+
+	for j in range(2):
+		for i in range(nb_batches):
+			_,_, ind = mixed_data.get_batch(batch_size)
+			for key, id_ in nb_to_speaker.iteritems():
+				if id_ == ind[0][0]:
+					assert id_m[i] == key 
+				if id_ == ind[0][1]:
+					assert id_f[i] == key
+
+	# print nb_to_speaker.values()
+	# print ind
