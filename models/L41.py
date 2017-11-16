@@ -14,7 +14,7 @@ class L41Model:
 		E=config.embedding_size,
 		layer_size=600,
 		nonlinearity='logistic',
-		normalize=False):
+		normalize=True):
 		"""
 		Initializes Lab41's clustering model.  Default architecture comes from
 		the parameters used by the best performing model in the paper[1].
@@ -47,12 +47,12 @@ class L41Model:
 
 		with self.graph.as_default():
 
-			self.X, self.X_raw = input_tensor
+			self.X, self.X_non_mix = input_tensor
 			print self.X
 			with tf.name_scope('create_masks'):
 				# # Batch of Masks (bins label)
-				# # shape = [ batch size, chunk size, F, S]
-				argmax = tf.argmax(self.X_raw, axis=3)
+				# # shape = [ batch size, T, F, S]
+				argmax = tf.argmax(self.X_non_mix, axis=3)
 				self.y = tf.one_hot(argmax, 2, 1.0, -1.0)
 
 			# Speakers indices used in the mixtures
@@ -61,7 +61,7 @@ class L41Model:
 
 			# Define the speaker vectors to use during training
 			self.speaker_vectors =tf.Variable(tf.truncated_normal(
-								   [self.num_speakers,self.embedding_size],
+								   [self.num_speakers, self.embedding_size],
 								   stddev=tf.sqrt(2/float(self.embedding_size))), name='speaker_centroids')
 
 	@ops.scope
@@ -71,18 +71,19 @@ class L41Model:
 		BLSTM layers followed by a dense layer giving a set of T-F vectors of
 		dimension embedding_size
 		"""
-
-
 		shape = tf.shape(self.X)
 
 		layers = [
-			BLSTM(self.layer_size, 'BLSTM_1'),
-			BLSTM(self.layer_size, 'BLSTM_2'),
+			BLSTM(self.layer_size, 'BLSTM_1', dropout=True, drop_val=0.9),
+			BLSTM(self.layer_size, 'BLSTM_2', dropout=True, drop_val=0.9),
+			# BLSTM(self.layer_size, 'BLSTM_3'),
+			# BLSTM(self.layer_size, 'BLSTM_4'),
 			Conv1D([1, self.layer_size, self.embedding_size*self.F]),
 			Reshape([shape[0], shape[1], self.F, self.embedding_size]),
 			Normalize(3)
 		]
 
+		# Produce embeddings [B, T, F, E]
 		y = f_props(layers, self.X)
 
 		# Normalize the T-F vectors to get the network output
@@ -95,20 +96,25 @@ class L41Model:
 	def separate(self):
 		# TODO for only when Ind is available, speaker info is given
 		# Ind [B, S, 1]
-		Ind = tf.expand_dims(self.I, 2)
+		# Ind = tf.expand_dims(self.I, 2)
 
 		# U [S_tot, E]
-		centroids = tf.gather_nd(self.speaker_vectors, Ind)
+		# centroids = tf.gather_nd(self.speaker_vectors, Ind)
 
+		# Input for KMeans algorithm [B, TF, E]
 		input_kmeans = tf.reshape(self.prediction, [self.B, -1, self.embedding_size])
-		kmeans = KMeans(nb_clusters=2, nb_iterations=10, input_tensor=input_kmeans, centroids_init=centroids, latent_space_tensor=self.X)
+		# S speakers to separate, give self.X in input not to consider silent bins
+		kmeans = KMeans(nb_clusters=self.S, nb_iterations=10, input_tensor=input_kmeans, latent_space_tensor=self.X)
+		
+		# Extract labels of each bins TF_i - labels [B, TF, 1]
 		_ , labels = kmeans.network
-		self.masks = tf.one_hot(labels, 2, 1.0, 0.0)
+		print labels
+		self.masks = tf.one_hot(labels, 2, 1.0, 0.0) # Create masks [B, TF, S]
 
 		separated = tf.reshape(self.X, [self.B, -1, 1])* self.masks # [B ,TF, S] 
 		separated = tf.reshape(separated, [self.B, -1, self.F, self.S])
-		separated = tf.transpose(separated, [0,3,1,2])
-		separated = tf.reshape(separated, [self.B*self.S, -1, self.F, 1])
+		separated = tf.transpose(separated, [0,3,1,2]) # [B, S, T, F]
+		separated = tf.reshape(separated, [self.B*self.S, -1, self.F, 1]) # [BS, T, F, 1]
 
 		return separated
 
@@ -121,9 +127,7 @@ class L41Model:
 
 		# [S, B, T, F]
 		separated = tf.transpose(tf.reshape(self.separate, [self.B, self.S, -1, self.F]), [1,0,2,3])
-
 		
-
 		# # Concatenate the separated latent space and the latent space
 		# # In order to smooth the output, instead of just applying binary filters
 		# # S [B ,T, 2F]
@@ -134,9 +138,11 @@ class L41Model:
 		# X [B, T, F] -> [S, B, T ,F]
 		list_concat = tf.concat([separated, tf.tile(tf.expand_dims(self.X, 0), [self.S, 1, 1, 1])], axis = 3)
 		list_concat = tf.reshape(list_concat, [self.B*self.S, -1, 2*self.F])
+		
 		layers = [
 			BLSTM(self.layer_size, 'BLSTM_1'),
 			BLSTM(self.layer_size, 'BLSTM_2'),
+			BLSTM(self.layer_size, 'BLSTM_3'),
 			Conv1D([1, self.layer_size, self.F])
 		]
 
@@ -147,7 +153,10 @@ class L41Model:
 		y = tf.reshape(y, [self.S, self.B, -1]) # [SB, TF]
 
 		y = tf.transpose(y, [1,2,0])
-		y = tf.nn.softmax(y) * tf.reshape(self.X, [self.B, -1, 1]) # [B, T, F]
+		y = tf.nn.softmax(y) * tf.reshape(self.X, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
+		self.cost_in = y
+		y = tf.transpose(tf.reshape(y, [self.B, -1, self.F, self.S, 1]), [0, 3, 1, 2, 4])
+		y = tf.reshape(y, [self.B*self.S, -1, self.F, 1])
 		return y
 
 	@ops.scope
@@ -157,7 +166,7 @@ class L41Model:
 		length_perm = len(perms)
 
 		# enhance [ B, TF, S] , X [B, T, F] -> [ B, TF, S]
-		test_enhance = tf.tile(tf.reshape(tf.transpose(self.enhance, [0,2,1]), [self.B, 1, self.S, -1]), [1, length_perm, 1, 1]) # [B, S, TF]
+		test_enhance = tf.tile(tf.reshape(tf.transpose(self.cost_in, [0,2,1]), [self.B, 1, self.S, -1]), [1, length_perm, 1, 1]) # [B, S, TF]
 
 		
 		perms = tf.reshape(tf.constant(perms), [1, length_perm, self.S, 1])
@@ -171,19 +180,21 @@ class L41Model:
 		permuted_approx= tf.gather_nd(test_enhance, indicies)
 
 		# X_non_mix [B, T, F, S]
-		X_non_mix = tf.transpose(tf.reshape(self.X_raw, [self.B, -1, 1, self.S]), [0, 2, 3, 1])
-		cost = tf.reduce_sum(tf.square(X_non_mix-permuted_approx), axis=-1) #/ tf.cast(tf.shape(permuted_sep)[-1], tf.float32)
-		cost = tf.reduce_mean(cost, axis=-1)
-		cost = tf.reduce_min(cost, axis=-1)
+		X_non_mix = tf.transpose(tf.reshape(self.X_non_mix, [self.B, -1, 1, self.S]), [0, 2, 3, 1])
+		cost = tf.reduce_sum(tf.square(X_non_mix-permuted_approx), axis=-1) # Square difference on each bin 
+		cost = tf.reduce_sum(cost, axis=-1) # Sum among all speakers
+		cost = tf.reduce_min(cost, axis=-1) # Take the minimum permutation error
 
-		training_vars = tf.trainable_variables()
-		reg = []
-		for var in training_vars:
-			if 'enhance' in var.name:
-				reg.append(tf.nn.l2_loss(var))
-		reg = sum(reg)
-		cost = tf.reduce_mean(cost) + self.adapt_front.l * reg
+		# training_vars = tf.trainable_variables()
+		# reg = []
+		# for var in training_vars:
+		# 	if 'enhance' in var.name:
+		# 		reg.append(tf.nn.l2_loss(var))
+		# reg = sum(reg)
 
+		cost = tf.reduce_mean(cost) #+ self.adapt_front.l * reg
+
+		# tf.summary.scalar('regularization',  reg)
 		tf.summary.scalar('cost', cost)
 
 		return cost
@@ -222,15 +233,27 @@ class L41Model:
 		cost = -tf.log(tf.nn.sigmoid(self.y * dot))
 
 		# Average the cost over all speakers in the input
-		cost = tf.reduce_mean(cost, 3)
+		cost = tf.reduce_sum(cost, 3)
 
 		# Average the cost over all batches
 		cost = tf.reduce_mean(cost, 0)
 
+		# training_vars = tf.trainable_variables()
+		# reg = []
+		# for var in training_vars:
+		# 	if 'prediction' in var.name:
+		# 		reg.append(tf.nn.l2_loss(var))
+		# reg = sum(reg)
+
 		# Average the cost over all T-F elements.  Here is where weighting to
 		# account for gradient confidence can occur
-		cost = tf.reduce_mean(cost)
+		cost = tf.reduce_mean(cost) 
 
 		tf.summary.scalar('cost', cost)
+
+		#cost = cost + 0.001*self.adapt_front.l*reg
+
+		# tf.summary.scalar('regularized', cost)
+
 
 		return cost
