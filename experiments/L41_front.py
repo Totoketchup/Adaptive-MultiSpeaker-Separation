@@ -12,7 +12,7 @@ import config
 import os
 
 H5_dic = read_metadata()
-chunk_size = 512*10
+chunk_size = 512*40
 
 males = H5PY_RW('test_raw.h5py', subset = males_keys(H5_dic))
 fem = H5PY_RW('test_raw.h5py', subset = females_keys(H5_dic))
@@ -47,28 +47,27 @@ config_model["smooth_size"] = 10
 
 config_model["alpha"] = learning_rate
 config_model["reg"] = 1e-3
-config_model["beta"] = 0.1
+config_model["beta"] = 0.05
 config_model["rho"] = 0.01
 
 config_model["same_filter"] = True
 config_model["optimizer"] = 'Adam'
+idd = ''.join('-{}={}-'.format(key, val) for key, val in sorted(config_model.items()))
+full_id = "noisy-breeze-3898" + idd
+
 
 ####
 #### LOAD PREVIOUS MODEL
 ####
 
-idd = ''.join('-{}={}-'.format(key, val) for key, val in sorted(config_model.items()))
 config_model["type"] = "L41_train_front"
 learning_rate = 0.01
 batch_size = 64
-config_model["chunk_size"] = chunk_size
+config_model["chunk_size"] = 512*10
 config_model["batch_size"] = batch_size
 config_model["alpha"] = learning_rate
 
-full_id = "long-term-4925" + idd
-#full_id = 'jolly-sound-3162'+idd
 
-folder = 'DAS_train_front'
 model = Adapt(config_model=config_model, pretraining=False)
 model.create_saver()
 
@@ -86,7 +85,7 @@ print model.runID
 # nb_iterations = 500
 mixed_data.adjust_split_size_to_batchsize(batch_size)
 nb_batches = mixed_data.nb_batches(batch_size)
-nb_epochs = 10
+nb_epochs = 40
 
 time_spent = [ 0 for _ in range(5)]
 

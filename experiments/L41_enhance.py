@@ -48,28 +48,28 @@ config_model["smooth_size"] = 10
 
 config_model["alpha"] = learning_rate
 config_model["reg"] = 1e-3
-config_model["beta"] = 0.1
+config_model["beta"] = 0.05
 config_model["rho"] = 0.01
 
 config_model["same_filter"] = True
 config_model["optimizer"] = 'Adam'
 
+idd = ''.join('-{}={}-'.format(key, val) for key, val in sorted(config_model.items()))
+
 ####
-#### LOAD PREVIOUS MODEL
+#### NEW MODEL CONFIG
 ####
 
-idd = ''.join('-{}={}-'.format(key, val) for key, val in sorted(config_model.items()))
 config_model["type"] = "L41_enhance"
-learning_rate = 0.001
+learning_rate = 0.01
 batch_size = 64
 config_model["chunk_size"] = chunk_size
 config_model["batch_size"] = batch_size
 config_model["alpha"] = learning_rate
 config_model["optimizer"] = 'Adam'
-config_model["reg"] = 1e-4
+config_model["reg"] = 1e-3
 
-full_id = "purple-term-1311" + idd
-#full_id = 'jolly-sound-3162'+idd
+full_id = "lucky-brook-0190" + idd
 
 folder = 'L41_enhance'
 model = Adapt(config_model=config_model, pretraining=False)
