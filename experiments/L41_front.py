@@ -21,7 +21,7 @@ print 'Data with', len(H5_dic), 'male and female speakers'
 print males.length(), 'elements'
 print fem.length(), 'elements'
 
-mixed_data = Mixer([males, fem], chunk_size= chunk_size, with_mask=False, with_inputs=True)
+mixed_data = Mixer([males, fem], chunk_size= chunk_size, with_mask=False, with_inputs=True, shuffling=True)
 
 
 ####
@@ -76,7 +76,7 @@ model.restore_model(path, full_id)
 
 model.connect_only_front_to_separator(L41Model)
 init = model.non_initialized_variables()
-
+model.create_centroids_saver()
 model.sess.run(init)
 
 print 'Total name :' 
@@ -88,6 +88,9 @@ nb_batches = mixed_data.nb_batches(batch_size)
 nb_epochs = 40
 
 time_spent = [ 0 for _ in range(5)]
+print 'NB BATCHES =', nb_batches
+print 'NB ITERATIONS =', nb_batches*nb_epochs
+print 'NB SAVE = ', (nb_batches*nb_epochs)/20
 
 for epoch in range(nb_epochs):
 	for b in range(nb_batches):
@@ -97,7 +100,7 @@ for epoch in range(nb_epochs):
 		t = time.time()
 		c = model.train(X_mix, X_non_mix, learning_rate, step, ind_train=Ind)
 		t_f = time.time()
-		time_spent = time_spent[1:] +[t_f-t]
+		time_spent = time_spent[1:] + [t_f-t]
 
 		print 'Step #'  ,step,' loss=', c ,' ETA = ', getETA(sum(time_spent)/float(np.count_nonzero(time_spent))
 			, nb_batches, b, nb_epochs, epoch)
@@ -105,5 +108,5 @@ for epoch in range(nb_epochs):
 
 		if b%20 == 0: #cost_valid < cost_valid_min:
 			print 'DAS model saved at iteration number ', nb_batches*epoch + b,' with cost = ', c 
-			model.save(b)
+			model.save(nb_batches*epoch + b)
 
