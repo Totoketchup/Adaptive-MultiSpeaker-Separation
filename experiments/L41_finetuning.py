@@ -10,7 +10,7 @@ import time
 import numpy as np
 import config
 import os
-
+import tensorflow as tf
 H5_dic = read_metadata()
 chunk_size = 512*40
 
@@ -23,6 +23,37 @@ print fem.length(), 'elements'
 
 mixed_data = Mixer([males, fem], chunk_size= chunk_size, with_mask=False, with_inputs=True)
 
+####
+#### PREVIOUS ADAPT MODEL CONFIG
+####
+
+N = 256
+max_pool = 256
+batch_size = 16
+learning_rate = 0.01
+
+adapt_model = {}
+adapt_model["type"] = "pretraining"
+
+adapt_model["batch_size"] = batch_size
+adapt_model["chunk_size"] = 512*40
+
+adapt_model["N"] = N
+adapt_model["maxpool"] = max_pool
+adapt_model["window"] = 1024
+
+adapt_model["smooth_size"] = 10
+
+adapt_model["alpha"] = learning_rate
+adapt_model["reg"] = 1e-3
+adapt_model["beta"] = 0.05
+adapt_model["rho"] = 0.01
+
+adapt_model["same_filter"] = True
+adapt_model["optimizer"] = 'Adam'
+idd_adapt = ''.join('-{}={}-'.format(key, val) for key, val in sorted(adapt_model.items()))
+full_id_adapt = "noisy-breeze-3898" + idd_adapt
+path_adapt = os.path.join(config.model_root, 'log', 'pretraining')
 
 ####
 #### PREVIOUS MODEL CONFIG
@@ -48,42 +79,52 @@ config_model["smooth_size"] = 10
 
 config_model["alpha"] = learning_rate
 config_model["reg"] = 1e-3
-config_model["beta"] = 0.1
+config_model["beta"] = 0.05
 config_model["rho"] = 0.01
 
 config_model["same_filter"] = True
 config_model["optimizer"] = 'Adam'
 
 
+
 idd = ''.join('-{}={}-'.format(key, val) for key, val in sorted(config_model.items()))
 # full_id = 'green-sound-9629'+idd
-full_id ='purple-term-1311' + idd
+full_id ='frosty-fire-4612' + idd
 
 ####
 #### NEW MODEL CONFIGURATION
 ####
 
 config_model["type"] = "L41_finetuning"
-learning_rate = 0.001 
+learning_rate = 0.01 
 batch_size = 1
 config_model["chunk_size"] = chunk_size
 config_model["alpha"] = learning_rate
 config_model["batch_size"] = batch_size
 
 model = Adapt(config_model=config_model, pretraining=False)
-model.create_saver()
 
 path = os.path.join(config.model_root, 'log', 'L41_train_front')
-model.restore_model(path, full_id)
-
-model.connect_front_back_to_separator(L41Model)
 
 with model.graph.as_default():
-    model.create_saver()
-    model.restore_model(path, full_id)
-    # model.freeze_front()
-    model.optimize
-    model.tensorboard_init()
+	model.connect_front(L41Model)
+	var_list =[v for v in tf.global_variables() if ('front' in v.name)]
+	model.create_saver(var_list)
+	model.restore_model(path_adapt, full_id_adapt)
+	model.sepNet.prediction
+	var_list =[v for v in tf.global_variables() if ('prediction' in v.name or 'speaker_centroids' in v.name)]
+	model.create_saver(var_list)
+	model.restore_model(path, full_id)
+	model.sepNet.output = model.sepNet.separate
+	model.separator
+	model.back
+	var_list = [v for v in tf.global_variables() if ('back/' in v.name)]
+	model.create_saver(var_list)
+	model.restore_model(path_adapt, full_id_adapt)
+	model.cost
+	model.freeze_front()
+	model.optimize
+	model.tensorboard_init()
 
 init = model.non_initialized_variables()
 
@@ -102,9 +143,9 @@ time_spent = [ 0 for _ in range(5)]
 for epoch in range(nb_epochs):
 	for b in range(nb_batches):
 		step = nb_batches*epoch + b
-		X_non_mix, X_mix, _ = mixed_data.get_batch(batch_size)
+		X_non_mix, X_mix, Ind = mixed_data.get_batch(batch_size)
 		t = time.time()
-		c = model.train(X_mix, X_non_mix, learning_rate, step)
+		c = model.train(X_mix, X_non_mix,learning_rate, step, ind_train= Ind)
 		t_f = time.time()
 		time_spent = time_spent[1:] +[t_f-t]
 
