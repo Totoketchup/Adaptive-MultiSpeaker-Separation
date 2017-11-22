@@ -74,8 +74,8 @@ class L41Model:
 		shape = tf.shape(self.X)
 
 		layers = [
-			BLSTM(self.layer_size, 'BLSTM_1', dropout=True, drop_val=0.9),
-			BLSTM(self.layer_size, 'BLSTM_2', dropout=True, drop_val=0.9),
+			BLSTM(self.layer_size, 'BLSTM_1'),#, dropout=True, drop_val=0.9),
+			BLSTM(self.layer_size, 'BLSTM_2'),#, dropout=True, drop_val=0.9),
 			# BLSTM(self.layer_size, 'BLSTM_3'),
 			# BLSTM(self.layer_size, 'BLSTM_4'),
 			Conv1D([1, self.layer_size, self.embedding_size*self.F]),
@@ -120,43 +120,38 @@ class L41Model:
 
 	@ops.scope
 	def enhance(self):
-		# X_mix = tf.reshape(self.X, [self.B, 1, -1, self.F])
-		# X_non_mix = tf.reshape(self.X_raw, [self.B, self.S, -1, self.F])
-		# perfect_masks = tf.divide(X_non_mix, X_mix) # [B, S, T ,F] [0 .. 1]
+		# [B, S, T, F]
+		separated = tf.reshape(self.separate, [self.B, self.S, -1, self.F])
 
 
-		# [S, B, T, F]
-		separated = tf.transpose(tf.reshape(self.separate, [self.B, self.S, -1, self.F]), [1,0,2,3])
-		
-		# # Concatenate the separated latent space and the latent space
-		# # In order to smooth the output, instead of just applying binary filters
-		# # S [B ,T, 2F]
-		# for i, sep in enumerate(list_separated):
-		# 	list_separated[i] = tf.concat([list_separated[i], self.X], axis=2)
-		
-		# list_concat = tf.stack(list_separated)
-		# X [B, T, F] -> [S, B, T ,F]
-		list_concat = tf.concat([separated, tf.tile(tf.expand_dims(self.X, 0), [self.S, 1, 1, 1])], axis = 3)
-		list_concat = tf.reshape(list_concat, [self.B*self.S, -1, 2*self.F])
+		# X [B, T, F]
+		# Tiling the input S time - like [ a, b, c] -> [ a, a, b, b, c, c], not [a, b, c, a, b, c]
+		X_in = tf.expand_dims(self.X, 1)
+		X_in = tf.tile(X_in, [1, self.S, 1, 1])
+		X_in = tf.reshape(X_in, [self.B, self.S, -1, self.F])
+
+		# Concat the binary separated input and the actual tiled input
+		sep_and_in = tf.concat([separated, X_in], axis = 3)
+		sep_and_in = tf.reshape(sep_and_in, [self.B*self.S, -1, 2*self.F])
 		
 		layers = [
 			BLSTM(self.layer_size, 'BLSTM_1'),
 			BLSTM(self.layer_size, 'BLSTM_2'),
-			BLSTM(self.layer_size, 'BLSTM_3'),
-			Conv1D([1, self.layer_size, self.F])
+			# BLSTM(self.layer_size, 'BLSTM_3'),
+			# BLSTM(self.layer_size, 'BLSTM_4')
 		]
 
-		mean, var = tf.nn.moments(list_concat, [1,2], keep_dims=True)
-		list_concat = (list_concat - mean)/var
+		mean, var = tf.nn.moments(sep_and_in, [1,2], keep_dims=True)
+		sep_and_in = (sep_and_in - mean)/var
 
-		y = f_props(layers, list_concat)
-		y = tf.reshape(y, [self.S, self.B, -1]) # [SB, TF]
+		y = f_props(layers, sep_and_in)
+		y = tf.layers.dense(y, self.F)
 
-		y = tf.transpose(y, [1,2,0])
+		y = tf.reshape(y, [self.B, self.S, -1]) # [B, S, TF]
+
+		y = tf.transpose(y, [0, 2, 1]) # [B, TF, S]
 		y = tf.nn.softmax(y) * tf.reshape(self.X, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
 		self.cost_in = y
-		y = tf.transpose(tf.reshape(y, [self.B, -1, self.F, self.S, 1]), [0, 3, 1, 2, 4])
-		y = tf.reshape(y, [self.B*self.S, -1, self.F, 1])
 		return y
 
 	@ops.scope
@@ -180,9 +175,10 @@ class L41Model:
 		permuted_approx= tf.gather_nd(test_enhance, indicies)
 
 		# X_non_mix [B, T, F, S]
-		X_non_mix = tf.transpose(tf.reshape(self.X_non_mix, [self.B, -1, 1, self.S]), [0, 2, 3, 1])
+		X_non_mix = tf.transpose(tf.reshape(self.X_non_mix, [self.B, 1, -1, self.S]), [0, 1, 3, 2])
 		cost = tf.reduce_sum(tf.square(X_non_mix-permuted_approx), axis=-1) # Square difference on each bin 
 		cost = tf.reduce_sum(cost, axis=-1) # Sum among all speakers
+
 		cost = tf.reduce_min(cost, axis=-1) # Take the minimum permutation error
 
 		# training_vars = tf.trainable_variables()
@@ -257,3 +253,6 @@ class L41Model:
 
 
 		return cost
+
+	def get_centroids(self):
+		return self.speaker_vectors.eval()
