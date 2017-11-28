@@ -54,6 +54,7 @@ class L41Model:
 				# # shape = [ batch size, T, F, S]
 				argmax = tf.argmax(self.X_non_mix, axis=3)
 				self.y = tf.one_hot(argmax, 2, 1.0, -1.0)
+				self.y_test_export = tf.reshape(self.y[:, :, :, 0], [self.B, -1])
 
 			# Speakers indices used in the mixtures
 			# shape = [ batch size, #speakers]
@@ -85,11 +86,7 @@ class L41Model:
 
 		# Produce embeddings [B, T, F, E]
 		y = f_props(layers, self.X)
-
-		# Normalize the T-F vectors to get the network output
-		if self.normalize:
-			y = tf.nn.l2_normalize(y, 3)
-
+		
 		return y
 
 	@ops.scope
@@ -137,7 +134,7 @@ class L41Model:
 		layers = [
 			BLSTM(self.layer_size, 'BLSTM_1'),
 			BLSTM(self.layer_size, 'BLSTM_2'),
-			# BLSTM(self.layer_size, 'BLSTM_3'),
+			BLSTM(self.layer_size, 'BLSTM_3'),
 			# BLSTM(self.layer_size, 'BLSTM_4')
 		]
 
@@ -150,9 +147,12 @@ class L41Model:
 		y = tf.reshape(y, [self.B, self.S, -1]) # [B, S, TF]
 
 		y = tf.transpose(y, [0, 2, 1]) # [B, TF, S]
-		y = tf.nn.softmax(y) * tf.reshape(self.X, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
+
+		# y = tf.nn.softmax(y) * tf.reshape(self.X, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
+		y = y * tf.reshape(self.X, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
 		self.cost_in = y
-		return y
+		y =  tf.transpose(y, [0, 2, 1])
+		return tf.reshape(y , [self.B*self.S, -1, self.F, 1])
 
 	@ops.scope
 	def enhance_cost(self):

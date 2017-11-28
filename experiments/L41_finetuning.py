@@ -12,7 +12,7 @@ import config
 import os
 import tensorflow as tf
 H5_dic = read_metadata()
-chunk_size = 512*40
+chunk_size = 512*10
 
 males = H5PY_RW('test_raw.h5py', subset = males_keys(H5_dic))
 fem = H5PY_RW('test_raw.h5py', subset = females_keys(H5_dic))
@@ -21,9 +21,8 @@ print 'Data with', len(H5_dic), 'male and female speakers'
 print males.length(), 'elements'
 print fem.length(), 'elements'
 
-mixed_data = Mixer([males, fem], chunk_size= chunk_size, with_mask=False, with_inputs=True)
+mixed_data = Mixer([males, fem], chunk_size= chunk_size, with_mask=False, with_inputs=True, shuffling=True)
 
-####
 #### PREVIOUS ADAPT MODEL CONFIG
 ####
 
@@ -53,7 +52,7 @@ adapt_model["same_filter"] = True
 adapt_model["optimizer"] = 'Adam'
 idd_adapt = ''.join('-{}={}-'.format(key, val) for key, val in sorted(adapt_model.items()))
 full_id_adapt = "noisy-breeze-3898" + idd_adapt
-path_adapt = os.path.join(config.model_root, 'log', 'pretraining')
+path_adapt = os.path.join(config.model_root if not config.floydhub else '/model1', 'log', 'pretraining')
 
 ####
 #### PREVIOUS MODEL CONFIG
@@ -88,8 +87,8 @@ config_model["optimizer"] = 'Adam'
 
 
 idd = ''.join('-{}={}-'.format(key, val) for key, val in sorted(config_model.items()))
-# full_id = 'green-sound-9629'+idd
 full_id ='frosty-fire-4612' + idd
+path = os.path.join(config.model_root if not config.floydhub else '/model2', 'log', 'L41_train_front')
 
 ####
 #### NEW MODEL CONFIGURATION
@@ -97,14 +96,13 @@ full_id ='frosty-fire-4612' + idd
 
 config_model["type"] = "L41_finetuning"
 learning_rate = 0.01 
-batch_size = 1
+batch_size = 64
 config_model["chunk_size"] = chunk_size
 config_model["alpha"] = learning_rate
 config_model["batch_size"] = batch_size
 
 model = Adapt(config_model=config_model, pretraining=False)
 
-path = os.path.join(config.model_root, 'log', 'L41_train_front')
 
 with model.graph.as_default():
 	model.connect_front(L41Model)
@@ -145,7 +143,7 @@ for epoch in range(nb_epochs):
 		step = nb_batches*epoch + b
 		X_non_mix, X_mix, Ind = mixed_data.get_batch(batch_size)
 		t = time.time()
-		c = model.train(X_mix, X_non_mix,learning_rate, step, ind_train= Ind)
+		c = model.train_no_sum(X_mix, X_non_mix,learning_rate, step, ind_train= Ind)
 		t_f = time.time()
 		time_spent = time_spent[1:] +[t_f-t]
 

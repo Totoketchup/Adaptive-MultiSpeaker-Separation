@@ -37,7 +37,7 @@ config_model = {}
 config_model["type"] = "pretraining"
 
 config_model["batch_size"] = batch_size
-config_model["chunk_size"] = chunk_size
+config_model["chunk_size"] = 512*40
 
 config_model["N"] = N
 config_model["maxpool"] = max_pool
@@ -54,16 +54,17 @@ config_model["same_filter"] = True
 config_model["optimizer"] = 'Adam'
 idd = ''.join('-{}={}-'.format(key, val) for key, val in sorted(config_model.items()))
 full_id = "noisy-breeze-3898" + idd
+path = os.path.join(config.model_root, 'log', 'pretraining')
 
 
 ####
-#### LOAD PREVIOUS MODEL
+#### NEW MODEL
 ####
 
 config_model["type"] = "L41_train_front"
 learning_rate = 0.01
-batch_size = 64
-config_model["chunk_size"] = 512*10
+batch_size = 8
+config_model["chunk_size"] = 512*40
 config_model["batch_size"] = batch_size
 config_model["alpha"] = learning_rate
 
@@ -71,12 +72,10 @@ config_model["alpha"] = learning_rate
 model = Adapt(config_model=config_model, pretraining=False)
 model.create_saver()
 
-path = os.path.join(config.model_root, 'log', 'pretraining')
 model.restore_model(path, full_id)
 
 model.connect_only_front_to_separator(L41Model)
 init = model.non_initialized_variables()
-model.create_centroids_saver()
 model.sess.run(init)
 
 print 'Total name :' 
@@ -106,7 +105,12 @@ for epoch in range(nb_epochs):
 			, nb_batches, b, nb_epochs, epoch)
 		# print 'length of data =', X_non_mix.shape ,'step ', b+1, mixed_data.datasets[0].index_item_split, mixed_data.selected_split_size(),getETA(sum(time_spent)/float(np.count_nonzero(time_spent)), nb_batches, b, nb_epochs, epoch)
 
-		if b%20 == 0: #cost_valid < cost_valid_min:
-			print 'DAS model saved at iteration number ', nb_batches*epoch + b,' with cost = ', c 
+		if step%20 == 0: #cost_valid < cost_valid_min:
+			print 'DAS model saved at iteration number ', step,' with cost = ', c 
 			model.save(nb_batches*epoch + b)
+			mixed_data.select_split(1)
+			x_non_test , x_test , _ = mixed_data.get_only_first_items(8)
+			model.test_prediction(x_test, x_non_test, step)
+			mixed_data.select_split(0)
+
 
