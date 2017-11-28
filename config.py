@@ -11,14 +11,11 @@ if floydhub:
 	print 'We are on Floydhub'
 	h5py_root = '/h5py_files'
 	model_root = '/model'
+	log_dir = '/output/log'
 else:
 	print 'We are on PC'
 	h5py_root = os.path.join(workdir, 'h5py_files')
 	model_root = workdir
-
-if floydhub:
-	log_dir = '/output/log'
-else:
 	log_dir = os.path.join(workdir,'log')
 
 
