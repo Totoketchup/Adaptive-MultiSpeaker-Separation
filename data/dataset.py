@@ -70,8 +70,8 @@ class H5PY_RW:
 			index: split index
 		"""
 		if not hasattr(self, 'index_item_split'):
-			self.index_item_split = np.zeros((len(splits),), dtype = np.int32)
-
+			self.index_item_split = np.array([ int(sum(splits[0:i])*len(self.items)) for i in range(len(splits))], dtype = np.int32)
+		# print self.index_item_split
 		item_path = self.items[self.index_item_split[split_index]]
 		split_path = item_path.split('/')
 
@@ -94,6 +94,8 @@ class H5PY_RW:
 
 		return X, key
 
+	def reset_split(self, splits, index):
+		self.index_item_split[index] = int(sum(splits[0:index])*len(self.items))
 
 	def shuffle(self, seed=1):
 		np.random.seed(seed)
@@ -259,6 +261,7 @@ class Mixer:
 			# Adjust size to the smallest dataset in order to have 
 			# regular epochs
 			dataset.items = dataset.items[0:self.size]
+
 		self.splits_size = [int(split_ratio*self.size) for split_ratio in splits]
 
 	def shuffle(self):
@@ -348,6 +351,13 @@ class Mixer:
 
 		return np.array(X_mix), np.array(Ind)
 
+	def get_only_first_items(self, size):
+		batch = self.get_batch(size)
+		# Hack on the split index -> reset to zero
+		for dataset in self.datasets:
+			dataset.reset_split(self.splits, self.split_index)
+		return batch
+
 	def create_labels(self):
 		# Create a set of all the speaker indicies 
 		self.items = Set()
@@ -399,8 +409,6 @@ if __name__ == "__main__":
 
 	for i in range(nb_batches):
 			_,_, ind = mixed_data.get_batch(batch_size)
-			if i == 0:
-				print ind
 			for key, id_ in nb_to_speaker.iteritems():
 				for b in range(batch_size):
 					if id_ == ind[b][0]:
@@ -411,6 +419,10 @@ if __name__ == "__main__":
 						if b == 0:
 							id_f += [key]
 						assert H5_dic[str(key)]['sex'] == 'F' 
+
+	mixed_data.select_split(1)
+	x_non_test , x_test , _ = mixed_data.get_only_first_items(8)
+	mixed_data.select_split(0)
 
 	for j in range(2):
 		for i in range(nb_batches):
