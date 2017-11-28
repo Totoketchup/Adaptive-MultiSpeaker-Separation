@@ -52,6 +52,34 @@ def Xavier_init(in_dim, hid_dim, name):
         size=(in_dim, hid_dim)
     ).astype('float32'), name=name)
 
+def unpool(pool, ind, output_shape, ksize=[1, 2, 2, 1], scope='unpool'):
+    """
+       Unpooling layer after max_pool_with_argmax.
+       Args:
+           pool:   max pooled output tensor
+           ind:      argmax indices
+           ksize:     ksize is the same as for the pool
+       Return:
+           unpool:    unpooling tensor
+    """
+    with tf.variable_scope(scope):
+        input_shape =  tf.shape(pool)
+        
+        flat_input_size = tf.cumprod(input_shape)[-1]
+        flat_output_shape = tf.stack([output_shape[0], output_shape[1] * output_shape[2] * output_shape[3]])
+
+        pool_ = tf.reshape(pool, tf.stack([flat_input_size]))
+        batch_range = tf.reshape(tf.range(tf.cast(output_shape[0], tf.int64), dtype=ind.dtype), 
+                                          shape=tf.stack([input_shape[0], 1, 1, 1]))
+        b = tf.ones_like(ind) * batch_range
+        b = tf.reshape(b, tf.stack([flat_input_size, 1]))
+        ind_ = tf.reshape(ind, tf.stack([flat_input_size, 1]))
+        ind_ = tf.concat([b, ind_], 1)
+
+        ret = tf.scatter_nd(ind_, pool_, shape=tf.cast(flat_output_shape, tf.int64))
+        ret = tf.reshape(ret, tf.stack(output_shape))
+        return ret
+
 # def unpool(pool, ind, ksize=[1, 2, 2, 1], scope='unpool'):
 #     """
 #        Unpooling layer after max_pool_with_argmax.
@@ -63,56 +91,27 @@ def Xavier_init(in_dim, hid_dim, name):
 #            unpool:    unpooling tensor
 #     """
 #     with tf.variable_scope(scope):
-#         input_shape =  tf.shape(pool)
+#         input_shape = tf.shape(pool)
 #         output_shape = [input_shape[0], input_shape[1] * ksize[1], input_shape[2] * ksize[2], input_shape[3]]
 
-#         flat_input_size = tf.cumprod(input_shape)[-1]
-#         flat_output_shape = tf.stack([output_shape[0], output_shape[1] * output_shape[2] * output_shape[3]])
+#         flat_input_size = tf.reduce_prod(input_shape)
+#         flat_output_shape = [output_shape[0], output_shape[1] * output_shape[2] * output_shape[3]]
 
-#         pool_ = tf.reshape(pool, tf.stack([flat_input_size]))
+#         pool_ = tf.reshape(pool, [flat_input_size])
 #         batch_range = tf.reshape(tf.range(tf.cast(output_shape[0], tf.int64), dtype=ind.dtype), 
-#                                           shape=tf.stack([input_shape[0], 1, 1, 1]))
+#                                           shape=[input_shape[0], 1, 1, 1])
 #         b = tf.ones_like(ind) * batch_range
-#         b = tf.reshape(b, tf.stack([flat_input_size, 1]))
-#         ind_ = tf.reshape(ind, tf.stack([flat_input_size, 1]))
-#         ind_ = tf.concat([b, ind_], 1)
+#         b1 = tf.reshape(b, [flat_input_size, 1])
+#         ind_ = tf.reshape(ind, [flat_input_size, 1])
+#         ind_ = tf.concat([b1, ind_], 1)
 
 #         ret = tf.scatter_nd(ind_, pool_, shape=tf.cast(flat_output_shape, tf.int64))
-#         ret = tf.reshape(ret, tf.stack(output_shape))
+#         ret = tf.reshape(ret, output_shape)
+
+#         set_input_shape = pool.get_shape()
+#         set_output_shape = [set_input_shape[0], set_input_shape[1] * ksize[1], set_input_shape[2] * ksize[2], set_input_shape[3]]
+#         ret.set_shape(set_output_shape)
 #         return ret
-
-def unpool(pool, ind, ksize=[1, 2, 2, 1], scope='unpool'):
-    """
-       Unpooling layer after max_pool_with_argmax.
-       Args:
-           pool:   max pooled output tensor
-           ind:      argmax indices
-           ksize:     ksize is the same as for the pool
-       Return:
-           unpool:    unpooling tensor
-    """
-    with tf.variable_scope(scope):
-        input_shape = tf.shape(pool)
-        output_shape = [input_shape[0], input_shape[1] * ksize[1], input_shape[2] * ksize[2], input_shape[3]]
-
-        flat_input_size = tf.reduce_prod(input_shape)
-        flat_output_shape = [output_shape[0], output_shape[1] * output_shape[2] * output_shape[3]]
-
-        pool_ = tf.reshape(pool, [flat_input_size])
-        batch_range = tf.reshape(tf.range(tf.cast(output_shape[0], tf.int64), dtype=ind.dtype), 
-                                          shape=[input_shape[0], 1, 1, 1])
-        b = tf.ones_like(ind) * batch_range
-        b1 = tf.reshape(b, [flat_input_size, 1])
-        ind_ = tf.reshape(ind, [flat_input_size, 1])
-        ind_ = tf.concat([b1, ind_], 1)
-
-        ret = tf.scatter_nd(ind_, pool_, shape=tf.cast(flat_output_shape, tf.int64))
-        ret = tf.reshape(ret, output_shape)
-
-        set_input_shape = pool.get_shape()
-        set_output_shape = [set_input_shape[0], set_input_shape[1] * ksize[1], set_input_shape[2] * ksize[2], set_input_shape[3]]
-        ret.set_shape(set_output_shape)
-        return ret
     # with tf.variable_scope(scope):
     #     pooled_shape = tf.shape(pool)
 
@@ -318,7 +317,7 @@ class BatchNorm:
         return tf.layers.batch_normalization(x)
 
 class BLSTM:
-    def __init__(self, hid_dim, name, dropout=False, drop_val=0.2):
+    def __init__(self, hid_dim, name, dropout=False, drop_val=0.8):
         self.hid_dim = hid_dim
         self.name = name
         self.dropout = dropout
@@ -344,7 +343,7 @@ class BLSTM:
 
         # Concatenate the RNN outputs and return
         return tf.concat([forward_out[:,:,:], backward_out[:,::-1,:]], 2)
-        
+
 class Residual:
     def __init__(self, layers):
         self.layers = layers;

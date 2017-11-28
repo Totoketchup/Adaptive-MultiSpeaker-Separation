@@ -13,7 +13,7 @@ import haikunator
 from itertools import compress
 from tensorflow.python.saved_model import builder as saved_model_builder
 name = 'AdaptiveNet'
-
+import numpy as np
 from tensorflow.python import debug as tf_debug
 
 
@@ -66,7 +66,7 @@ class Adapt:
 		with self.graph.as_default():
 
 			tf.set_random_seed(42) # Constant seed for uniform results
-
+			np.random.seed(42)
 			# Boolean placeholder signaling if the model is in learning/training mode
 			self.training = tf.placeholder(tf.bool, name='is_training')
 
@@ -148,10 +148,10 @@ class Adapt:
 			# tf.summary.audio(name= "input/2", tensor = self.x[4:5,:], sample_rate = config.fs, max_outputs=1)
 
 			# tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
-			# tf.summary.audio(name= "input/non-mixed", tensor = tf.reshape(self.X_non_mix[0:2], [-1, self.L]), sample_rate = config.fs, max_outputs=8)
+			# # # tf.summary.audio(name= "input/non-mixed", tensor = tf.reshape(self.X_non_mix[0:2], [-1, self.L]), sample_rate = config.fs, max_outputs=8)
 
-			# tf.summary.audio(name= "input/", tensor = self.x[self.B:], sample_rate = config.fs, max_outputs=9)
-			# tf.summary.audio(name= "input2/", tensor = self.X_non_mix, sample_rate = config.fs, max_outputs=9)
+			# tf.summary.audio(name= "input/", tensor = self.x[:self.B], sample_rate = config.fs, max_outputs=9)
+			# # tf.summary.audio(name= "input2/", tensor = self.X_non_mix, sample_rate = config.fs, max_outputs=9)
 
 			# tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=6)
 
@@ -167,13 +167,13 @@ class Adapt:
 			# tf.summary.image(name= "unpooled", tensor = trs(self.unpooled))
 			# tf.summary.image(name= "mask", tensor = trs(self.mask))
 			# tf.summary.image(name= "reconstructed", tensor = trs(self.recons))
-			if self.pretraining:
-				with tf.name_scope('loss_values'):
-					tf.summary.scalar('loss', self.MSE)
-					tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
-					tf.summary.scalar('sparse_reg', self.sparse_reg)
-					tf.summary.scalar('regularization', self.reg)
-					tf.summary.scalar('training_cost', self.cost)
+			# if self.pretraining:
+			# 	with tf.name_scope('loss_values'):
+			# 		tf.summary.scalar('loss', self.MSE)
+			# 		tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
+			# 		tf.summary.scalar('sparse_reg', self.sparse_reg)
+			# 		tf.summary.scalar('regularization', self.reg)
+			# 		tf.summary.scalar('training_cost', self.cost)
 
 			self.merged = tf.summary.merge_all()
 			self.train_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID), self.graph)
@@ -190,9 +190,16 @@ class Adapt:
 			# projector.visualize_embeddings(self.train_writer, config_)
 
 
-	def create_saver(self):
+	def create_saver(self, subset=None):
 		with self.graph.as_default():
-			self.saver = tf.train.Saver()
+			if subset is None:
+				self.saver = tf.train.Saver()
+			else:
+				self.saver = tf.train.Saver(subset)
+
+	def create_centroids_saver(self):
+		with self.graph.as_default():
+			self.centroids_saver = tf.train.Saver([self.sepNet.speaker_vectors], max_to_keep=10000000)
 
 	def restore_model(self, path, runID):
 		self.saver.restore(self.sess, os.path.join(path, name+'-'+runID, 'model.ckpt'))
@@ -238,6 +245,7 @@ class Adapt:
 			is_not_initialized = self.sess.run([~(tf.is_variable_initialized(var)) \
 										   for var in global_vars])
 			not_initialized_vars = list(compress(global_vars, is_not_initialized))
+			print 'not init: ', [v.name for v in not_initialized_vars]
 			if len(not_initialized_vars):
 				init = tf.variables_initializer(not_initialized_vars)
 				return init
@@ -255,12 +263,11 @@ class Adapt:
 	def connect_front_back_to_separator(self, separator):
 		with self.graph.as_default():
 			self.connect_front(separator)
-			self.sepNet.separate
-			self.sepNet.output = self.sepNet.enhance
+			self.sepNet.prediction
+			self.sepNet.output = self.sepNet.separate
 			self.separator
 			self.back
 			self.cost
-			print tf.trainable_variables()
 
 
 	##
@@ -278,7 +285,8 @@ class Adapt:
 		self.window_filter = get_scope_variable('window', 'w', shape=[self.window], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 		self.bases = get_scope_variable('bases', 'bases', shape=[self.window, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 		self.conv_filter = tf.reshape(tf.expand_dims(self.window_filter,1)*self.bases , [1, self.window, 1, self.N])
-		
+		# self.filter_front = tf.get_variable('front_filter', shape=[1, self.window, 1, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
+
 		# 1 Dimensional convolution along T axis with a window length = self.window
 		# And N = 256 filters -> Create a [Btot, 1, T, N]
 		self.X = tf.nn.conv2d(input_front, self.conv_filter, strides=[1, 1, 1, 1], padding="SAME", name='Conv_STFT')
@@ -291,7 +299,7 @@ class Adapt:
 		# Max Pooling with argmax for unpooling later in the back-end layer
 		# Along the T axis (time)
 		self.y, argmax = tf.nn.max_pool_with_argmax(self.X, (1, self.max_pool_value, 1, 1),
-													strides=[1, self.max_pool_value, 1, 1], padding="SAME")
+													strides=[1, self.max_pool_value, 1, 1], padding="VALID")
 		
 		y_shape = tf.shape(self.y)
 		self.p_hat = tf.reduce_sum(tf.abs(self.y), axis=[1,2,3])/(tf.cast(y_shape[1]*y_shape[2], tf.float32))
@@ -327,20 +335,16 @@ class Adapt:
 			argmax_in = tf.expand_dims(argmax_in, 1)
 			argmax_in = tf.tile(argmax_in, [1, self.S, 1, 1 ,1])
 			argmax_in = tf.reshape(argmax_in, shape*repeats)
-			
-			# argmax_in = argmax_in[:self.B, :, :, :] # [B, T, F, 1]
-			# argmax_in = tf.tile(argmax_in, [self.S, 1, 1, 1])
-			# argmax_in = tf.transpose(tf.reshape(argmax_in, [self.B, self.S, -1, self.N, 1]), [1,0,2,3,4])
-			# argmax_in = tf.reshape(argmax_in, [self.B*self.S, -1, self.N, 1])
 
 			return output, argmax_in
-			# Simulate perfect separation here:
-
-
-
 		else:
-			argmax_in = argmax_in[:self.B, :, :, :]
-			argmax_in = tf.tile(argmax_in, [self.S, 1, 1, 1])
+			argmax_in = argmax_in[:self.B]
+
+			repeats = [self.S, 1, 1 ,1]
+			shape = tf.shape(argmax_in)
+			argmax_in = tf.expand_dims(argmax_in, 1)
+			argmax_in = tf.tile(argmax_in, [1, self.S, 1, 1 ,1])
+			argmax_in = tf.reshape(argmax_in, shape*repeats)
 
 			return self.sepNet.output, argmax_in
 
@@ -350,7 +354,8 @@ class Adapt:
 		input_tensor, argmax = self.separator
 
 		# Unpooling (the previous max pooling)
-		self.unpooled = unpool(input_tensor, argmax, ksize=[1, self.max_pool_value, 1, 1], scope='unpool')
+		output_shape = [self.B*self.S, self.T, self.N, 1]
+		self.unpooled = unpool(input_tensor, argmax, ksize=[1, self.max_pool_value, 1, 1], output_shape= output_shape, scope='unpool')
 
 		self.recons = self.unpooled
 
@@ -359,10 +364,11 @@ class Adapt:
 		self.window_filter_2 = get_scope_variable('window_2', 'w_2', shape=[self.window], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 		self.bases_2 = get_scope_variable('bases_2', 'bases_2', shape=[self.window, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 		self.conv_filter_2 = tf.reshape(tf.expand_dims(self.window_filter_2,1)*self.bases_2 , [1, self.window, 1, self.N])
-		
+		# self.filter_back = tf.get_variable('back_filter', shape=[1, self.window, 1, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
+
 		output = tf.nn.conv2d_transpose(output , filter=self.conv_filter_2,
 									 output_shape=[self.B*self.S, 1, self.L, 1],
-									 strides=[1, 1, 1, 1])
+									 strides=[1, 1, 1, 1], padding='SAME')
 
 		output = tf.reshape(output, [self.B, self.S, self.L], name='back_output')
 
@@ -388,7 +394,7 @@ class Adapt:
 		# shape = [B_tot, T, N]
 		self.sparse_reg = self.beta * tf.reduce_mean(self.kl_div(self.p, self.p_hat))
 		
-		self.reg = self.l * (tf.nn.l2_loss(self.conv_filter)+ tf.nn.l2_loss(self.conv_filter_2))
+		self.reg = self.l * (tf.nn.l2_loss(self.conv_filter_2)+ tf.nn.l2_loss(self.conv_filter))
 		
 		# input_shape = [B, S, L]
 		# Doing l2 norm on L axis : 
@@ -448,29 +454,24 @@ class Adapt:
 		return optimize
 
 	def save(self, step):
-		self.saver.save(self.sess, os.path.join(config.log_dir, self.folder ,self.runID, "model.ckpt"))  # , step)
+		self.saver.save(self.sess, os.path.join(config.log_dir, self.folder ,self.runID, "model.ckpt"))
 
+	def save_centroids(self, step):
+		self.centroids_saver.save(self.sess, os.path.join(config.log_dir, self.folder ,self.runID, "centroids"), global_step=step)
 
 	def train(self, X_mix, X_non_mix, learning_rate, step, ind_train=None):
 		if ind_train is None:
 			summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_non_mix, self.training:True, self.learning_rate:learning_rate})
 		else:
-			summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_non_mix, self.training:True, self.Ind:ind_train, self.learning_rate:learning_rate})
+			summary, _, cost, centroids = self.sess.run([self.merged, self.optimize, self.cost, self.sepNet.speaker_vectors], {self.X_mix: X_mix, self.X_non_mix:X_non_mix, self.training:True, self.Ind:ind_train, self.learning_rate:learning_rate})
 		
+		np.save(os.path.join(config.log_dir, self.folder ,self.runID, "centroids-{}".format(step)), centroids)
 		self.train_writer.add_summary(summary, step)
 		return cost
 
 	def pretrain(self, X_non_mix, learning_rate, step):
-		# options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
-		# run_metadata = tf.RunMetadata()
-
 		_ ,summary, cost = self.sess.run([self.optimize, self.merged, self.cost], {self.X_non_mix:X_non_mix, self.training:True, self.learning_rate:learning_rate})#,  options=options, run_metadata=run_metadata)
 		self.train_writer.add_summary(summary, step)
-
-		# fetched_timeline = timeline.Timeline(run_metadata.step_stats)
-		# chrome_trace = fetched_timeline.generate_chrome_trace_format()
-		# with open('timeline_01.json', 'w') as f:
-		# 	f.write(chrome_trace)
 		return cost
 
 	def train_no_sum(self, X_mix, X_in, learning_rate, step, ind_train=None):
@@ -479,6 +480,15 @@ class Adapt:
 		else:
 			_, cost = self.sess.run([self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_in, self.training:True, self.Ind:ind_train, self.learning_rate:learning_rate})
 		return cost
+
+	def test_prediction(self, X_mix_test, X_non_mix_test, step):
+		pred, y = self.sess.run([self.sepNet.prediction, self.sepNet.y_test_export], {self.X_mix: X_mix_test, self.X_non_mix:X_non_mix_test, self.training:True})
+		pred = np.reshape(pred, [X_mix_test.shape[0], -1, 40])
+		labels = [['r' if b == 1 else 'b' for b in batch]for batch in y]
+		np.save(os.path.join(config.log_dir, self.folder ,self.runID, "bins-{}".format(step)), pred)
+		np.save(os.path.join(config.log_dir, self.folder ,self.runID, "labels-{}".format(step)), labels)
+
+
 
 	def connect_front(self, separator_class):
 		# Separate Mixed and Non Mixed 'spectrograms'
@@ -501,6 +511,11 @@ class Adapt:
 		training_var.remove(self.window_filter)
 		self.trainable_variables = training_var
 
+	def freeze_back(self):
+		print self.trainable_variables
+		self.trainable_variables.remove(self.bases_2)
+		self.trainable_variables.remove(self.window_filter_2)
+
 	# TODO
 	def freeze_variables(self):
 		training_var = tf.trainable_variables()
@@ -508,6 +523,4 @@ class Adapt:
 		for var in training_var:
 			if 'enhance' in var.name:
 				to_train.append(var)
-				# with tf.name_scope(var.name[8:-2]):
-				# 	variable_summaries(var)
 		self.trainable_variables = to_train
