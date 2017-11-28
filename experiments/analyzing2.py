@@ -29,50 +29,10 @@ colors = ['r' if v =='M' else 'b' for v in labels]
 red_patch = mpatches.Patch(color='red', label='Men')
 blue_patch = mpatches.Patch(color='blue', label='Women')
 
-####
-#### MODEL CONFIG
-# ####
 
-# config_model = {}
-# config_model["type"] = "L41_train_front"
-# config_model["batch_size"] = 64
-# config_model["chunk_size"] = 512*10
-# config_model["N"] = 256
-# config_model["maxpool"] = 256
-# config_model["window"] = 1024
-# config_model["smooth_size"] = 10
-# config_model["alpha"] = 0.01
-# config_model["reg"] = 1e-3
-# config_model["beta"] = 0.05
-# config_model["rho"] = 0.01
-# config_model["same_filter"] = True
-# config_model["optimizer"] = 'Adam'
-
-# config_id = ''.join('-{}={}-'.format(key, val) for key, val in sorted(config_model.items()))
-# full_id = "AdaptiveNet-frosty-fire-4612" + config_id
-# model_meta_path = os.path.join(config.log_dir, config_model["type"], full_id, 'model.ckpt.meta')
-# model_path = os.path.join(config.log_dir, config_model["type"], full_id, 'model.ckpt')
-
-
-config_model = {}
-config_model["type"] = "L41_train_front"
-config_model["batch_size"] = 64
-config_model["chunk_size"] = 512*10
-config_model["N"] = 256
-config_model["maxpool"] = 256
-config_model["window"] = 1024
-config_model["smooth_size"] = 10
-config_model["alpha"] = 0.01
-config_model["reg"] = 1e-3
-config_model["beta"] = 0.05
-config_model["rho"] = 0.01
-config_model["same_filter"] = True
-config_model["optimizer"] = 'Adam'
-
-config_id = ''.join('-{}={}-'.format(key, val) for key, val in sorted(config_model.items()))
-full_id = "AdaptiveNet-soft-lab-2491" + config_id
-centroids_path = os.path.join(config.log_dir, config_model["type"], full_id, 'centroids')
-path = os.path.join(config.log_dir, config_model["type"], full_id)
+full_id = "AdaptiveNet-steep-moon-5782-N=256--alpha=0.01--batch_size=8--beta=0.05--chunk_size=20480--maxpool=256--optimizer=Adam--reg=0.001--rho=0.01--same_filter=True--smooth_size=10--type=L41_train_front--window=1024-"
+centroids_path = os.path.join(config.log_dir, "L41_train_front", full_id, 'centroids')
+path = os.path.join(config.log_dir, "L41_train_front", full_id)
 
 l = os.listdir(path)
 centroids_filename = [ v for v in l if 'centroids' in v ]
@@ -81,22 +41,24 @@ total = len(centroids_filename)
 
 to_plot = []
 
-for filename in tqdm(centroids_filename[0:10], desc='Reading TSNE centroids'):
-	to_plot += [TSNE_representation(np.load(os.path.join(path, filename)),2)]
+for filename in tqdm(centroids_filename[0:total], desc='Reading TSNE centroids'):
+	to_plot += [PCA_representation(np.load(os.path.join(path, filename)),2)]
 to_plot = np.array(to_plot)
 
 print to_plot.shape
 import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib.animation as animation
+print plt.style.available
 
 
 fig, ax = plt.subplots()
 scat = ax.scatter([], [], s=40)
-plt.xlim(-5,5)
-plt.ylim(-5,5)
+plt.xlim(-2., 2.)
+plt.ylim(-2., 2.)
 plt.xlabel('X1')
 plt.ylabel('X2')
+plt.style.use('ggplot')
 plt.legend(handles=[red_patch, blue_patch])
 
 def update_plot(i):
@@ -106,7 +68,7 @@ def update_plot(i):
 	plt.title('TSNE of speakers centroids on 2 components at step = {}'.format(i))
 	return scat,
 
-ani = animation.FuncAnimation(fig, update_plot, blit=False, interval=1000, frames=xrange(10))
+ani = animation.FuncAnimation(fig, update_plot, blit=False, interval=100, frames=xrange(total))
 
 ani.save(os.path.join(config.workdir, 'gif', 'centroids','anim.gif'), writer="imagemagick")
 
