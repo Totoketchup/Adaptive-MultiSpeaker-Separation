@@ -68,7 +68,7 @@ config_model = {}
 config_model["type"] = "L41_train_front"
 
 config_model["batch_size"] = batch_size
-config_model["chunk_size"] = 512*10
+config_model["chunk_size"] = 512*40
 
 config_model["N"] = N
 config_model["maxpool"] = max_pool
@@ -84,10 +84,8 @@ config_model["rho"] = 0.01
 config_model["same_filter"] = True
 config_model["optimizer"] = 'Adam'
 
-
-
 idd = ''.join('-{}={}-'.format(key, val) for key, val in sorted(config_model.items()))
-full_id ='frosty-fire-4612' + idd
+full_id ='old-credit-1330' + idd
 path = os.path.join(config.model_root if not config.floydhub else '/model2', 'log', 'L41_train_front')
 
 ####
@@ -95,7 +93,7 @@ path = os.path.join(config.model_root if not config.floydhub else '/model2', 'lo
 ####
 
 config_model["type"] = "L41_finetuning"
-learning_rate = 0.01 
+learning_rate = 0.001 
 batch_size = 64
 config_model["chunk_size"] = chunk_size
 config_model["alpha"] = learning_rate
@@ -120,7 +118,8 @@ with model.graph.as_default():
 	model.create_saver(var_list)
 	model.restore_model(path_adapt, full_id_adapt)
 	model.cost
-	model.freeze_front()
+	# model.freeze_front()
+	# model.freeze_back()
 	model.optimize
 	model.tensorboard_init()
 

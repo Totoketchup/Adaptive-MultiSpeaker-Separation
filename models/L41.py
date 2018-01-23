@@ -52,7 +52,7 @@ class L41Model:
 			with tf.name_scope('create_masks'):
 				# # Batch of Masks (bins label)
 				# # shape = [ batch size, T, F, S]
-				argmax = tf.argmax(self.X_non_mix, axis=3)
+				argmax = tf.argmax(tf.abs(self.X_non_mix), axis=3)
 				self.y = tf.one_hot(argmax, 2, 1.0, -1.0)
 				self.y_test_export = tf.reshape(self.y[:, :, :, 0], [self.B, -1])
 
@@ -74,6 +74,9 @@ class L41Model:
 		"""
 		shape = tf.shape(self.X)
 
+		mean, var = tf.nn.moments(self.X, axes=[1,2], keep_dims=True)
+		input_tensor = (self.X - mean) / var
+
 		layers = [
 			BLSTM(self.layer_size, 'BLSTM_1'),#, dropout=True, drop_val=0.9),
 			BLSTM(self.layer_size, 'BLSTM_2'),#, dropout=True, drop_val=0.9),
@@ -85,7 +88,7 @@ class L41Model:
 		]
 
 		# Produce embeddings [B, T, F, E]
-		y = f_props(layers, self.X)
+		y = f_props(layers, input_tensor)
 		
 		return y
 
@@ -114,7 +117,7 @@ class L41Model:
 		separated = tf.reshape(separated, [self.B*self.S, -1, self.F, 1]) # [BS, T, F, 1]
 
 		return separated
-
+# 
 	@ops.scope
 	def enhance(self):
 		# [B, S, T, F]
@@ -148,8 +151,8 @@ class L41Model:
 
 		y = tf.transpose(y, [0, 2, 1]) # [B, TF, S]
 
-		# y = tf.nn.softmax(y) * tf.reshape(self.X, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
-		y = y * tf.reshape(self.X, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
+		y = tf.nn.softmax(y) * tf.reshape(self.X, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
+		# y = y * tf.reshape(self.X, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
 		self.cost_in = y
 		y =  tf.transpose(y, [0, 2, 1])
 		return tf.reshape(y , [self.B*self.S, -1, self.F, 1])

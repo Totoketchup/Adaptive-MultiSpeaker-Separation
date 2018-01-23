@@ -1,3 +1,5 @@
+import matplotlib
+matplotlib.use('Agg')
 import tensorflow as tf 
 import os 
 import config
@@ -15,7 +17,7 @@ from tqdm import tqdm
 config_model = {}
 config_model["type"] = "L41_train_front"
 config_model["batch_size"] = 64
-config_model["chunk_size"] = 512*10
+config_model["chunk_size"] = 512*40
 config_model["N"] = 256
 config_model["maxpool"] = 256
 config_model["window"] = 1024
@@ -28,8 +30,8 @@ config_model["same_filter"] = True
 config_model["optimizer"] = 'Adam'
 
 config_id = ''.join('-{}={}-'.format(key, val) for key, val in sorted(config_model.items()))
-full_id = "AdaptiveNet-cool-river-2075" + config_id
-path = os.path.join(config.log_dir, config_model["type"], full_id)
+full_id = "AdaptiveNet-muddy-mountain-6335" + config_id
+path = os.path.join(config.model_root, 'log', config_model["type"], full_id)
 
 l = os.listdir(path)
 
@@ -45,9 +47,9 @@ blue_patch = mpatches.Patch(color='blue', label='Women')
 
 to_plot = []
 colors = []
-print 'TOTAL:', total
 
-total = 2
+
+print 'TOTAL:', total
 
 for i, filename in tqdm(enumerate(bins_filename[:total]), total=total, desc='Reading bins embeddings'):
 	data = np.load(os.path.join(path, filename))
@@ -61,11 +63,10 @@ for i, filename in tqdm(enumerate(bins_filename[:total]), total=total, desc='Rea
 	colors += [np.reshape(labels[0], (-1))]
 to_plot = np.array(to_plot)
 
-print to_plot.shape
+
 import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib.animation as animation
-print plt.style.available
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.colors as mcolors
 
@@ -76,35 +77,27 @@ import matplotlib.colors as mcolors
 
 # fig, ax = plt.subplots()
 # scat = ax.scatter([], [], s=10)
-fig = plt.figure()
+fig = matplotlib.pyplot.figure()
 ax3d = Axes3D(fig)
-scat3D = ax3d.scatter([],[],[], s=10, cmap="seismic", vmin=0, vmax=1)
-scat3D.set_cmap("seismic") # cmap argument above is ignored, so set it manually
+scat3D = ax3d.scatter([],[],[], s=1)
 ttl = ax3d.text2D(0.05, 0.95, "", transform=ax3d.transAxes)
 
 def update_plot(i):
 	print i, to_plot[i].shape
 	ttl.set_text('PCA on 3 components at step = {}'.format(i*20))
 	scat3D._offsets3d = np.transpose(to_plot[i])
-	cs = np.array([0 if c == 'r' else 1 for c in colors[i]])
-	scat3D.set_array(cs)
-	return scat3D,
-
 
 def init():
-	scat3D.set_offsets([[],[],[]])
+	scat3D.set_offsets([[],[], []])
 	ax3d.set_xlim(-1.,2.)
 	ax3d.set_ylim(-0.5,0.7)
 	ax3d.set_zlim(-1.,0.75)
-	plt.style.use('ggplot')
 	plt.legend(handles=[red_patch, blue_patch])
-	scat3D.set_cmap("seismic") # cmap argument above is ignored, so set it manually
 
+ani = animation.FuncAnimation(fig, update_plot, init_func=init, blit=False, interval=100, frames=xrange(total))
 
-ani = animation.FuncAnimation(plt.gcf(), update_plot, init_func=init, blit=False, interval=100, frames=xrange(total))
+ani.save(os.path.join('/output', 'gif', 'bins','anim2.gif'), writer="imagemagick")
 
-ani.save(os.path.join(config.workdir, 'gif', 'bins','anim.gif'), writer="imagemagick")
-plt.show()
 
 
 # print 'Creating plots'

@@ -36,7 +36,8 @@ path = os.path.join(config.log_dir, "L41_train_front", full_id)
 
 l = os.listdir(path)
 centroids_filename = [ v for v in l if 'centroids' in v ]
-centroids_filename.sort()
+centroids_filename = sorted(centroids_filename, key=lambda name: int(name[10:-4]))
+
 total = len(centroids_filename)
 
 to_plot = []
@@ -53,9 +54,9 @@ print plt.style.available
 
 
 fig, ax = plt.subplots()
-scat = ax.scatter([], [], s=40)
-plt.xlim(-2., 2.)
-plt.ylim(-2., 2.)
+scat = ax.scatter([], [], s=10)
+plt.xlim(-3., 3.)
+plt.ylim(-3., 3.)
 plt.xlabel('X1')
 plt.ylabel('X2')
 plt.style.use('ggplot')

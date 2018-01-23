@@ -8,6 +8,7 @@ import config
 from utils.audio import create_spectrogram, downsample
 from sets import Set
 from utils.tools import print_progress
+from tqdm import tqdm 
 
 class H5PY_RW:
 
@@ -169,7 +170,7 @@ class H5PY_RW:
 		print 'Dataset for the subset: ' + subset + ' has been built'
 
 	@staticmethod
-	def create_raw_audio_dataset(self, output_fn, subset=config.data_subset, data_root=config.data_root):
+	def create_raw_audio_dataset(output_fn, subset=config.data_subset, data_root=config.data_root):
 		"""
 		Create a H5 file from the LibriSpeech dataset and the subset given:
 
@@ -179,44 +180,37 @@ class H5PY_RW:
 			data_root: LibriSpeech folder path
 
 		"""
+		from librosa.core import resample,load
 
 		# Extract the information about this subset (speakers, chapters)
 		# Dictionary with the following shape: 
 		# {speaker_key: {chapters: [...], sex:'M/F', ... } }
 		speakers_info = data_tools.read_metadata(subset)
-
 		with h5py.File(output_fn,'w') as data_file:
 
-			for (key, elements) in speakers_info.items():
+			for key, elements in tqdm(speakers_info.items(), total=len(speakers_info), desc='Speakers'):
 				if key not in data_file:
 					# Create an H5 Group for each key/speaker
 					data_file.create_group(key)
 
 				# Current speaker folder path
 				folder = data_root+'/'+subset+'/'+key
-				print_progress(0, len(elements['chapters']), prefix = 'Speaker '+key+' :', suffix = 'Complete')
-
 				# For all the chapters read by this speaker
-				for i, chapter in enumerate(elements['chapters']): 
+				for i, chapter in enumerate(tqdm(elements['chapters'], desc='Chapters')): 
 					# Find all .flac audio
 					for root, dirs, files in os.walk(folder+'/'+chapter): 
-						for file in files:
+						for file in tqdm(files, desc='Files'):
 							if file.endswith(".flac"):
-
 								path = os.path.join(root,file)
-								raw_audio, sr = sf.read(path)
-
-								# raw_audio = downsample(raw_audio, sr, config.fs)
-
-								raw_audio = (raw_audio - np.mean(raw_audio))/np.std(raw_audio)
-
+								raw_audio, sr = load(path, sr=16000)
+								raw_audio = resample(raw_audio, sr, config.fs)
 								data_file[key].create_dataset(file,
+									shape=raw_audio.shape,
 									data=raw_audio,
+									chunks=raw_audio.shape,
+									maxshape=raw_audio.shape,
 									compression="gzip",
-									compression_opts=0)
-
-					print_progress(i + 1, len(elements['chapters']), prefix = 'Speaker '+key+' :', suffix = 'Complete')
-
+									compression_opts=9)
 
 		print 'Dataset for the subset: ' + subset + ' has been built'
 
@@ -226,7 +220,9 @@ class H5PY_RW:
 
 class Mixer:
 
-	def __init__(self, datasets, chunk_size=0, shuffling=False, with_mask=True, with_inputs=False, splits = [0.8, 0.1, 0.1], mixing_type='add', mask_positive_value=1, mask_negative_value=-1):
+	def __init__(self, datasets, chunk_size=0, shuffling=False, with_mask=True, 
+		with_inputs=False, splits = [0.8, 0.1, 0.1], mixing_type='add', mask_positive_value=1, 
+		mask_negative_value=-1, nb_speakers = 2, random_picking=True):
 		"""
 		Mix multiple H5PY file writer/reader (H5PY_RW)
 		Inputs:
@@ -247,6 +243,8 @@ class Mixer:
 		self.splits = splits
 		self.split_index = 0 # Training split by default
 		self.chunk_size = chunk_size
+		self.nb_speakers = nb_speakers
+		self.random_picking = random_picking
 
 		if chunk_size !=0:
 			for dataset in datasets:
@@ -290,7 +288,17 @@ class Mixer:
 		X_d = []
 		key_d = []
 
-		for dataset in self.datasets:
+		# Where dataset are chosen:
+		if self.random_picking:
+			# Take the number of desired speakers randomly among the datasets [Males, Females]
+			choice = np.random.choice(len(self.datasets), self.nb_speakers, replace=True)
+		else:
+			# Take [M, F, M, F ... ] 'nb_speakers times'
+			choice = []
+			indicies = np.arange(len(self.datasets))
+			choice = np.array([indicies[i%len(indicies)] for i in range(self.nb_speakers)])
+
+		for dataset in np.array(self.datasets)[choice]:
 			X, key = dataset.next_in_split(self.splits, self.split_index)
 			X_d.append(X)
 			key_d.append(key)
@@ -383,55 +391,57 @@ if __name__ == "__main__":
 
 	###
 	### TEST
-	###
+	##
+	# H5_dic = read_metadata()
+	# print H5_dic
+	# chunk_size = 512*100
 
-	H5_dic = read_metadata()
-	print H5_dic
-	chunk_size = 512*100
+	# males = H5PY_RW('test_raw.h5py', subset = males_keys(H5_dic))
+	# fem = H5PY_RW('test_raw.h5py', subset = females_keys(H5_dic))
 
-	males = H5PY_RW('test_raw.h5py', subset = males_keys(H5_dic))
-	fem = H5PY_RW('test_raw.h5py', subset = females_keys(H5_dic))
+	# print 'Data with', len(H5_dic), 'male and female speakers'
+	# print males.length(), 'elements'
+	# print fem.length(), 'elements'
 
-	print 'Data with', len(H5_dic), 'male and female speakers'
-	print males.length(), 'elements'
-	print fem.length(), 'elements'
+	# mixed_data = Mixer([males, fem], chunk_size= chunk_size, with_mask=False, with_inputs=True, shuffling=True)
 
-	mixed_data = Mixer([males, fem], chunk_size= chunk_size, with_mask=False, with_inputs=True, shuffling=True)
+	# batch_size = 128
 
-	batch_size = 128
+	# mixed_data.adjust_split_size_to_batchsize(batch_size)
+	# nb_batches = mixed_data.nb_batches(batch_size)
 
-	mixed_data.adjust_split_size_to_batchsize(batch_size)
-	nb_batches = mixed_data.nb_batches(batch_size)
+	# nb_to_speaker = mixed_data.dico
+	# id_f = []
+	# id_m = []
 
-	nb_to_speaker = mixed_data.dico
-	id_f = []
-	id_m = []
+	# for i in range(nb_batches):
+	# 		_,_, ind = mixed_data.get_batch(batch_size)
+	# 		for key, id_ in nb_to_speaker.iteritems():
+	# 			for b in range(batch_size):
+	# 				if id_ == ind[b][0]:
+	# 					if b == 0:
+	# 						id_m += [key]
+	# 					assert H5_dic[str(key)]['sex'] == 'M' 
+	# 				if id_ == ind[b][1]:
+	# 					if b == 0:
+	# 						id_f += [key]
+	# 					assert H5_dic[str(key)]['sex'] == 'F' 
 
-	for i in range(nb_batches):
-			_,_, ind = mixed_data.get_batch(batch_size)
-			for key, id_ in nb_to_speaker.iteritems():
-				for b in range(batch_size):
-					if id_ == ind[b][0]:
-						if b == 0:
-							id_m += [key]
-						assert H5_dic[str(key)]['sex'] == 'M' 
-					if id_ == ind[b][1]:
-						if b == 0:
-							id_f += [key]
-						assert H5_dic[str(key)]['sex'] == 'F' 
+	# mixed_data.select_split(1)
+	# x_non_test , x_test , _ = mixed_data.get_only_first_items(8)
+	# mixed_data.select_split(0)
 
-	mixed_data.select_split(1)
-	x_non_test , x_test , _ = mixed_data.get_only_first_items(8)
-	mixed_data.select_split(0)
-
-	for j in range(2):
-		for i in range(nb_batches):
-			_,_, ind = mixed_data.get_batch(batch_size)
-			for key, id_ in nb_to_speaker.iteritems():
-				if id_ == ind[0][0]:
-					assert id_m[i] == key 
-				if id_ == ind[0][1]:
-					assert id_f[i] == key
-
+	# for j in range(2):
+	# 	for i in range(nb_batches):
+	# 		_,_, ind = mixed_data.get_batch(batch_size)
+	# 		for key, id_ in nb_to_speaker.iteritems():
+	# 			if id_ == ind[0][0]:
+	# 				assert id_m[i] == key 
+	# 			if id_ == ind[0][1]:
+	# 				assert id_f[i] == key
+	H5PY_RW.create_raw_audio_dataset('train-clean-100-8-s.h5', subset='train-clean-100')
 	# print nb_to_speaker.values()
 	# print ind
+
+	# H5_dic = read_metadata()
+	# males = H5PY_RW('dev-clean.h5', subset = males_keys(H5_dic))

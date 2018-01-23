@@ -39,7 +39,7 @@ config_model = {}
 config_model["type"] = "L41_train_front"
 
 config_model["batch_size"] = batch_size
-config_model["chunk_size"] = 512*10
+config_model["chunk_size"] = 512*40
 
 config_model["N"] = N
 config_model["maxpool"] = max_pool
@@ -57,7 +57,7 @@ config_model["optimizer"] = 'Adam'
 
 idd = ''.join('-{}={}-'.format(key, val) for key, val in sorted(config_model.items()))
 path = os.path.join(config.model_root, 'log', 'L41_train_front')
-full_id = "frosty-fire-4612" + idd
+full_id = "old-credit-1330" + idd
 
 ####
 #### NEW MODEL CONFIG
@@ -65,7 +65,7 @@ full_id = "frosty-fire-4612" + idd
 
 config_model["type"] = "L41_enhance"
 learning_rate = 0.001
-batch_size = 8
+batch_size = 64
 config_model["chunk_size"] = chunk_size
 config_model["batch_size"] = batch_size
 config_model["alpha"] = learning_rate

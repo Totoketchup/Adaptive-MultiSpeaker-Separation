@@ -1,6 +1,7 @@
 import numpy as np
 from audio import istft_, create_spectrogram
 from sklearn.cluster import KMeans
+import config
 
 # Compute the reconstruction of the signal from the filtered spectrogram
 def reconstruct_signal(filtered_spec, orig_spec, fs=config.fs, fftsize=config.fftsize):
@@ -8,7 +9,7 @@ def reconstruct_signal(filtered_spec, orig_spec, fs=config.fs, fftsize=config.ff
 	if orig_spec != None :
 		angle = np.angle(orig_spec)
 		phi = np.exp(1.0j*np.unwrap(angle)) # the angle must be 2pi modulo
-	else
+	else :
 		phi = np.random.randn(*orig_spec.shape)
 
 	return istft_(filtered_spec*phi)

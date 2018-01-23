@@ -19,25 +19,9 @@ import numpy as np
 #### MODEL CONFIG
 ####
 
-config_model = {}
-config_model["type"] = "pretraining"
-config_model["batch_size"] = 16
-config_model["chunk_size"] = 512*40
-config_model["N"] = 256
-config_model["maxpool"] = 256
-config_model["window"] = 1024
-config_model["smooth_size"] = 10
-config_model["alpha"] = 0.01
-config_model["reg"] = 1e-3
-config_model["beta"] = 0.05
-config_model["rho"] = 0.01
-config_model["same_filter"] = True
-config_model["optimizer"] = 'Adam'
-
-config_id = ''.join('-{}={}-'.format(key, val) for key, val in sorted(config_model.items()))
-full_id = "AdaptiveNet-noisy-breeze-3898" + config_id
-model_meta_path = os.path.join(config.log_dir, config_model["type"], full_id, 'model.ckpt.meta')
-model_path = os.path.join(config.log_dir, config_model["type"], full_id, 'model.ckpt')
+full_id = "AdaptiveNet-aged-firefly-5068-N=16--alpha=0.01--batch_size=16--beta=0.05--chunk_size=20480--maxpool=4--optimizer=Adam--reg=0.0001--rho=0.01--same_filter=True--smooth_size=10--type=pretraining--window=1024-"
+model_meta_path = os.path.join(config.log_dir, "pretraining", full_id, 'model.ckpt.meta')
+model_path = os.path.join(config.log_dir, "pretraining", full_id, 'model.ckpt')
 
 sess = tf.Session()
 
@@ -59,13 +43,7 @@ with sess.as_default():
 	window_back = window_back.eval()
 	bases_back = np.transpose(bases_back.eval())
 
-hanning = np.hanning(config_model['window'])
-hamming = np.hamming(config_model['window'])
-
 plt.plot(np.abs(window_front), label='front window')
-plt.plot(np.abs(hanning), label='hanning window')
-plt.plot(np.abs(hamming), label='hanning window')
-plt.axis([0, 1024,-0.01,0.15])
 plt.show()
 
 print bases_front.shape

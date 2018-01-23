@@ -12,7 +12,7 @@ import config
 import os
 
 H5_dic = read_metadata()
-chunk_size = 512*5
+chunk_size = 512*40
 
 males = H5PY_RW('test_raw.h5py', subset = males_keys(H5_dic))
 fem = H5PY_RW('test_raw.h5py', subset = females_keys(H5_dic))
@@ -28,9 +28,9 @@ mixed_data = Mixer([males, fem], chunk_size= chunk_size, with_mask=False, with_i
 #### PREVIOUS MODEL CONFIG
 ####
 
-N = 512
+N = 256
 max_pool = 256
-batch_size = 8
+batch_size = 1
 learning_rate = 0.001
 
 config_model = {}
@@ -46,8 +46,8 @@ config_model["window"] = 1024
 config_model["smooth_size"] = 10
 
 config_model["alpha"] = learning_rate
-config_model["reg"] = 1e-4
-config_model["beta"] = 1.0
+config_model["reg"] = 1e-3
+config_model["beta"] = 0.05
 config_model["rho"] = 0.01
 
 config_model["same_filter"] = True
@@ -60,13 +60,14 @@ config_model["optimizer"] = 'Adam'
 idd = ''.join('-{}={}-'.format(key, val) for key, val in sorted(config_model.items()))
 config_model["type"] = "DAS_train_front"
 learning_rate = 0.001
-batch_size = 128
+batch_size = 32
 config_model["chunk_size"] = chunk_size
 config_model["batch_size"] = batch_size
 config_model["alpha"] = learning_rate
+config_model["optimizer"] = 'RMS'
 
-full_id = "square-night-6094" + idd
-#full_id = 'jolly-sound-3162'+idd
+full_id = "restless-dew-7622" + idd
+
 
 folder = 'DAS_train_front'
 model = Adapt(config_model=config_model, pretraining=False)

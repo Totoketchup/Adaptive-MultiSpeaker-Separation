@@ -63,7 +63,7 @@ path = os.path.join(config.model_root, 'log', 'pretraining')
 
 config_model["type"] = "L41_train_front"
 learning_rate = 0.01
-batch_size = 8
+batch_size = 64
 config_model["chunk_size"] = 512*40
 config_model["batch_size"] = batch_size
 config_model["alpha"] = learning_rate
@@ -108,9 +108,9 @@ for epoch in range(nb_epochs):
 		if step%20 == 0: #cost_valid < cost_valid_min:
 			print 'DAS model saved at iteration number ', step,' with cost = ', c 
 			model.save(nb_batches*epoch + b)
-			mixed_data.select_split(1)
-			x_non_test , x_test , _ = mixed_data.get_only_first_items(8)
-			model.test_prediction(x_test, x_non_test, step)
-			mixed_data.select_split(0)
+			# mixed_data.select_split(1)
+			# x_non_test , x_test , _ = mixed_data.get_only_first_items(8)
+			# model.test_prediction(x_test, x_non_test, step)
+			# mixed_data.select_split(0)
 
 

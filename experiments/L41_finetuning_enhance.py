@@ -88,7 +88,7 @@ config_model["optimizer"] = 'Adam'
 
 
 idd = ''.join('-{}={}-'.format(key, val) for key, val in sorted(config_model.items()))
-full_id ='cold-dust-9076' + idd
+full_id ='flat-shadow-6806' + idd
 path = os.path.join(config.model_root if not config.floydhub else '/model2', 'log', config_model["type"] )
 
 ####
@@ -97,7 +97,7 @@ path = os.path.join(config.model_root if not config.floydhub else '/model2', 'lo
 
 config_model["type"] = "L41_finetuning"
 learning_rate = 0.001 
-batch_size = 64
+batch_size = 8
 config_model["chunk_size"] = chunk_size
 config_model["alpha"] = learning_rate
 config_model["batch_size"] = batch_size
@@ -123,7 +123,7 @@ with model.graph.as_default():
 	model.create_saver(var_list)
 	model.restore_model(path_adapt, full_id_adapt)
 	model.cost
-	model.freeze_variables()
+	# model.freeze_variables()
 	model.optimize
 	model.tensorboard_init()
 
@@ -137,7 +137,7 @@ print model.runID
 # nb_iterations = 500
 mixed_data.adjust_split_size_to_batchsize(batch_size)
 nb_batches = mixed_data.nb_batches(batch_size)
-nb_epochs = 1
+nb_epochs = 2
 
 time_spent = [ 0 for _ in range(5)]
 

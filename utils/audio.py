@@ -1,8 +1,8 @@
 from scipy.signal import stft,istft,resample
 import numpy as np
 from subprocess import call
-from scipy.io.wavfile import read
-from scipy.io.wavfile import write
+import soundfile as sf
+# import librosa as lib
 import config
 
 def stft_(x, fs=config.fs, fftsize=config.fftsize, overlap=config.fftsize//config.overlap, window='hann', padded=True):
@@ -26,3 +26,10 @@ def downsample(audio_data, sample_rate, new_sample_rate):
 def create_spectrogram(x, sr, fs=config.fs, fftsize=config.fftsize, overlap=config.fftsize//config.overlap, window=config.window, padded=True):
     x = downsample(x, sr, fs) # Downsampling the original signal
     return stft_(x, fs, fftsize, overlap, window, padded) # Compute the STFT of the downsampled signal
+
+
+if __name__ == "__main__":
+    signal, fs = sf.read('original.flac')
+    print fs
+    print signal.shape
+    x =  lib.core.stft(signal, n_fft=1024, hop_length=16)

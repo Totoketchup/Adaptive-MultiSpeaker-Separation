@@ -29,10 +29,8 @@ class Adapt:
 		self.pretraining = pretraining
 		self.sepNet = separator
 		self.folder = folder
-		self.smooth_size = 4.0
 		self.p = 0.05
 		self.beta = 1.0
-		self.same_filter = False
 
 		##
 		## Model Configuration 
@@ -42,13 +40,11 @@ class Adapt:
 			self.max_pool_value = config_model['maxpool']
 			self.l = config_model['reg']
 			self.folder = config_model['type']
-			self.smooth_size = config_model['smooth_size']
 			self.beta = config_model['beta']
 			self.p = config_model['rho']
 			self.window = config_model['window']
-			self.same_filter = config_model['same_filter']
 			self.optimizer = config_model['optimizer']
-
+			self.S = config_model['speakers']
 		if runID == None:
 			# Run ID for tensorboard
 			self.runID = name + '-' + haikunator.Haikunator().haikunate()
@@ -81,8 +77,6 @@ class Adapt:
 			# Batch of raw mixed audio - Input data
 			# shape = [ batch size , samples ] = [ B , L ]
 			self.X_mix = tf.placeholder("float", [None, None], name='mix_input')
-
-			self.S = 2 # 2 speakers used # TODO
 
 			if pretraining:
 				shape_in = tf.shape(self.X_non_mix)
@@ -124,9 +118,7 @@ class Adapt:
 		config_ = tf.ConfigProto()
 		config_.gpu_options.allow_growth = True
 		config_.allow_soft_placement = True
-		# config_.log_device_placement = True
 		self.sess = tf.Session(graph=self.graph, config=config_)
-		# self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
 
 
 	def tensorboard_init(self):
@@ -147,7 +139,7 @@ class Adapt:
 			# tf.summary.audio(name= "input/1", tensor = self.x[3:4,:], sample_rate = config.fs, max_outputs=1)
 			# tf.summary.audio(name= "input/2", tensor = self.x[4:5,:], sample_rate = config.fs, max_outputs=1)
 
-			# tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
+			tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=8)
 			# # # tf.summary.audio(name= "input/non-mixed", tensor = tf.reshape(self.X_non_mix[0:2], [-1, self.L]), sample_rate = config.fs, max_outputs=8)
 
 			# tf.summary.audio(name= "input/", tensor = self.x[:self.B], sample_rate = config.fs, max_outputs=9)
@@ -167,13 +159,14 @@ class Adapt:
 			# tf.summary.image(name= "unpooled", tensor = trs(self.unpooled))
 			# tf.summary.image(name= "mask", tensor = trs(self.mask))
 			# tf.summary.image(name= "reconstructed", tensor = trs(self.recons))
-			# if self.pretraining:
-			# 	with tf.name_scope('loss_values'):
-			# 		tf.summary.scalar('loss', self.MSE)
-			# 		tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
-			# 		tf.summary.scalar('sparse_reg', self.sparse_reg)
-			# 		tf.summary.scalar('regularization', self.reg)
-			# 		tf.summary.scalar('training_cost', self.cost)
+			if self.pretraining:
+				with tf.name_scope('loss_values'):
+					tf.summary.scalar('loss', self.SDR)
+					tf.summary.scalar('mse', tf.reduce_mean(self.mse))
+					tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
+					tf.summary.scalar('sparse_reg', self.sparse_reg)
+					tf.summary.scalar('regularization', self.reg)
+					tf.summary.scalar('training_cost', self.cost)
 
 			self.merged = tf.summary.merge_all()
 			self.train_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID), self.graph)
@@ -271,7 +264,7 @@ class Adapt:
 
 
 	##
-	## Front End creating STFT like data + P Matrix
+	## Front End creating STFT like data
 	##
 	@ops.scope
 	def front(self):
@@ -285,7 +278,6 @@ class Adapt:
 		self.window_filter = get_scope_variable('window', 'w', shape=[self.window], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 		self.bases = get_scope_variable('bases', 'bases', shape=[self.window, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 		self.conv_filter = tf.reshape(tf.expand_dims(self.window_filter,1)*self.bases , [1, self.window, 1, self.N])
-		# self.filter_front = tf.get_variable('front_filter', shape=[1, self.window, 1, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 
 		# 1 Dimensional convolution along T axis with a window length = self.window
 		# And N = 256 filters -> Create a [Btot, 1, T, N]
@@ -299,10 +291,12 @@ class Adapt:
 		# Max Pooling with argmax for unpooling later in the back-end layer
 		# Along the T axis (time)
 		self.y, argmax = tf.nn.max_pool_with_argmax(self.X, (1, self.max_pool_value, 1, 1),
-													strides=[1, self.max_pool_value, 1, 1], padding="VALID")
-		
+													strides=[1, self.max_pool_value, 1, 1], padding="SAME")
+
 		y_shape = tf.shape(self.y)
-		self.p_hat = tf.reduce_sum(tf.abs(self.y), axis=[1,2,3])/(tf.cast(y_shape[1]*y_shape[2], tf.float32))
+		y = tf.reshape(self.y, [self.B_tot, y_shape[1]*y_shape[2]])
+		self.p_hat = tf.reduce_mean(y, 0)
+		self.latent_loss = tf.reduce_sum(self.kl_div(self.p, self.p_hat))
 
 		return self.y, argmax
 
@@ -364,7 +358,6 @@ class Adapt:
 		self.window_filter_2 = get_scope_variable('window_2', 'w_2', shape=[self.window], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 		self.bases_2 = get_scope_variable('bases_2', 'bases_2', shape=[self.window, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 		self.conv_filter_2 = tf.reshape(tf.expand_dims(self.window_filter_2,1)*self.bases_2 , [1, self.window, 1, self.N])
-		# self.filter_back = tf.get_variable('back_filter', shape=[1, self.window, 1, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 
 		output = tf.nn.conv2d_transpose(output , filter=self.conv_filter_2,
 									 output_shape=[self.B*self.S, 1, self.L, 1],
@@ -392,7 +385,7 @@ class Adapt:
 		# Definition of cost for Adapt model
 		# Regularisation
 		# shape = [B_tot, T, N]
-		self.sparse_reg = self.beta * tf.reduce_mean(self.kl_div(self.p, self.p_hat))
+		self.sparse_reg = self.beta * self.latent_loss
 		
 		self.reg = self.l * (tf.nn.l2_loss(self.conv_filter_2)+ tf.nn.l2_loss(self.conv_filter))
 		
@@ -401,10 +394,10 @@ class Adapt:
 		if self.pretraining:
 			print self.X_non_mix
 			print self.back
-			self.cost_1 = 0.5 * tf.reduce_sum(tf.pow(self.X_non_mix - self.back, 2), axis=2) / tf.cast(self.L, tf.float32)
-			# shape = [B, S]
-			# Compute sum over the speakers
-			cost = tf.reduce_sum(self.cost_1, 1)
+			self.sdr = - tf.reduce_mean(self.back*self.X_non_mix, -1)**2/tf.reduce_mean(tf.square(self.back), -1) 
+			self.mse = tf.reduce_sum(tf.pow(self.X_non_mix - self.back, 2), axis=2) / tf.cast(self.L, tf.float32)
+			self.sdr = tf.reduce_mean(self.sdr, -1)
+
 		else:
 			# Compute loss over all possible permutations
 			
@@ -422,14 +415,14 @@ class Adapt:
 
 			X_nmr = tf.reshape(self.X_non_mix, [self.B, 1, self.S, self.L])
 
-			cost = 0.5 * tf.reduce_sum(tf.pow(X_nmr - permuted_back, 2), axis=3) / tf.cast(self.L, tf.float32)
+			cost = tf.reduce_sum(tf.pow(X_nmr - permuted_back, 2), axis=3) / tf.cast(self.L, tf.float32)
 			cost = tf.reduce_sum(cost, axis = 2) # Take the mean among speakers
 			cost = tf.reduce_min(cost, axis = 1) # Take the permutation minimizing the cost
 		
 		# shape = [B]
 		# Compute mean over batches
-		self.MSE = tf.reduce_mean(cost, 0) 
-		self.cost = self.MSE + self.sparse_reg + self.reg
+		self.SDR = 0.5*tf.reduce_mean(self.sdr) + 0.5*tf.reduce_mean(self.mse)
+		self.cost = self.SDR + self.sparse_reg + self.reg
 
 		return self.cost
 
@@ -465,7 +458,7 @@ class Adapt:
 		else:
 			summary, _, cost, centroids = self.sess.run([self.merged, self.optimize, self.cost, self.sepNet.speaker_vectors], {self.X_mix: X_mix, self.X_non_mix:X_non_mix, self.training:True, self.Ind:ind_train, self.learning_rate:learning_rate})
 		
-		np.save(os.path.join(config.log_dir, self.folder ,self.runID, "centroids-{}".format(step)), centroids)
+		# np.save(os.path.join(config.log_dir, self.folder ,self.runID, "centroids-{}".format(step)), centroids)
 		self.train_writer.add_summary(summary, step)
 		return cost
 
@@ -512,7 +505,6 @@ class Adapt:
 		self.trainable_variables = training_var
 
 	def freeze_back(self):
-		print self.trainable_variables
 		self.trainable_variables.remove(self.bases_2)
 		self.trainable_variables.remove(self.window_filter_2)
 

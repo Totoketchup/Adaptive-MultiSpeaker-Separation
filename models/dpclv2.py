@@ -129,7 +129,6 @@ class DPCL:
 		separated = tf.reshape(separated, [self.B, -1, self.F, self.S])
 		separated = tf.transpose(separated, [0,3,1,2])
 		separated = tf.reshape(separated, [self.B*self.S, -1, self.F, 1])
-		print separated
 		return separated
 
 	@ops.scope
