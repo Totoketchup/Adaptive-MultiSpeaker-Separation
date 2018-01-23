@@ -1,5 +1,6 @@
 *.pyc
-data/LibriSpeech
+data/LibriSpeech/dev-clean
+data/LibriSpeech/train-clean-100
 *.h5py
 log/
 log_model/
