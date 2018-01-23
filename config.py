@@ -24,7 +24,7 @@ else:
 ###
 
 data_root = 'data/LibriSpeech'
-data_subset = 'dev-clean'
+data_subset = 'train-clean-100'
 dev_clean_speakers = 40
 
 #########################

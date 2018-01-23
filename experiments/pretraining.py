@@ -10,8 +10,8 @@ import numpy as np
 
 H5_dic = read_metadata()
 
-males = H5PY_RW('dev-clean.h5', subset = males_keys(H5_dic))
-fem = H5PY_RW('dev-clean.h5', subset = females_keys(H5_dic))
+males = H5PY_RW('train-clean-100-8-s.h5', subset = males_keys(H5_dic))
+fem = H5PY_RW('train-clean-100-8-s.h5', subset = females_keys(H5_dic))
 
 print 'Data with', len(H5_dic), 'male and female speakers'
 print males.length(), 'elements'
