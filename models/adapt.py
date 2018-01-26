@@ -104,15 +104,15 @@ class Adapt:
 					lambda: self.B*(self.S+1),
 					lambda: self.B
 					)
-
-			if pretraining:
-				self.front
-				self.separator
-				self.back
-				self.cost
-				self.optimize
-			else:
-				self.front
+			with tf.device('/gpu:0'):
+				if pretraining:
+					self.front
+					self.separator
+					self.back
+					self.cost
+					self.optimize
+				else:
+					self.front
 			
 		# Create a session for this model based on the constructed graph
 		config_ = tf.ConfigProto()
