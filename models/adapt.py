@@ -104,6 +104,7 @@ class Adapt:
 					lambda: self.B*(self.S+1),
 					lambda: self.B
 					)
+
 			with tf.device('/gpu:0'):
 				if pretraining:
 					self.front
@@ -118,6 +119,7 @@ class Adapt:
 		config_ = tf.ConfigProto()
 		config_.gpu_options.allow_growth = True
 		config_.allow_soft_placement = True
+		config_.log_device_placement = True
 		self.sess = tf.Session(graph=self.graph, config=config_)
 
 
