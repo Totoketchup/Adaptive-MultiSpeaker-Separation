@@ -13,6 +13,7 @@ export http_proxy=$MY_PROXY_URL
 export https_proxy=$MY_PROXY_URL
 export ftp_proxy=$MY_PROXY_URL
 export PATH="/home/anthony/anaconda2/bin:$PATH"
+export LD_LIBRARY_PATH="/home/anthony/anaconda2/lib:$LD_LIBRARY_PATH"
 
 . /fefs/opt/dgx/env_set/common_env_set.sh
 
