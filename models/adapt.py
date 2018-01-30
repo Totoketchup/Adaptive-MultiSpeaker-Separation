@@ -14,7 +14,6 @@ from itertools import compress
 from tensorflow.python.saved_model import builder as saved_model_builder
 name = 'AdaptiveNet'
 import numpy as np
-from tensorflow.python import debug as tf_debug
 
 
 #############################################
@@ -119,7 +118,6 @@ class Adapt:
 		config_ = tf.ConfigProto()
 		config_.gpu_options.allow_growth = True
 		config_.allow_soft_placement = True
-		config_.log_device_placement = True
 		self.sess = tf.Session(graph=self.graph, config=config_)
 
 
