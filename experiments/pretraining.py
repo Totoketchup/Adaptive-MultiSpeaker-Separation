@@ -25,7 +25,7 @@ mixed_data = Mixer([males, fem], chunk_size= chunk_size,
 
 ####
 
-batch_size = 1
+batch_size = 128
 
 config_model = {
 	"type" : "pretraining",
@@ -72,8 +72,8 @@ for epoch in range(nb_epochs):
 		t_f = time.time()
 		time_spent = time_spent[1:] +[t_f-t]
 
-		print 'Step #'  , step,' loss=', c ,' ETA = ', getETA(sum(time_spent)/float(np.count_nonzero(time_spent))
-			, nb_batches, b, nb_epochs, epoch)
+		# print 'Step #'  , step,' loss=', c ,' ETA = ', getETA(sum(time_spent)/float(np.count_nonzero(time_spent))
+		# 	, nb_batches, b, nb_epochs, epoch)
 
 		if b%20 == 0:
 		    print 'L41 FRONT model saved at iteration number ', step,' with cost = ', c 
