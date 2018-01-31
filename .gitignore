@@ -9,3 +9,5 @@ floydhub_model/
 
 h5py_files/
 docs/
+gif/
+.ipynb*
