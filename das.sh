@@ -1,1 +1,0 @@
-python -m examples.das_training

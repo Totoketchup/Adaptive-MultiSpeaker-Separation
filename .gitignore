@@ -5,8 +5,7 @@ data/LibriSpeech/train-clean-100
 log/
 log_model/
 
-garbage\.py
-
 floydhub_model/
 
 h5py_files/
+docs/
