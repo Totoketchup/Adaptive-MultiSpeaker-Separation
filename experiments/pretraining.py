@@ -77,7 +77,7 @@ def main(args):
 				, nb_batches_train, b, nb_epochs, epoch)
 
 			t = time.time()
-			if step%10 == 0:
+			if step%1000 == 0:
 				# Select Validation set
 				mixed_data.select_split(1)
 
