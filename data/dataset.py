@@ -214,7 +214,7 @@ class H5PY_RW:
 class Mixer:
 
 	def __init__(self, datasets, chunk_size=0, shuffling=False, with_mask=True, 
-		with_inputs=False, splits = [0.8, 0.1, 0.1], mixing_type='add', mask_positive_value=1, 
+		with_inputs=False, splits = [0.9, 0.05, 0.05], mixing_type='add', mask_positive_value=1, 
 		mask_negative_value=-1, nb_speakers = 2, random_picking=False):
 		"""
 		Mix multiple H5PY file writer/reader (H5PY_RW)
@@ -303,9 +303,6 @@ class Mixer:
 
 		key_d = np.array(key_d)
 		X_non_mix = np.array(X_d)
-
-		# for dataset in self.datasets:
-		# 	print dataset.index_item_split
  
 		if self.mixing_type == 'add':
 			X_mix = np.sum(X_non_mix, axis=0)
@@ -447,6 +444,8 @@ if __name__ == "__main__":
 	mixed_data = Mixer([males, fem], chunk_size=5120, 
 		with_mask=False, with_inputs=True, shuffling=True,
 		nb_speakers=2, random_picking=False)
+
+	print mixed_data.splits_size
 
 	bs = 4
 	nb_batches = mixed_data.nb_batches(bs)

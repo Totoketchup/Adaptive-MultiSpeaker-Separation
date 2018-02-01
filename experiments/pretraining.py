@@ -44,7 +44,7 @@ def main(args):
 	print adapt_model.runID
 
 	batch_size_train = args.batch_size
-	batch_size_valid_test = batch_size_train*2
+	batch_size_valid_test = batch_size_train*5
 
 	#
 	# Get the number of batches in an epoch for each set (train/Valid/test)
