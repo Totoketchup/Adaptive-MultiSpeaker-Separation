@@ -1,11 +1,7 @@
 # -*- coding: utf-8 -*-
-# My Model 
 from utils.ops import ops
 from utils.ops.ops import unpool, variable_summaries, get_scope_variable
 from itertools import permutations
-# from tensorflow.contrib.tensorboard.plugins import projector
-# from utils.postprocessing.reconstruction import 
-# import matplotlib.pyplot as plt
 import os
 import config
 import tensorflow as tf
@@ -21,38 +17,32 @@ import numpy as np
 #############################################
 
 class Adapt:
-	def __init__(self, config_model=None, N=256, maxpool=256, l=0.001, pretraining=True, runID=None, separator=None, folder='default'):
-		
-		self.max_pool_value = maxpool
-		self.l = l
-		self.pretraining = pretraining
-		self.sepNet = separator
-		self.folder = folder
-		self.p = 0.05
-		self.beta = 1.0
-
+	def __init__(self, runID=None, **kwargs):
 		##
 		## Model Configuration 
 		##
-		if config_model != None:
-			self.N = config_model['N']
-			self.max_pool_value = config_model['maxpool']
-			self.l = config_model['reg']
-			self.folder = config_model['type']
-			self.beta = config_model['beta']
-			self.p = config_model['rho']
-			self.window = config_model['window']
-			self.optimizer = config_model['optimizer']
-			self.S = config_model['speakers']
-		if runID == None:
+		print kwargs
+		if kwargs is not None:
+			self.N = kwargs['filters']
+			self.max_pool_value = kwargs['max_pool']
+			self.l = kwargs['regularization']
+			self.folder = kwargs['type']
+			self.beta = kwargs['beta']
+			self.p = kwargs['sparsity']
+			self.window = kwargs['window_size']
+			self.optimizer = kwargs['optimizer']
+			self.S = kwargs['nb_speakers']
+			self.pretraining = kwargs['pretraining']
+			self.sepNet = kwargs['separator']
+
+		if runID is None:
 			# Run ID for tensorboard
 			self.runID = name + '-' + haikunator.Haikunator().haikunate()
 			print 'ID : {}'.format(self.runID)
-			if config_model != None:
-				self.runID += ''.join('-{}={}-'.format(key, val) for key, val in sorted(config_model.items()))
+			if kwargs is not None:
+				self.runID += ''.join('-{}={}-'.format(key, val) for key, val in sorted(kwargs.items()))
 		else:
 			self.runID = name + '-' + runID
-
 
 
 		#Create a graph for this model
@@ -77,7 +67,7 @@ class Adapt:
 			# shape = [ batch size , samples ] = [ B , L ]
 			self.X_mix = tf.placeholder("float", [None, None], name='mix_input')
 
-			if pretraining:
+			if self.pretraining:
 				shape_in = tf.shape(self.X_non_mix)
 				self.B = shape_in[0]
 				self.L = shape_in[2]
@@ -104,15 +94,14 @@ class Adapt:
 					lambda: self.B
 					)
 
-			with tf.device('/gpu:0'):
-				if pretraining:
-					self.front
-					self.separator
-					self.back
-					self.cost
-					self.optimize
-				else:
-					self.front
+			if self.pretraining:
+				self.front
+				self.separator
+				self.back
+				self.cost
+				self.optimize
+			else:
+				self.front
 			
 		# Create a session for this model based on the constructed graph
 		config_ = tf.ConfigProto()

@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 class H5PY_RW:
 
-	def __init__(self, filename, subset=None):
+	def __init__(self, path, subset=None):
 		"""
 		Open a LibriSpeech H5PY file.
 		
@@ -21,7 +21,6 @@ class H5PY_RW:
 			subset: subset of speakers used, default = None (all in the file)
 		"""
 
-		path = os.path.join(config.h5py_root, filename)
 		self.h5 = h5py.File(path, 'r')
 		
 		# Define the the keys for each speaker
