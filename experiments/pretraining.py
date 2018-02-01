@@ -4,7 +4,7 @@ from data.dataset import H5PY_RW
 from data.data_tools import read_metadata, males_keys, females_keys
 from data.dataset import Mixer
 from models.adapt import Adapt
-from utils.tools import getETA
+from utils.tools import getETA, normalize_mix
 import time
 import numpy as np
 import argparse
@@ -31,6 +31,7 @@ def main(args):
 		"pretraining": True,
 		"separator": None
 	}
+
 	d = vars(args)
 	d.update(additional_args)
 
@@ -42,41 +43,85 @@ def main(args):
 	print 'Total name :' 
 	print adapt_model.runID
 
-	batch_size = args.batch_size
-	mixed_data.adjust_split_size_to_batchsize(batch_size)
-	nb_batches = mixed_data.nb_batches(batch_size)
+	batch_size_train = args.batch_size
+	batch_size_valid_test = batch_size_train*2
+
+	#
+	# Get the number of batches in an epoch for each set (train/Valid/test)
+	#
+	nb_batches_train = mixed_data.nb_batches(batch_size_train)
+	mixed_data.select_split(1) # Switch on Validation set
+	nb_batches_valid = mixed_data.nb_batches(batch_size_valid_test)
+	mixed_data.select_split(2) # Switch on Test set
+	nb_batches_test = mixed_data.nb_batches(batch_size_valid_test)
+	mixed_data.select_split(0) # Switch back on Training set
 
 	nb_epochs = args.epochs
 
 	time_spent = [0 for _ in range(5)]
 
+	best_validation_cost = 1e100
+
 	for epoch in range(nb_epochs):
-		for b in range(nb_batches):
-			step = nb_batches*epoch + b
-			X_non_mix, X_mix, _ = mixed_data.get_batch(batch_size)
-			mean = np.mean(X_mix)
-			std = np.std(X_mix)
-			X_mix = (X_mix - mean)/std
-			X_non_mix = (X_non_mix)/std
+		for b in range(nb_batches_train):
+			step = nb_batches_train*epoch + b
+			X_non_mix, X_mix, _ = mixed_data.get_batch(batch_size_train)
+			X_mix, X_non_mix = normalize_mix(X_mix, X_non_mix)
 
 			t = time.time()
 			c = adapt_model.train(X_mix, X_non_mix, args.learning_rate, step)
 			t_f = time.time()
 			time_spent = time_spent[1:] +[t_f-t]
 
-			# print 'Step #'  , step,' loss=', c ,' ETA = ', getETA(sum(time_spent)/float(np.count_nonzero(time_spent))
-			# 	, nb_batches, b, nb_epochs, epoch)
+			print 'Step #'  , step,' loss=', c ,' ETA = ', getETA(sum(time_spent)/float(np.count_nonzero(time_spent))
+				, nb_batches_train, b, nb_epochs, epoch)
 
-			if b%20 == 0:
-			    print 'Adaptive Layer Pretraining saved at iteration number ', step,' with cost = ', c 
-			    adapt_model.save(b)
+			t = time.time()
+			if step%10 == 0:
+				# Select Validation set
+				mixed_data.select_split(1)
 
+				# Compute validation mean cost with batches
+				costs = []
+				for _ in range(nb_batches_valid):
+					X_v_non_mix, X_v_mix, _ = mixed_data.get_batch(batch_size_valid_test)
+					X_v_mix, X_v_non_mix = normalize_mix(X_v_mix, X_v_non_mix)
 
+					cost = adapt_model.valid_batch(X_v_mix, X_v_non_mix)
+					costs.append(cost)
+					print cost
+				valid_cost = np.mean(costs)
+				adapt_model.add_valid_summary(valid_cost, step)
+
+				#Save model if it is better:
+				if valid_cost < best_validation_cost:
+					best_validation_cost = valid_cost # Save as new lowest cost
+					best_path = adapt_model.save(step)
+					print 'Save best model with :', best_validation_cost
+
+				mixed_data.reset()
+				mixed_data.select_split(0)
+			t_f = time.time()
+			print 'Validation set tested in ', t_f - t, ' seconds'
+		mixed_data.reset() # Reset the Training set from the beginning
+
+	print 'Best model with Validation:  ', best_validation_cost
+	print 'Path = ', best_path
+
+	# Load the best model on validation set and test it
+	adapt_model.restore_last_checkpoint()
+	mixed_data.select_split(2)
+	for _ in range(nb_batches_test):
+		X_t_non_mix, X_t_mix, _ = mixed_data.get_batch(batch_size_valid_test)
+		X_t_mix, X_t_non_mix = normalize_mix(X_t_mix, X_t_non_mix)
+
+		cost = adapt_model.valid_batch(X_t_mix, X_t_non_mix)
+		costs.append(cost)
+	print 'Test cost = ', np.mean(costs)
+	mixed_data.reset()
 ###
 ### EXAMPLE
-# python -m experiments.pretraining --dataset h5py_files/train-clean-100-8-s.h5 --chunk_size 5120 
-# --nb_speakers 2 --epochs 1 --batch_size 1 --learning_rate 0.01 --window_size 1024 --max_pool 256 
-# --filters 512 --regularization 1e-4 --beta 0.01 --sparsity 0.1
+# python -m experiments.pretraining --dataset h5py_files/train-clean-100-8-s.h5 --chunk_size 5120 --nb_speakers 2 --epochs 1 --batch_size 3 --learning_rate 0.01 --window_size 1024 --max_pool 256 --filters 512 --regularization 1e-4 --beta 0.01 --sparsity 0.1 --no_random_picking
 ###
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description='Adaptive Layer Pretraining')

@@ -45,7 +45,6 @@ class H5PY_RW:
 		"""
 		Define the size of the chunk: each data is chunked with 'chunk_size'
 		"""
-
 		self.chunk_size = chunk_size
 		items = []
 
@@ -57,9 +56,9 @@ class H5PY_RW:
 		for item in self.raw_items:
 			L = self.h5[item].shape[0]//chunk_size
 			items += [item +'/' + str(part) for part in range(L)]
-
 		# Update the items into chunked items
 		self.items = items
+
 		return self
 
 	def next_in_split(self, splits, split_index):
@@ -69,12 +68,11 @@ class H5PY_RW:
 			splits: ratio of each split (array)
 			index: split index
 		"""
+
 		if not hasattr(self, 'index_item_split'):
 			self.index_item_split = np.array([ int(sum(splits[0:i])*len(self.items)) for i in range(len(splits))], dtype = np.int32)
-		# print self.index_item_split
 		item_path = self.items[self.index_item_split[split_index]]
 		split_path = item_path.split('/')
-
 		# Speaker indice
 		key = int(split_path[0])
 
@@ -213,15 +211,11 @@ class H5PY_RW:
 
 		print 'Dataset for the subset: ' + subset + ' has been built'
 
-
-
-
-
 class Mixer:
 
 	def __init__(self, datasets, chunk_size=0, shuffling=False, with_mask=True, 
 		with_inputs=False, splits = [0.8, 0.1, 0.1], mixing_type='add', mask_positive_value=1, 
-		mask_negative_value=-1, nb_speakers = 2, random_picking=True):
+		mask_negative_value=-1, nb_speakers = 2, random_picking=False):
 		"""
 		Mix multiple H5PY file writer/reader (H5PY_RW)
 		Inputs:
@@ -231,6 +225,8 @@ class Mixer:
 			mask_positive_value: Bin value if the spectrogram bin belong to the mask
 			mask_negative_value: Bin value if the spectrogram bin does not belong to the mask
 		"""
+		np.random.seed(42)
+
 		self.datasets = datasets
 		self.type = mixing_type
 		self.create_labels()
@@ -263,22 +259,19 @@ class Mixer:
 
 	def shuffle(self):
 		for i, dataset in enumerate(self.datasets):
-			dataset.shuffle(i+1)
+			dataset.shuffle(seed=i+1)
 
 	def select_split(self, index):
 		self.split_index = index
 		return self
 
-	def adjust_split_size_to_batchsize(self, batch_size):
-		self.batch_size = batch_size
-		self.size -= self.size%int(batch_size/self.splits[self.split_index])
-		for dataset in self.datasets:
-			# Adjust size to the batchsize for this split
-			dataset.items = dataset.items[0:self.size]
-		print 'size =' ,self.size
-
 	def selected_split_size(self):
 		return int(self.splits[self.split_index]*self.size)
+
+	def reset(self):
+		np.random.seed(42)
+		for d in self.datasets:
+			d.reset_split(self.splits, self.split_index)
 
 	def nb_batches(self, batch_size):
 		return int(self.splits[self.split_index]*self.size/batch_size)
@@ -311,7 +304,9 @@ class Mixer:
 		key_d = np.array(key_d)
 		X_non_mix = np.array(X_d)
 
-
+		# for dataset in self.datasets:
+		# 	print dataset.index_item_split
+ 
 		if self.mixing_type == 'add':
 			X_mix = np.sum(X_non_mix, axis=0)
 		elif self.mixing_type == 'mean':
@@ -337,7 +332,6 @@ class Mixer:
 			Y = []
 		if self.with_inputs:
 			X_non_mix = []
-
 
 		for i in range(batch_size):
 			if self.with_mask:
@@ -386,12 +380,13 @@ class Mixer:
 		return self.dico
 
 from data_tools import read_metadata, males_keys, females_keys
-if __name__ == "__main__":
 
+if __name__ == "__main__":
+	pass
 	###
 	### TEST
 	##
-	# H5_dic = read_metadata()
+	H5_dic = read_metadata()
 	# print H5_dic
 	# chunk_size = 512*100
 
@@ -438,9 +433,43 @@ if __name__ == "__main__":
 	# 				assert id_m[i] == key 
 	# 			if id_ == ind[0][1]:
 	# 				assert id_f[i] == key
-	H5PY_RW.create_raw_audio_dataset('train-clean-100-8-s.h5', subset='train-clean-100')
+	# sH5PY_RW.create_raw_audio_dataset('train-clean-100-8-s.h5', subset='train-clean-100')
 	# print nb_to_speaker.values()
 	# print ind
 
 	# H5_dic = read_metadata()
 	# males = H5PY_RW('dev-clean.h5', subset = males_keys(H5_dic))
+	
+
+	males = H5PY_RW("h5py_files/train-clean-100-8-s.h5", subset = males_keys(H5_dic))
+	fem = H5PY_RW("h5py_files/train-clean-100-8-s.h5", subset = females_keys(H5_dic))
+
+	mixed_data = Mixer([males, fem], chunk_size=5120, 
+		with_mask=False, with_inputs=True, shuffling=True,
+		nb_speakers=2, random_picking=False)
+
+	bs = 4
+	nb_batches = mixed_data.nb_batches(bs)
+
+	for epoch in range(2):
+		for b in range(nb_batches):
+			print '-----'
+			X_non_mix, X_mix, _ = mixed_data.get_batch(bs)
+
+			if b%5 == 0:
+				mixed_data.select_split(1)
+				valid_batch = mixed_data.nb_batches(bs)
+				for v_b in range(valid_batch):
+					print 'xxxxxxxxxx'
+					mixed_data.get_batch(bs)
+				mixed_data.reset()
+				mixed_data.select_split(0)
+
+		mixed_data.reset()
+
+	mixed_data.select_split(2)
+	test_nb_batch = mixed_data.nb_batches(bs)
+	for t_b in range(test_nb_batch):
+		print 'xxxxxxxxxx'
+		mixed_data.get_batch(bs)
+	mixed_data.reset()

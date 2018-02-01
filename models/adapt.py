@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from utils.ops import ops
+from utils.tools import args_to_string
 from utils.ops.ops import unpool, variable_summaries, get_scope_variable
 from itertools import permutations
 import os
@@ -40,7 +41,7 @@ class Adapt:
 			self.runID = name + '-' + haikunator.Haikunator().haikunate()
 			print 'ID : {}'.format(self.runID)
 			if kwargs is not None:
-				self.runID += ''.join('-{}={}-'.format(key, val) for key, val in sorted(kwargs.items()))
+				self.runID += args_to_string(kwargs)
 		else:
 			self.runID = name + '-' + runID
 
@@ -158,7 +159,8 @@ class Adapt:
 					tf.summary.scalar('training_cost', self.cost)
 
 			self.merged = tf.summary.merge_all()
-			self.train_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID), self.graph)
+			self.train_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID,'train'), self.graph)
+			self.valid_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID,'valid'), self.graph)
 			self.saver = tf.train.Saver()
 
 		# if self.sepNet != None:
@@ -185,6 +187,9 @@ class Adapt:
 
 	def restore_model(self, path, runID):
 		self.saver.restore(self.sess, os.path.join(path, name+'-'+runID, 'model.ckpt'))
+	
+	def restore_last_checkpoint(self):
+		self.saver.restore(self.sess, tf.train.latest_checkpoint(os.path.join(config.log_dir, self.folder ,self.runID)))
 
 	def savedModel(self):
 		with self.graph.as_default():
@@ -436,7 +441,9 @@ class Adapt:
 		return optimize
 
 	def save(self, step):
-		self.saver.save(self.sess, os.path.join(config.log_dir, self.folder ,self.runID, "model.ckpt"))
+		path = os.path.join(config.log_dir, self.folder ,self.runID, "model.ckpt")
+		self.saver.save(self.sess, path, step)
+		return path
 
 	def save_centroids(self, step):
 		self.centroids_saver.save(self.sess, os.path.join(config.log_dir, self.folder ,self.runID, "centroids"), global_step=step)
@@ -451,6 +458,17 @@ class Adapt:
 		self.train_writer.add_summary(summary, step)
 		return cost
 
+	def valid_batch(self, X_mix_valid, X_non_mix_valid):
+		cost = self.sess.run(self.cost, {self.X_non_mix:X_non_mix_valid, self.X_mix:X_mix_valid,self.training:False})
+		return cost
+
+	def add_valid_summary(self, val, step):
+		summary = tf.Summary()
+		summary.value.add(tag="Valid Cost", simple_value=val)
+		self.valid_writer.add_summary(summary, step)
+
+
+		
 	def pretrain(self, X_non_mix, learning_rate, step):
 		_ ,summary, cost = self.sess.run([self.optimize, self.merged, self.cost], {self.X_non_mix:X_non_mix, self.training:True, self.learning_rate:learning_rate})#,  options=options, run_metadata=run_metadata)
 		self.train_writer.add_summary(summary, step)

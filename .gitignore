@@ -11,3 +11,4 @@ h5py_files/
 docs/
 gif/
 .ipynb*
+test\.py
