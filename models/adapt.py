@@ -62,7 +62,6 @@ class Adapt:
 			# Batch of raw non-mixed audio
 			# shape = [ batch size , number of speakers, samples ] = [ B, S, L]
 			self.X_non_mix = tf.placeholder("float", [None, None, None], name='non_mix_input')
-			
 
 			# Batch of raw mixed audio - Input data
 			# shape = [ batch size , samples ] = [ B , L ]
@@ -73,7 +72,6 @@ class Adapt:
 				self.B = shape_in[0]
 				self.L = shape_in[2]
 
-				# self.x = tf.reshape(self.X_non_mix, [self.B*self.S, self.L])
 				self.x = tf.concat([self.X_mix,  tf.reshape(self.X_non_mix, [self.B*self.S, self.L])], axis=0)
 				self.B_tot = tf.shape(self.x)[0]
 			else:
@@ -300,6 +298,14 @@ class Adapt:
 		# shape = [B_tot, T_, N, 1], shape = [B(1+S), T , N, 1], [B(1+S), T_ , N, 1]
 		separator_in, argmax_in = self.front
 
+		argmax_in = argmax_in[:self.B]
+
+		repeats = [self.S, 1, 1 ,1]
+		shape = tf.shape(argmax_in)
+		argmax_in = tf.expand_dims(argmax_in, 1)
+		argmax_in = tf.tile(argmax_in, [1, self.S, 1, 1 ,1])
+		argmax_in = tf.reshape(argmax_in, shape*repeats)
+
 		if self.pretraining:
 			self.T_max_pooled = tf.shape(separator_in)[1]
 
@@ -308,6 +314,7 @@ class Adapt:
 			input_mix = tf.reshape(input[:self.B, : , :], [self.B, 1, self.T_max_pooled, self.N]) # B first batches correspond to mix input
 			input_non_mix = tf.reshape(input[self.B:, : , :], [self.B, self.S, self.T_max_pooled, self.N]) # B*S others non mix
 			
+			#For Tensorboard
 			self.inmix = tf.reshape(input_mix, [self.B, self.T_max_pooled, self.N, 1])
 			self.innonmix = tf.reshape(input_non_mix, [self.B*self.S, self.T_max_pooled, self.N, 1])
 
@@ -316,25 +323,9 @@ class Adapt:
 
 			self.ou = output
 
-			argmax_in = argmax_in[:self.B]
-
-			repeats = [self.S, 1, 1 ,1]
-			shape = tf.shape(argmax_in)
-			argmax_in = tf.expand_dims(argmax_in, 1)
-			argmax_in = tf.tile(argmax_in, [1, self.S, 1, 1 ,1])
-			argmax_in = tf.reshape(argmax_in, shape*repeats)
-
 			return output, argmax_in
-		else:
-			argmax_in = argmax_in[:self.B]
-
-			repeats = [self.S, 1, 1 ,1]
-			shape = tf.shape(argmax_in)
-			argmax_in = tf.expand_dims(argmax_in, 1)
-			argmax_in = tf.tile(argmax_in, [1, self.S, 1, 1 ,1])
-			argmax_in = tf.reshape(argmax_in, shape*repeats)
-
-			return self.sepNet.output, argmax_in
+		
+		return self.sepNet.output, argmax_in
 
 	@ops.scope
 	def back(self):
@@ -345,9 +336,7 @@ class Adapt:
 		output_shape = [self.B*self.S, self.T, self.N, 1]
 		self.unpooled = unpool(input_tensor, argmax, ksize=[1, self.max_pool_value, 1, 1], output_shape= output_shape, scope='unpool')
 
-		self.recons = self.unpooled
-
-		output = tf.reshape(self.recons, [self.B*self.S, 1, self.T, self.N])
+		output = tf.reshape(self.unpooled, [self.B*self.S, 1, self.T, self.N])
 
 		self.window_filter_2 = get_scope_variable('window_2', 'w_2', shape=[self.window], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 		self.bases_2 = get_scope_variable('bases_2', 'bases_2', shape=[self.window, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
@@ -388,9 +377,9 @@ class Adapt:
 		if self.pretraining:
 			print self.X_non_mix
 			print self.back
-			self.sdr = - tf.reduce_mean(self.back*self.X_non_mix, -1)**2/tf.reduce_mean(tf.square(self.back), -1) 
+			# self.sdr = - tf.reduce_mean(self.back*self.X_non_mix, -1)**2/tf.reduce_mean(tf.square(self.back), -1) 
 			self.mse = tf.reduce_sum(tf.pow(self.X_non_mix - self.back, 2), axis=2) / tf.cast(self.L, tf.float32)
-			self.sdr = tf.reduce_mean(self.sdr, -1)
+			# self.sdr = tf.reduce_mean(self.sdr, -1)
 
 		else:
 			# Compute loss over all possible permutations
@@ -415,7 +404,7 @@ class Adapt:
 		
 		# shape = [B]
 		# Compute mean over batches
-		self.SDR = 0.5*tf.reduce_mean(self.sdr) + 0.5*tf.reduce_mean(self.mse)
+		self.SDR  = tf.reduce_mean(self.mse) #+  0.5*tf.reduce_mean(self.sdr) 
 		self.cost = self.SDR + self.sparse_reg + self.reg
 
 		return self.cost
