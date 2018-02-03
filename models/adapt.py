@@ -127,7 +127,7 @@ class Adapt:
 			# tf.summary.audio(name= "input/1", tensor = self.x[3:4,:], sample_rate = config.fs, max_outputs=1)
 			# tf.summary.audio(name= "input/2", tensor = self.x[4:5,:], sample_rate = config.fs, max_outputs=1)
 
-			tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=8)
+			# tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=8)
 			# # # tf.summary.audio(name= "input/non-mixed", tensor = tf.reshape(self.X_non_mix[0:2], [-1, self.L]), sample_rate = config.fs, max_outputs=8)
 
 			# tf.summary.audio(name= "input/", tensor = self.x[:self.B], sample_rate = config.fs, max_outputs=9)
