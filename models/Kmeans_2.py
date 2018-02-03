@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # My Model 
-from utils.ops import ops
+from utils.ops import scope
 import tensorflow as tf
 import numpy as np
 from  sklearn.datasets import make_blobs
@@ -68,7 +68,7 @@ class KMeans:
 			self.sess.run(tf.global_variables_initializer())
 
 
-	@ops.scope
+	@scope
 	def network(self):
 
 		i = tf.constant(0)

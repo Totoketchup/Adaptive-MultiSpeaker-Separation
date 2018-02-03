@@ -1,6 +1,5 @@
 # My Model 
-from utils.ops import ops
-from utils.ops.ops import BLSTM, Conv1D, Reshape, Normalize, f_props
+from utils.ops import BLSTM, Conv1D, Reshape, Normalize, f_props, scope
 from models.Kmeans_2 import KMeans
 
 # from utils.postprocessing.reconstruction import 
@@ -37,7 +36,7 @@ class DPCL:
 			self.sess.run(tf.global_variables_initializer())
 
 
-	@ops.scope
+	@scope
 	def prediction(self):
 		# DAS network
 
@@ -56,7 +55,7 @@ class DPCL:
 		
 		return y
 
-	@ops.scope
+	@scope
 	def cost(self):
 		# Definition of cost for DAS model
 
@@ -104,7 +103,7 @@ class DPCL:
 
 		return cost
 
-	@ops.scope
+	@scope
 	def separate(self):
 		input_kmeans = tf.reshape(self.prediction, [self.B, -1, self.E])
 		kmeans = KMeans(nb_clusters=2, nb_iterations=10, input_tensor=input_kmeans)
@@ -118,7 +117,7 @@ class DPCL:
 		print separated
 		return separated
 
-	@ops.scope
+	@scope
 	def optimize(self):
 		return tf.train.AdamOptimizer(0).minimize(self.cost)
 

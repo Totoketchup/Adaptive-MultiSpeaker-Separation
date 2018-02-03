@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
-from utils.ops import ops
 from utils.tools import args_to_string
-from utils.ops.ops import unpool, variable_summaries, get_scope_variable
+from utils.ops import unpool, variable_summaries, get_scope_variable, scope
 from itertools import permutations
 import os
 import config
@@ -258,7 +257,7 @@ class Adapt:
 	##
 	## Front End creating STFT like data
 	##
-	@ops.scope
+	@scope
 	def front(self):
 		# Front-End
 
@@ -293,7 +292,7 @@ class Adapt:
 		return self.y, argmax
 
 
-	@ops.scope
+	@scope
 	def separator(self):
 		# shape = [B_tot, T_, N, 1], shape = [B(1+S), T , N, 1], [B(1+S), T_ , N, 1]
 		separator_in, argmax_in = self.front
@@ -327,7 +326,7 @@ class Adapt:
 		
 		return self.sepNet.output, argmax_in
 
-	@ops.scope
+	@scope
 	def back(self):
 		# Back-End
 		input_tensor, argmax = self.separator
@@ -363,7 +362,7 @@ class Adapt:
 		return self.logfunc(p, p_hat) + self.logfunc(inv_p, inv_p_hat)
 
 
-	@ops.scope
+	@scope
 	def cost(self):
 		# Definition of cost for Adapt model
 		# Regularisation
@@ -415,7 +414,7 @@ class Adapt:
 			'RMS': tf.train.RMSPropOptimizer,
 		}[string]
 
-	@ops.scope
+	@scope
 	def optimize(self):
 		if hasattr(self, 'trainable_variables') == False:
 			self.trainable_variables = tf.global_variables()

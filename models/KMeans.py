@@ -1,5 +1,5 @@
 # My Model 
-from utils.ops import ops
+from utils.ops import scope
 import config
 import tensorflow as tf
 import numpy as np
@@ -48,7 +48,7 @@ class KMeans:
 		with self.graph.as_default():
 			self.sess.run(tf.global_variables_initializer())
 
-	@ops.scope
+	@scope
 	def network(self):
 
 		i = tf.constant(0)

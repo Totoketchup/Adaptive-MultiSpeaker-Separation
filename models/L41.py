@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 import tensorflow as tf
 
-from utils.ops import ops
 from models.Kmeans_2 import KMeans
 import config
-from utils.ops.ops import BLSTM, Conv1D, Reshape, Normalize, f_props
+from utils.ops import BLSTM, Conv1D, Reshape, Normalize, f_props, scope
 from itertools import permutations
 
 class L41Model:
@@ -65,7 +64,7 @@ class L41Model:
 								   [self.num_speakers, self.embedding_size],
 								   stddev=tf.sqrt(2/float(self.embedding_size))), name='speaker_centroids')
 
-	@ops.scope
+	@scope
 	def prediction(self):
 		"""
 		Construct the op for the network used in [1].  This consists of two
@@ -92,7 +91,7 @@ class L41Model:
 		
 		return y
 
-	@ops.scope
+	@scope
 	def separate(self):
 		# TODO for only when Ind is available, speaker info is given
 		# Ind [B, S, 1]
@@ -118,7 +117,7 @@ class L41Model:
 
 		return separated
 # 
-	@ops.scope
+	@scope
 	def enhance(self):
 		# [B, S, T, F]
 		separated = tf.reshape(self.separate, [self.B, self.S, -1, self.F])
@@ -157,7 +156,7 @@ class L41Model:
 		y =  tf.transpose(y, [0, 2, 1])
 		return tf.reshape(y , [self.B*self.S, -1, self.F, 1])
 
-	@ops.scope
+	@scope
 	def enhance_cost(self):
 		# Compute all permutations among the enhanced filters [B, TF, S] -> [B, TF, P, S]
 		perms = list(permutations(range(self.S))) # ex with 3: [0, 1, 2], [0, 2 ,1], [1, 0, 2], [1, 2, 0], [2, 1, 0], [2, 0, 1]
@@ -199,7 +198,7 @@ class L41Model:
 		return cost
 
 
-	@ops.scope
+	@scope
 	def cost(self):
 		"""
 		Construct the cost function op for the negative sampling cost
