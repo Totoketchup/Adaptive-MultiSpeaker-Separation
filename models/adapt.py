@@ -318,7 +318,7 @@ class Adapt:
 			self.inmix = tf.reshape(input_mix, [self.B, self.T_max_pooled, self.N, 1])
 			self.innonmix = tf.reshape(input_non_mix, [self.B*self.S, self.T_max_pooled, self.N, 1])
 
-			filters = tf.divide(input_non_mix, input_mix)
+			filters = tf.divide(input_non_mix, tf.clip_by_value(input_mix, 1e-4, 1e10))
 			output = tf.reshape(input_mix * filters, [self.B*self.S, self.T_max_pooled, self.N, 1])
 
 			self.ou = output
