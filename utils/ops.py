@@ -4,7 +4,7 @@ import functools
 from itertools import compress
 
 
-rng = np.random.RandomState(1234)
+rng = np.random.RandomState(42)
 
 def scope(function):
     name = function.__name__

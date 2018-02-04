@@ -44,7 +44,7 @@ def main(args):
 	print adapt_model.runID
 
 	batch_size_train = args.batch_size
-	batch_size_valid_test = batch_size_train*2
+	batch_size_valid_test = batch_size_train
 
 	#
 	# Get the number of batches in an epoch for each set (train/Valid/test)
@@ -55,6 +55,14 @@ def main(args):
 	mixed_data.select_split(2) # Switch on Test set
 	nb_batches_test = mixed_data.nb_batches(batch_size_valid_test)
 	mixed_data.select_split(0) # Switch back on Training set
+
+
+	print '####TRAINING####'
+	print nb_batches_train
+	print '####VALID####'
+	print nb_batches_valid
+	print '####TEST####'
+	print nb_batches_test
 
 	nb_epochs = args.epochs
 
@@ -76,7 +84,7 @@ def main(args):
 			print 'Step #'  , step,' loss=', c ,' ETA = ', getETA(sum(time_spent)/float(np.count_nonzero(time_spent))
 				, nb_batches_train, b, nb_epochs, epoch)
 
-			if step%1000 == 0:
+			if step%100 == 0:
 				t = time.time()
 				# Select Validation set
 				mixed_data.select_split(1)
@@ -89,7 +97,8 @@ def main(args):
 
 					cost = adapt_model.valid_batch(X_v_mix, X_v_non_mix)
 					costs.append(cost)
-
+					if cost > 10:
+						print cost
 				valid_cost = np.mean(costs)
 				adapt_model.add_valid_summary(valid_cost, step)
 
@@ -104,6 +113,7 @@ def main(args):
 
 				t_f = time.time()
 				print 'Validation set tested in ', t_f - t, ' seconds'
+				print 'Validation set: ', valid_cost
 		mixed_data.reset() # Reset the Training set from the beginning
 
 	print 'Best model with Validation:  ', best_validation_cost

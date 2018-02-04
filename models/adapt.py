@@ -126,10 +126,10 @@ class Adapt:
 			# tf.summary.audio(name= "input/1", tensor = self.x[3:4,:], sample_rate = config.fs, max_outputs=1)
 			# tf.summary.audio(name= "input/2", tensor = self.x[4:5,:], sample_rate = config.fs, max_outputs=1)
 
-			# tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=8)
+			tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=8)
 			# # # tf.summary.audio(name= "input/non-mixed", tensor = tf.reshape(self.X_non_mix[0:2], [-1, self.L]), sample_rate = config.fs, max_outputs=8)
 
-			# tf.summary.audio(name= "input/", tensor = self.x[:self.B], sample_rate = config.fs, max_outputs=9)
+			tf.summary.audio(name= "input/", tensor = self.x[:self.B], sample_rate = config.fs, max_outputs=9)
 			# # tf.summary.audio(name= "input2/", tensor = self.X_non_mix, sample_rate = config.fs, max_outputs=9)
 
 			# tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=6)
@@ -311,6 +311,8 @@ class Adapt:
 			input = tf.reshape(separator_in, [self.B_tot, self.T_max_pooled, self.N])
 
 			input_mix = tf.reshape(input[:self.B, : , :], [self.B, 1, self.T_max_pooled, self.N]) # B first batches correspond to mix input
+			input_mix = tf.tile(input_mix, [1, self.S, 1, 1])
+
 			input_non_mix = tf.reshape(input[self.B:, : , :], [self.B, self.S, self.T_max_pooled, self.N]) # B*S others non mix
 			
 			#For Tensorboard
