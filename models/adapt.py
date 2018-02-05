@@ -319,11 +319,24 @@ class Adapt:
 			self.inmix = tf.reshape(input_mix, [self.B, self.T_max_pooled, self.N, 1])
 			self.innonmix = tf.reshape(input_non_mix, [self.B*self.S, self.T_max_pooled, self.N, 1])
 
-			# filters = tf.divide(input_non_mix, tf.clip_by_value(input_mix, 1e-4, 1e10))
-			filters = tf.square(input_non_mix) / tf.clip_by_value(tf.reduce_sum(tf.square(input_non_mix), 1, keep_dims=True), 1e-4, 1e10) 
-			output = tf.reshape(input_mix * filters, [self.B*self.S, self.T_max_pooled, self.N, 1])
+			#filters = tf.divide(input_non_mix, tf.clip_by_value(input_mix, 1e-4, 1e10))
+			#filters = tf.square(input_non_mix) / tf.clip_by_value(tf.reduce_sum(tf.square(input_non_mix), 1, keep_dims=True), 1e-4, 1e10) 
+			#output = tf.reshape(input_mix * filters, [self.B*self.S, self.T_max_pooled, self.N, 1])
 
-			self.ou = output
+			init = tf.concat([tf.slice(input_non_mix,[0, self.S-1, 0, 0], [-1, 1, -1, -1]),
+					tf.slice(input_non_mix,[0, 0, 0, 0], [-1, self.S-1, -1, -1])], axis=1)	
+
+			i = (tf.constant(1), init)
+			cond = lambda i, x: tf.less(i, self.S-1)
+			body = lambda i, x: (i + 1, x + tf.concat([tf.slice(x,[0, self.S-1, 0, 0], [-1, 1, -1, -1]),
+				tf.slice(x,[0, 0, 0, 0], [-1, self.S-1, -1, -1])], axis=1))
+
+			_, X_add = tf.while_loop(cond, body, i)
+
+			# Shape added signal = [B*S, L]
+			X_add = tf.reshape(X_add, [self.B, self.S, self.T_max_pooled, self.N])
+
+			output = tf.reshape(input_mix - X_add, [self.B*self.S, self.T_max_pooled, self.N, 1])
 
 			return output, argmax_in
 		
