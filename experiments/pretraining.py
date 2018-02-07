@@ -84,7 +84,7 @@ def main(args):
 			print 'Step #'  , step,' loss=', c ,' ETA = ', getETA(sum(time_spent)/float(np.count_nonzero(time_spent))
 				, nb_batches_train, b, nb_epochs, epoch)
 
-			if step%100 == 0:
+			if step%1000 == 0:
 				t = time.time()
 				# Select Validation set
 				mixed_data.select_split(1)
@@ -97,8 +97,7 @@ def main(args):
 
 					cost = adapt_model.valid_batch(X_v_mix, X_v_non_mix)
 					costs.append(cost)
-					if cost > 10:
-						print cost
+
 				valid_cost = np.mean(costs)
 				adapt_model.add_valid_summary(valid_cost, step)
 
@@ -146,7 +145,9 @@ if __name__ == '__main__':
 		'--nb_speakers', type=int, help='Number of mixed speakers', required=True)
 	parser.add_argument(
 		'--no_random_picking', help='Do not pick random genders when mixing', action="store_false")
-	
+	parser.add_argument(
+		'--validation_step',type=int, help='Nb of steps between each validation', required=False, default=1000)
+
 
 	# Training arguments
 	parser.add_argument(

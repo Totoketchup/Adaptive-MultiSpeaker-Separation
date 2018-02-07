@@ -384,8 +384,8 @@ class Adapt:
 		if self.pretraining:
 			print self.X_non_mix
 			print self.back
+			self.mse = tf.reduce_sum(tf.square(self.X_non_mix - self.back), axis=2)
 			# self.sdr = - tf.reduce_mean(self.back*self.X_non_mix, -1)**2/tf.reduce_mean(tf.square(self.back), -1) 
-			self.mse = tf.reduce_sum(tf.pow(self.X_non_mix - self.back, 2), axis=2) / tf.cast(self.L, tf.float32)
 			# self.sdr = tf.reduce_mean(self.sdr, -1)
 
 		else:

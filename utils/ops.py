@@ -18,6 +18,10 @@ def scope(function):
         return getattr(self,attribute)
     return decorator
 
+def log10(x):
+    numerator = tf.log(x)
+    denominator = tf.log(tf.constant(10., dtype=numerator.dtype))
+    return numerator / denominator
 
 def get_scope_variable(scope_name, var, shape=None, initializer=None):
     with tf.variable_scope(scope_name) as scope:

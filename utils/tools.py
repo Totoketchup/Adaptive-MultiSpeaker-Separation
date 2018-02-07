@@ -52,9 +52,16 @@ def args_to_string(args):
 
 import numpy as np
 
-def normalize_mix(X_mix, X_non_mix):
-	mean = np.mean(X_mix, axis=-1, keepdims=True)
-	std = np.std(X_mix, axis=-1, keepdims=True)
-	X_mix = (X_mix)/std
-	X_non_mix = (X_non_mix)/std[::, np.newaxis]
+def normalize_mix(X_mix, X_non_mix, type='min-max'):
+	if type == 'min-max':
+		a = 0.0
+		b = 1.0
+		max_val = np.amax(X_mix, axis=-1, keepdims=True)
+		min_val = np.amin(X_mix, axis=-1, keepdims=True)
+		S = float(X_non_mix.shape[1])
+		A = (b - a)/(max_val - min_val)
+		B = b - A * max_val
+		X_mix = A*X_mix + B
+		X_non_mix = A*X_non_mix + B / S
+
 	return X_mix, X_non_mix
