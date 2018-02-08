@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from utils.tools import args_to_string
-from utils.ops import unpool, variable_summaries, get_scope_variable, scope, log10
+from utils.ops import unpool, variable_summaries, get_scope_variable, scope, log10, AMSGrad
 import os
 import config
 import tensorflow as tf
@@ -458,7 +458,8 @@ class Adapt:
 			print 'ALL VARIABLE TRAINED'	
 		print self.trainable_variables
 
-		optimizer = self.select_optimizer(self.optimizer)(self.learning_rate)
+		# optimizer = self.select_optimizer(self.optimizer)(self.learning_rate)
+		optimizer = AMSGrad(self.learning_rate, epsilon=0.001)
 		gradients, variables = zip(*optimizer.compute_gradients(self.cost, var_list=self.trainable_variables))
 		# gradients, _ = tf.clip_by_global_norm(gradients, 200.0)
 		optimize = optimizer.apply_gradients(zip(gradients, variables))
