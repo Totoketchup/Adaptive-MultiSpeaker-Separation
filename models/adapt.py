@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
 from utils.tools import args_to_string
-from utils.ops import unpool, variable_summaries, get_scope_variable, scope
-from itertools import permutations
+from utils.ops import unpool, variable_summaries, get_scope_variable, scope, log10
 import os
 import config
 import tensorflow as tf
 import haikunator
-from itertools import compress
+from itertools import compress, combinations, permutations
 from tensorflow.python.saved_model import builder as saved_model_builder
 name = 'AdaptiveNet'
 import numpy as np
@@ -117,7 +116,8 @@ class Adapt:
 
 			# variable_summaries(self.window_filter)
 			# variable_summaries(self.bases)
-			# variable_summaries(self.conv_filter)
+			variable_summaries(self.conv_filter)
+			variable_summaries(self.conv_filter_2)
 
 			# variable_summaries(self.smoothing_filter)
 
@@ -126,18 +126,19 @@ class Adapt:
 			# tf.summary.audio(name= "input/1", tensor = self.x[3:4,:], sample_rate = config.fs, max_outputs=1)
 			# tf.summary.audio(name= "input/2", tensor = self.x[4:5,:], sample_rate = config.fs, max_outputs=1)
 
-			tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=8)
-			# # # tf.summary.audio(name= "input/non-mixed", tensor = tf.reshape(self.X_non_mix[0:2], [-1, self.L]), sample_rate = config.fs, max_outputs=8)
+			tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
+			tf.summary.audio(name= "input/non-mixed", tensor = tf.reshape(self.X_non_mix, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
+			tf.summary.audio(name= "input/", tensor = self.x[:self.B], sample_rate = config.fs, max_outputs=1)
 
-			tf.summary.audio(name= "input/", tensor = self.x[:self.B], sample_rate = config.fs, max_outputs=9)
 			# # tf.summary.audio(name= "input2/", tensor = self.X_non_mix, sample_rate = config.fs, max_outputs=9)
 
 			# tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=6)
 
-			# trs = lambda x : tf.transpose(x, [0, 2, 1, 3])
-			# tf.summary.image(name= "mix", tensor = trs(self.inmix), max_outputs=4)
-			# tf.summary.image(name= "non_mix", tensor = trs(self.innonmix), max_outputs=8)
-			# tf.summary.image(name= "separated", tensor = trs(self.ou), max_outputs=8)
+			trs = lambda x : tf.transpose(x, [0, 2, 1, 3])
+			tf.summary.image(name= "mix", tensor = trs(self.inmix), max_outputs=1)
+			tf.summary.image(name= "non_mix", tensor = trs(self.innonmix), max_outputs=2)
+			tf.summary.image(name= "separated", tensor = trs(self.ou), max_outputs=2)
+			tf.summary.image(name= "separated", tensor = trs(self.unpool_board), max_outputs=2)
 
 			# tf.summary.image(name= "stft_like", tensor = trs(self.y))
 
@@ -150,10 +151,12 @@ class Adapt:
 				with tf.name_scope('loss_values'):
 					tf.summary.scalar('loss', self.SDR)
 					tf.summary.scalar('mse', tf.reduce_mean(self.mse))
+					tf.summary.scalar('SDR', self.sdr_improvement())
 					tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
 					tf.summary.scalar('sparse_reg', self.sparse_reg)
 					tf.summary.scalar('regularization', self.reg)
 					tf.summary.scalar('training_cost', self.cost)
+					tf.summary.scalar('overlapping', self.overlapping)
 
 			self.merged = tf.summary.merge_all()
 			self.train_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID,'train'), self.graph)
@@ -266,9 +269,10 @@ class Adapt:
 		input_front =  tf.reshape(self.x, [self.B_tot, 1, self.L, 1])
 
 		# Filter [filter_height, filter_width, input_channels, output_channels] = [1, W, 1, N]
-		self.window_filter = get_scope_variable('window', 'w', shape=[self.window], initializer=tf.contrib.layers.xavier_initializer_conv2d())
-		self.bases = get_scope_variable('bases', 'bases', shape=[self.window, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
-		self.conv_filter = tf.reshape(tf.expand_dims(self.window_filter,1)*self.bases , [1, self.window, 1, self.N])
+		# self.window_filter = get_scope_variable('window', 'w', shape=[self.window], initializer=tf.contrib.layers.xavier_initializer_conv2d())
+		# self.bases = get_scope_variable('bases', 'bases', shape=[self.window, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
+		# self.conv_filter = tf.reshape(tf.expand_dims(self.window_filter,1)*self.bases , [1, self.window, 1, self.N])
+		self.conv_filter = get_scope_variable('filters_front','filters_front', shape=[1, self.window, 1, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 
 		# 1 Dimensional convolution along T axis with a window length = self.window
 		# And N = 256 filters -> Create a [Btot, 1, T, N]
@@ -286,7 +290,7 @@ class Adapt:
 
 		y_shape = tf.shape(self.y)
 		y = tf.reshape(self.y, [self.B_tot, y_shape[1]*y_shape[2]])
-		self.p_hat = tf.reduce_mean(y, 0)
+		self.p_hat = tf.reduce_mean(tf.abs(y), 0)
 		self.latent_loss = tf.reduce_sum(self.kl_div(self.p, self.p_hat))
 
 		return self.y, argmax
@@ -311,7 +315,6 @@ class Adapt:
 			input = tf.reshape(separator_in, [self.B_tot, self.T_max_pooled, self.N])
 
 			input_mix = tf.reshape(input[:self.B, : , :], [self.B, 1, self.T_max_pooled, self.N]) # B first batches correspond to mix input
-			input_mix = tf.tile(input_mix, [1, self.S, 1, 1])
 
 			input_non_mix = tf.reshape(input[self.B:, : , :], [self.B, self.S, self.T_max_pooled, self.N]) # B*S others non mix
 			
@@ -319,9 +322,30 @@ class Adapt:
 			self.inmix = tf.reshape(input_mix, [self.B, self.T_max_pooled, self.N, 1])
 			self.innonmix = tf.reshape(input_non_mix, [self.B*self.S, self.T_max_pooled, self.N, 1])
 
-			#filters = tf.divide(input_non_mix, tf.clip_by_value(input_mix, 1e-4, 1e10))
-			#filters = tf.square(input_non_mix) / tf.clip_by_value(tf.reduce_sum(tf.square(input_non_mix), 1, keep_dims=True), 1e-4, 1e10) 
-			#output = tf.reshape(input_mix * filters, [self.B*self.S, self.T_max_pooled, self.N, 1])
+			input_mix = tf.tile(input_mix, [1, self.S, 1, 1])
+
+			# Compute the overlapping rate:
+			nb = 2
+			comb = list(combinations(range(self.S), nb))
+			len_comb = len(comb)
+			combs = tf.reshape(tf.constant(comb), [1, len_comb, 2, 1])
+			combs = tf.tile(combs, [self.B, 1, 1, 1])
+			batch_range = tf.tile(tf.reshape(tf.range(self.B, dtype=tf.int32), shape=[self.B, 1, 1, 1]), [1, len_comb, nb, 1])
+			comb_range = tf.tile(tf.reshape(tf.range(len_comb, dtype=tf.int32), shape=[1, len_comb, 1, 1]), [self.B, 1, nb, 1])
+			indicies = tf.concat([batch_range, comb_range, combs], axis=3)
+			comb_non_mix = tf.gather_nd(tf.tile(tf.reshape(input_non_mix, [self.B, 1, self.S, self.T_max_pooled*self.N]), [1, len_comb, 1, 1]), indicies) # 
+
+			# Combination of non mixed representations : [B, len(comb), nb, T*N]
+			comb_non_mix = tf.abs(comb_non_mix)
+			measure = 1.0 - tf.abs(comb_non_mix[:,:,0,:] - comb_non_mix[:,:,1,:]) / tf.reduce_max(comb_non_mix, axis=2)
+			overlapping = tf.reduce_sum(measure, -1)
+			overlapping = tf.reduce_mean(overlapping, -1) # Mean over combinations
+			self.overlapping = tf.reduce_mean(overlapping, -1) # Mean over batches
+
+
+			# filters = tf.divide(input_non_mix, tf.clip_by_value(input_mix, 1e-4, 1e10))
+			# filters = tf.square(input_non_mix) / tf.clip_by_value(tf.reduce_sum(tf.square(input_non_mix), 1, keep_dims=True), 1e-4, 1e10) 
+			# output = tf.reshape(input_mix * filters, [self.B*self.S, self.T_max_pooled, self.N, 1])
 
 			# From [a, b, c ,d] -> [a+b+c+d, a+b+c+d, a+b+c+d, a+b+c+d]
 			tiled_sum = tf.tile(tf.reduce_sum(input_non_mix, 1, keep_dims=True), [1, self.S, 1, 1])
@@ -329,7 +353,7 @@ class Adapt:
 			X_add = tiled_sum - input_non_mix
 
 			output = tf.reshape(input_mix - X_add, [self.B*self.S, self.T_max_pooled, self.N, 1])
-
+			self.ou = output
 			return output, argmax_in
 		
 		return self.sepNet.output, argmax_in
@@ -345,9 +369,12 @@ class Adapt:
 
 		output = tf.reshape(self.unpooled, [self.B*self.S, 1, self.T, self.N])
 
-		self.window_filter_2 = get_scope_variable('window_2', 'w_2', shape=[self.window], initializer=tf.contrib.layers.xavier_initializer_conv2d())
-		self.bases_2 = get_scope_variable('bases_2', 'bases_2', shape=[self.window, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
-		self.conv_filter_2 = tf.reshape(tf.expand_dims(self.window_filter_2,1)*self.bases_2 , [1, self.window, 1, self.N])
+		self.unpool_board = tf.reshape(self.unpooled, [self.B*self.S, self.T, self.N, 1])
+
+		# self.window_filter_2 = get_scope_variable('window_2', 'w_2', shape=[self.window], initializer=tf.contrib.layers.xavier_initializer_conv2d())
+		# self.bases_2 = get_scope_variable('bases_2', 'bases_2', shape=[self.window, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
+		# self.conv_filter_2 = tf.reshape(tf.expand_dims(self.window_filter_2,1)*self.bases_2 , [1, self.window, 1, self.N])
+		self.conv_filter_2 = tf.Variable(self.conv_filter.initialized_value(), name="filters_back")
 
 		output = tf.nn.conv2d_transpose(output , filter=self.conv_filter_2,
 									 output_shape=[self.B*self.S, 1, self.L, 1],
@@ -384,7 +411,8 @@ class Adapt:
 		if self.pretraining:
 			print self.X_non_mix
 			print self.back
-			self.mse = tf.reduce_sum(tf.square(self.X_non_mix - self.back), axis=2)
+			# self.mse = log10(tf.reduce_sum(tf.square(self.back), axis=-1)/tf.square(tf.reduce_sum(self.back*self.X_non_mix, axis=-1)))
+			self.mse = tf.reduce_sum(tf.square(self.X_non_mix - self.back), axis=-1)
 			# self.sdr = - tf.reduce_mean(self.back*self.X_non_mix, -1)**2/tf.reduce_mean(tf.square(self.back), -1) 
 			# self.sdr = tf.reduce_mean(self.sdr, -1)
 
@@ -411,8 +439,9 @@ class Adapt:
 		
 		# shape = [B]
 		# Compute mean over batches
-		self.SDR  = tf.reduce_mean(self.mse) #+  0.5*tf.reduce_mean(self.sdr) 
-		self.cost = self.SDR + self.sparse_reg + self.reg
+		self.SDR  = tf.reduce_sum(self.mse, -1) #+  0.5*tf.reduce_mean(self.sdr) 
+		self.SDR  = tf.reduce_mean(self.SDR, -1)
+		self.cost = self.SDR + self.sparse_reg + self.reg + 1e-5*self.overlapping
 
 		return self.cost
 
@@ -435,6 +464,35 @@ class Adapt:
 		optimize = optimizer.apply_gradients(zip(gradients, variables))
 		# optimize = self.select_optimizer(self.optimizer)(self.learning_rate).minimize(self.cost, var_list=self.trainable_variables)
 		return optimize
+
+	def sdr_improvement(self):
+		# B S L
+		s_target = self.X_non_mix 
+		s = self.back
+		mix = tf.tile(tf.expand_dims(self.X_mix, 1) ,[1, self.S, 1])
+
+		s_target_norm = tf.reduce_sum(tf.square(s_target), axis=-1)
+		s_approx_norm = tf.reduce_sum(tf.square(s), axis=-1)
+		mix_norm = tf.reduce_sum(tf.square(mix), axis=-1)
+
+		s_target_s_2 = tf.square(tf.reduce_sum(s_target*s, axis=-1))
+		s_target_mix_2 = tf.square(tf.reduce_sum(s_target*mix, axis=-1))
+
+		separated = 10. * log10(1.0/((s_target_norm*s_approx_norm)/s_target_s_2 - 1.0))
+
+		non_separated = 10. * log10(1.0/((s_target_norm*mix_norm)/s_target_mix_2 - 1.0))
+		# s_t_1 = s_target*(tf.reduce_sum(s_target*s, axis=-1, keep_dims=True) / tf.reduce_sum(tf.square(s_target), axis=-1, keep_dims=True))
+		# separated = tf.reduce_sum(tf.square(s_t_1), axis=-1) / tf.reduce_sum((s_t_1-s)*(s_t_1-s), axis=-1)
+		# separated = 10.*log10(separated)
+		# s_t_2 = s_target*(tf.reduce_sum(s_target*mix, axis=-1, keep_dims=True) / tf.reduce_sum(tf.square(s_target), axis=-1, keep_dims=True))
+		# non_separated = tf.reduce_sum(tf.square(s_t_2), axis=-1) / tf.reduce_sum((s_t_2-mix)*(s_t_2-mix), axis=-1)
+		# non_separated = 10.*log10(non_separated)
+		val = separated - non_separated
+		
+		val = tf.reduce_mean(val , -1) # Mean over speakers
+		val = tf.reduce_mean(val , -1) # Mean over batches
+
+		return val
 
 	def save(self, step):
 		path = os.path.join(config.log_dir, self.folder ,self.runID, "model.ckpt")
@@ -483,7 +541,6 @@ class Adapt:
 		labels = [['r' if b == 1 else 'b' for b in batch]for batch in y]
 		np.save(os.path.join(config.log_dir, self.folder ,self.runID, "bins-{}".format(step)), pred)
 		np.save(os.path.join(config.log_dir, self.folder ,self.runID, "labels-{}".format(step)), labels)
-
 
 
 	def connect_front(self, separator_class):
