@@ -1,68 +1,154 @@
 # -*- coding: utf-8 -*-
 import tensorflow as tf
-
+from utils.tools import args_to_string
+import haikunator
 from models.Kmeans_2 import KMeans
-import config
-from utils.ops import BLSTM, Conv1D, Reshape, Normalize, f_props, scope
+from utils.ops import BLSTM, Conv1D, Reshape, Normalize, f_props, scope, AMSGrad
 from itertools import permutations
+import os
+import config
 
 class L41Model:
-	def __init__(self, input_tensor,
-		adapt_front,
-		S_tot=config.dev_clean_speakers,
-		E=config.embedding_size,
-		layer_size=600,
-		nonlinearity='logistic',
-		normalize=True):
-		"""
-		Initializes Lab41's clustering model.  Default architecture comes from
-		the parameters used by the best performing model in the paper[1].
-		[1] Hershey, John., et al. "Deep Clustering: Discriminative embeddings
-			for segmentation and separation." Acoustics, Speech, and Signal
-			Processing (ICASSP), 2016 IEEE International Conference on. IEEE,
-			2016.
-		Inputs:
-			F: Number of frequency bins in the input data
-			num_speakers: Number of unique speakers to train on. only use in
-						  training.
-			layer_size: Size of BLSTM layers
-			embedding_size: Dimension of embedding vector
-			nonlinearity: Nonlinearity to use in BLSTM layers (default logistic)
-			normalize: Do you normalize vectors coming into the final layer?
-					   (default False)
-		"""
 
-		self.F = adapt_front.N
-		self.num_speakers = S_tot
-		self.layer_size = layer_size
-		self.embedding_size = E
-		self.nonlinearity = nonlinearity
-		self.normalize = normalize
-		self.B = adapt_front.B
-		self.S = adapt_front.S
-		self.adapt_front = adapt_front
+	def __init__(self, runID=None, **kwargs):
 
-		self.graph = adapt_front.graph
+		if runID is not None:
+			self.F = kwargs['window_size']
+			self.num_speakers = kwargs['tot_speakers']
+			self.layer_size = kwargs['layer_size']
+			self.embedding_size = kwargs['embedding_size']
+			self.nonlinearity = kwargs['nonlinearity']
+			self.normalize = kwargs['normalize']
+			self.B = kwargs['B']
+			self.S = kwargs['nb_speakers']
+			self.adapt_front = kwargs['front']
 
+			self.graph = self.adapt_front.graph
+
+			with self.graph.as_default():
+
+				self.X, self.X_non_mix = kwargs['input_tensor']
+				with tf.name_scope('create_masks'):
+					# # Batch of Masks (bins label)
+					# # shape = [ batch size, T, F, S]
+					argmax = tf.argmax(tf.abs(self.X_non_mix), axis=3)
+					self.y = tf.one_hot(argmax, 2, 1.0, -1.0)
+					self.y_test_export = tf.reshape(self.y[:, :, :, 0], [self.B, -1])
+
+				# Speakers indices used in the mixtures
+				# shape = [ batch size, #speakers]
+				self.I = self.adapt_front.Ind
+
+				# Define the speaker vectors to use during training
+				self.speaker_vectors =tf.Variable(tf.truncated_normal(
+									   [self.num_speakers, self.embedding_size],
+									   stddev=tf.sqrt(2/float(self.embedding_size))), name='speaker_centroids')
+		else:
+
+				#Create a graph for this model
+			self.graph = tf.Graph()
+
+			with self.graph.as_default():
+				# Global params
+				self.folder = kwargs['type']
+
+				# STFT hyperparams
+				self.window_size = kwargs['window_size']
+				self.hop_size = kwargs['hop_size']
+
+				# Network hyperparams
+				self.F = kwargs['freqs_size']
+				self.num_speakers = kwargs['tot_speakers']
+				self.layer_size = kwargs['layer_size']
+				self.embedding_size = kwargs['embedding_size']
+				self.nonlinearity = kwargs['nonlinearity']
+				self.normalize = kwargs['normalize']
+				self.learning_rate = kwargs['learning_rate']
+
+				# Run ID for tensorboard
+				self.runID = 'L41_STFT' + '-' + haikunator.Haikunator().haikunate()
+				print 'ID : {}'.format(self.runID)
+				if kwargs is not None:
+					self.runID += args_to_string(kwargs)
+
+				# Placeholder tensor for the mixed signals
+				self.x_mix = tf.placeholder("float", [None, None])
+
+				# Placeholder tensor for non mixed input data [B, T, F, S]
+				# Place holder for non mixed signals [B, S, L]
+				self.x_non_mix = tf.placeholder("float", [None, None, None])
+
+				self.I = tf.placeholder(tf.int32, [None, None], name='indicies')
+
+				# Define the speaker vectors to use during training
+				self.speaker_vectors =tf.Variable(tf.truncated_normal(
+									   [self.num_speakers, self.embedding_size],
+									   stddev=tf.sqrt(2/float(self.embedding_size))), name='speaker_centroids')
+
+				self.preprocessing
+				self.normalization01
+				self.prediction
+				self.cost
+				self.optimize
+
+				config_ = tf.ConfigProto()
+				config_.gpu_options.allow_growth = True
+				config_.allow_soft_placement = True
+				self.sess = tf.Session(graph=self.graph, config=config_)
+
+	def tensorboard_init(self):
 		with self.graph.as_default():
+			self.merged = tf.summary.merge_all()
+			self.train_writer = tf.summary.FileWriter(os.path.join(config.log_dir, self.folder, self.runID, 'train'), self.graph)
+			self.valid_writer = tf.summary.FileWriter(os.path.join(config.log_dir, self.folder, self.runID, 'valid'), self.graph)
+			self.saver = tf.train.Saver()
 
-			self.X, self.X_non_mix = input_tensor
-			print self.X
-			with tf.name_scope('create_masks'):
-				# # Batch of Masks (bins label)
-				# # shape = [ batch size, T, F, S]
-				argmax = tf.argmax(tf.abs(self.X_non_mix), axis=3)
-				self.y = tf.one_hot(argmax, 2, 1.0, -1.0)
-				self.y_test_export = tf.reshape(self.y[:, :, :, 0], [self.B, -1])
+	def save(self, step):
+		path = os.path.join(config.log_dir, self.folder ,self.runID, "model.ckpt")
+		self.saver.save(self.sess, path, step)
+		return path
 
-			# Speakers indices used in the mixtures
-			# shape = [ batch size, #speakers]
-			self.I = adapt_front.Ind
+	def restore_last_checkpoint(self):
+		self.saver.restore(self.sess, tf.train.latest_checkpoint(os.path.join(config.log_dir, self.folder ,self.runID)))
 
-			# Define the speaker vectors to use during training
-			self.speaker_vectors =tf.Variable(tf.truncated_normal(
-								   [self.num_speakers, self.embedding_size],
-								   stddev=tf.sqrt(2/float(self.embedding_size))), name='speaker_centroids')
+
+	def init(self):
+			with self.graph.as_default():
+				self.sess.run(tf.global_variables_initializer())
+ 
+	@scope
+	def preprocessing(self):
+		self.stfts = tf.contrib.signal.stft(self.x_mix, 
+			frame_length=self.window_size, 
+			frame_step=self.window_size-self.hop_size, 
+			fft_length=self.window_size)
+
+		self.B = tf.shape(self.x_non_mix)[0]
+		self.S = tf.shape(self.x_non_mix)[1]
+
+		self.stfts_non_mix = tf.contrib.signal.stft(tf.reshape(self.x_non_mix, [self.B*self.S, -1]), 
+			frame_length=self.window_size, 
+			frame_step=self.window_size-self.hop_size, 
+			fft_length=self.window_size)
+
+		self.X = tf.sqrt(tf.abs(self.stfts))
+		self.X_non_mix = tf.sqrt(tf.abs(self.stfts_non_mix))
+		self.X_non_mix = tf.reshape(self.X_non_mix, [self.B, self.S, -1, self.F])
+		self.X_non_mix = tf.transpose(self.X_non_mix, [0, 2, 3, 1])
+
+		argmax = tf.argmax(tf.abs(self.X_non_mix), axis=3)
+		self.y = tf.one_hot(argmax, 2, 1.0, -1.0)
+
+	@scope
+	def normalization01(self):
+		min_ = tf.reduce_min(self.X, axis=[1,2], keep_dims=True)
+		max_ = tf.reduce_max(self.X, axis=[1,2], keep_dims=True)
+		self.X_norm = (self.X - min_) / (max_ - min_)
+
+	@scope
+	def normalization_mean_std(self):
+		mean, var = tf.nn.moments(self.X, axes=[1,2], keep_dims=True)
+		self.X_norm = (self.X - mean) / var
 
 	@scope
 	def prediction(self):
@@ -71,10 +157,7 @@ class L41Model:
 		BLSTM layers followed by a dense layer giving a set of T-F vectors of
 		dimension embedding_size
 		"""
-		shape = tf.shape(self.X)
-
-		mean, var = tf.nn.moments(self.X, axes=[1,2], keep_dims=True)
-		input_tensor = (self.X - mean) / var
+		shape = tf.shape(self.X)	
 
 		layers = [
 			BLSTM(self.layer_size, 'BLSTM_1'),#, dropout=True, drop_val=0.9),
@@ -85,9 +168,8 @@ class L41Model:
 			Reshape([shape[0], shape[1], self.F, self.embedding_size]),
 			Normalize(3)
 		]
-
 		# Produce embeddings [B, T, F, E]
-		y = f_props(layers, input_tensor)
+		y = f_props(layers, self.X_norm)
 		
 		return y
 
@@ -107,7 +189,6 @@ class L41Model:
 		
 		# Extract labels of each bins TF_i - labels [B, TF, 1]
 		_ , labels = kmeans.network
-		print labels
 		self.masks = tf.one_hot(labels, 2, 1.0, 0.0) # Create masks [B, TF, S]
 
 		separated = tf.reshape(self.X, [self.B, -1, 1])* self.masks # [B ,TF, S] 
@@ -116,7 +197,7 @@ class L41Model:
 		separated = tf.reshape(separated, [self.B*self.S, -1, self.F, 1]) # [BS, T, F, 1]
 
 		return separated
-# 
+ 
 	@scope
 	def enhance(self):
 		# [B, S, T, F]
@@ -208,7 +289,7 @@ class L41Model:
 		embedding = self.prediction
 
 		# Reshape I so that it is of the correct dimension
-		I = tf.expand_dims( self.I, axis=2 )
+		I = tf.expand_dims(self.I, axis=2 )
 
 		# Normalize the speaker vectors and collect the speaker vectors
 		# corresponding to the speakers in batch
@@ -256,5 +337,28 @@ class L41Model:
 
 		return cost
 
+	@scope
+	def optimize(self):
+
+		# optimizer = self.select_optimizer(self.optimizer)(self.learning_rate)
+		optimizer = AMSGrad(self.learning_rate, epsilon=0.001)
+		opt = optimizer.minimize(self.cost)
+		return opt
+
 	def get_centroids(self):
 		return self.speaker_vectors.eval()
+
+	def train(self, X_mix, X_non_mix, I, step):
+		summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.x_mix: X_mix, self.x_non_mix:X_non_mix, self.I:I})
+		# cost = self.sess.run(self.stfts, {self.x_mix: X_mix, self.x_non_mix:X_non_mix, self.I:I})
+		self.train_writer.add_summary(summary, step)
+		return cost
+
+	def valid_batch(self, X_mix_valid, X_non_mix_valid, I):
+		cost = self.sess.run(self.cost, {self.x_non_mix:X_non_mix_valid, self.x_mix:X_mix_valid,self.I:I})
+		return cost
+
+	def add_valid_summary(self, val, step):
+		summary = tf.Summary()
+		summary.value.add(tag="Valid Cost", simple_value=val)
+		self.valid_writer.add_summary(summary, step)
