@@ -138,42 +138,41 @@ if __name__ == '__main__':
 
 	# DataSet arguments
 	parser.add_argument(
-		'--dataset', help='Path to H5 dataset from workspace', required=True)
+		'--dataset', help='Path to H5 dataset from workspace', required=False, default='h5py_files/train-clean-100-8-s.h5')
 	parser.add_argument(
-		'--chunk_size', type=int, help='Chunk size for inputs', required=True)
+		'--chunk_size', type=int, help='Chunk size for inputs', required=False, default=20480)
 	parser.add_argument(
-		'--nb_speakers', type=int, help='Number of mixed speakers', required=True)
+		'--nb_speakers', type=int, help='Number of mixed speakers', required=False, default=2)
 	parser.add_argument(
 		'--no_random_picking', help='Do not pick random genders when mixing', action="store_false")
 	parser.add_argument(
 		'--validation_step',type=int, help='Nb of steps between each validation', required=False, default=1000)
 
-
 	# Training arguments
 	parser.add_argument(
-		'--epochs', type=int, help='Number of epochs', required=True)
+		'--epochs', type=int, help='Number of epochs', required=False, default=10)
 	parser.add_argument(
-		'--batch_size', type=int, help='Batch size', required=True)
+		'--batch_size', type=int, help='Batch size', required=False, default=64)
 	parser.add_argument(
-		'--learning_rate', type=float, help='learning rate for training', required=True)
+		'--learning_rate', type=float, help='learning rate for training', required=False, default=0.1)
 
 	#Network arguments
 	parser.add_argument(
-		'--window_size', type=int, help='Size of the 1D Conv width', required=True)
+		'--window_size', type=int, help='Size of the 1D Conv width', required=False, default=1024)
 	parser.add_argument(
-		'--filters', type=int, help='Number of filters/bases for the 1D Conv', required=True)
+		'--filters', type=int, help='Number of filters/bases for the 1D Conv', required=False, default=512)
 	parser.add_argument(
-		'--max_pool', type=int, help='Max Pooling size', required=True)
+		'--max_pool', type=int, help='Max Pooling size', required=False, default=512)
 
 	#Loss arguments
 	parser.add_argument(
-		'--regularization', type=float, help='Coefficient for L2 regularization', required=True)
+		'--regularization', type=float, help='Coefficient for L2 regularization', required=False, default=1e-4)
 	parser.add_argument(
-		'--beta', type=float, help='Coefficient for Sparsity constraint', required=True)
+		'--beta', type=float, help='Coefficient for Sparsity constraint', required=False, default=1e-2)
 	parser.add_argument(
-		'--sparsity', type=float, help='Average Sparsity constraint', required=True)
+		'--sparsity', type=float, help='Average Sparsity constraint', required=False, default=0.01)
 	parser.add_argument(
-		'--overlap_coef', type=float, help='Coefficient for Overlapping loss', required=True)
+		'--overlap_coef', type=float, help='Coefficient for Overlapping loss', required=False, default=1e-4)
 
 	args = parser.parse_args()
 	print args

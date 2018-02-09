@@ -144,7 +144,6 @@ if __name__ == '__main__':
 	parser.add_argument(
 		'--validation_step',type=int, help='Nb of steps between each validation', required=False, default=1000)
 
-
 	# Training arguments
 	parser.add_argument(
 		'--epochs', type=int, help='Number of epochs', required=True)

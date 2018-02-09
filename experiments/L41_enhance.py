@@ -25,7 +25,6 @@ print fem.length(), 'elements'
 
 mixed_data = Mixer([males, fem], chunk_size= chunk_size, with_mask=False, with_inputs=True, shuffling=True)
 
-
 ####
 #### PREVIOUS MODEL CONFIG
 ####

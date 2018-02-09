@@ -10,24 +10,29 @@ import config
 
 class L41Model:
 
-	def __init__(self, runID=None, **kwargs):
+	def __init__(self, adapt=None, **kwargs):
 
-		if runID is not None:
-			self.F = kwargs['window_size']
+		if adapt is not None:
+
 			self.num_speakers = kwargs['tot_speakers']
 			self.layer_size = kwargs['layer_size']
 			self.embedding_size = kwargs['embedding_size']
 			self.nonlinearity = kwargs['nonlinearity']
 			self.normalize = kwargs['normalize']
-			self.B = kwargs['B']
-			self.S = kwargs['nb_speakers']
-			self.adapt_front = kwargs['front']
+			
+			self.B = adapt.B
+			self.S = adapt.S
+			self.F = adapt.N
 
-			self.graph = self.adapt_front.graph
+			self.graph = adapt.graph
 
 			with self.graph.as_default():
 
-				self.X, self.X_non_mix = kwargs['input_tensor']
+				with tf.name_scope('split_front'):
+					self.X = tf.reshape(adapt.front[0][:self.B, :, :], [self.B, -1, self.F]) # Mix input [B, T, N]
+					# Non mix input [B, T, N, S]
+					self.X_non_mix = tf.transpose(tf.reshape(adapt.front[0][self.B:, :, :, :], [self.B, self.S, -1, self.F]), [0,2,3,1])
+
 				with tf.name_scope('create_masks'):
 					# # Batch of Masks (bins label)
 					# # shape = [ batch size, T, F, S]
@@ -37,15 +42,19 @@ class L41Model:
 
 				# Speakers indices used in the mixtures
 				# shape = [ batch size, #speakers]
-				self.I = self.adapt_front.Ind
+				self.I = adapt.Ind
 
 				# Define the speaker vectors to use during training
 				self.speaker_vectors =tf.Variable(tf.truncated_normal(
 									   [self.num_speakers, self.embedding_size],
 									   stddev=tf.sqrt(2/float(self.embedding_size))), name='speaker_centroids')
+
+				self.normalization01
+				self.prediction
+				
 		else:
 
-				#Create a graph for this model
+			#Create a graph for this model
 			self.graph = tf.Graph()
 
 			with self.graph.as_default():

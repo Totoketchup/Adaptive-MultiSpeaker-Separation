@@ -9,7 +9,7 @@ from itertools import compress, combinations, permutations
 from tensorflow.python.saved_model import builder as saved_model_builder
 name = 'AdaptiveNet'
 import numpy as np
-
+import json
 
 #############################################
 #     Adaptive Front and Back End Model     #
@@ -34,13 +34,12 @@ class Adapt:
 			self.pretraining = kwargs['pretraining']
 			self.sepNet = kwargs['separator']
 			self.overlap_coef = kwargs['overlap_coef']
+			self.args = kwargs
 
 		if runID is None:
 			# Run ID for tensorboard
 			self.runID = name + '-' + haikunator.Haikunator().haikunate()
 			print 'ID : {}'.format(self.runID)
-			if kwargs is not None:
-				self.runID += args_to_string(kwargs)
 		else:
 			self.runID = name + '-' + runID
 
@@ -83,15 +82,10 @@ class Adapt:
 				self.B = shape_in[0]
 				self.L = shape_in[1]
 
-				self.x = tf.cond(self.training, 
-					lambda: tf.concat([self.X_mix,  tf.reshape(self.X_non_mix, [self.B*self.S, self.L])], axis=0),
-					lambda: self.X_mix
-					)
-				self.B_tot = tf.cond(self.training, 
-					lambda: self.B*(self.S+1),
-					lambda: self.B
-					)
+				self.x =tf.concat([self.X_mix,  tf.reshape(self.X_non_mix, [self.B*self.S, self.L])], axis=0)
 
+				self.B_tot = self.B*(self.S+1)
+					
 			if self.pretraining:
 				self.front
 				self.separator
@@ -100,55 +94,30 @@ class Adapt:
 				self.optimize
 			else:
 				self.front
-			
+
 		# Create a session for this model based on the constructed graph
 		config_ = tf.ConfigProto()
 		config_.gpu_options.allow_growth = True
 		config_.allow_soft_placement = True
 		self.sess = tf.Session(graph=self.graph, config=config_)
 
-
 	def tensorboard_init(self):
 		with self.graph.as_default():
 
-			# with tf.name_scope('conv'):
-			# 	variable_summaries(self.W)
-			# 	if not self.same_filter : variable_summaries(self.WT)
-
-			# variable_summaries(self.window_filter)
-			# variable_summaries(self.bases)
-			variable_summaries(self.conv_filter)
-			variable_summaries(self.conv_filter_2)
-
-			# variable_summaries(self.smoothing_filter)
-
-			# tf.summary.scalar('learning_rate', self.learning_rate)
-
-			# tf.summary.audio(name= "input/1", tensor = self.x[3:4,:], sample_rate = config.fs, max_outputs=1)
-			# tf.summary.audio(name= "input/2", tensor = self.x[4:5,:], sample_rate = config.fs, max_outputs=1)
-
-			tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
-			tf.summary.audio(name= "input/non-mixed", tensor = tf.reshape(self.X_non_mix, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
-			tf.summary.audio(name= "input/", tensor = self.x[:self.B], sample_rate = config.fs, max_outputs=1)
-
-			# # tf.summary.audio(name= "input2/", tensor = self.X_non_mix, sample_rate = config.fs, max_outputs=9)
-
-			# tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=6)
-
-			trs = lambda x : tf.transpose(x, [0, 2, 1, 3])
-			tf.summary.image(name= "mix", tensor = trs(self.inmix), max_outputs=1)
-			tf.summary.image(name= "non_mix", tensor = trs(self.innonmix), max_outputs=2)
-			tf.summary.image(name= "separated", tensor = trs(self.ou), max_outputs=2)
-			tf.summary.image(name= "separated", tensor = trs(self.unpool_board), max_outputs=2)
-
-			# tf.summary.image(name= "stft_like", tensor = trs(self.y))
-
-			# tf.summary.image(name= "separated_stft", tensor = trs(self.separator[0]))
-
-			# tf.summary.image(name= "unpooled", tensor = trs(self.unpooled))
-			# tf.summary.image(name= "mask", tensor = trs(self.mask))
-			# tf.summary.image(name= "reconstructed", tensor = trs(self.recons))
 			if self.pretraining:
+				variable_summaries(self.conv_filter)
+				variable_summaries(self.conv_filter_2)
+
+				tf.summary.audio(name= "input/non-mixed", tensor = tf.reshape(self.X_non_mix, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
+				tf.summary.audio(name= "input/mixed", tensor = self.x[:self.B], sample_rate = config.fs, max_outputs=1)
+
+				trs = lambda x : tf.transpose(x, [0, 2, 1, 3])
+				tf.summary.image(name= "mix", tensor = trs(self.inmix), max_outputs=1)
+				tf.summary.image(name= "non_mix", tensor = trs(self.innonmix), max_outputs=2)
+				tf.summary.image(name= "separated", tensor = trs(self.ou), max_outputs=2)
+				tf.summary.image(name= "separated", tensor = trs(self.unpool_board), max_outputs=2)
+
+				tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
 				with tf.name_scope('loss_values'):
 					tf.summary.scalar('loss', self.SDR)
 					tf.summary.scalar('mse', tf.reduce_mean(self.mse))
@@ -164,16 +133,9 @@ class Adapt:
 			self.valid_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID,'valid'), self.graph)
 			self.saver = tf.train.Saver()
 
-		# if self.sepNet != None:
-		# 	tf.summary.image(name="back", tensor= trs(self.separator[0]))
-		# 	tf.summary.image(name="mask_1", tensor= trs(self.sepNet.ms[:,:,:,0:1]))
-		# 	tf.summary.image(name="mask_2", tensor= trs(self.sepNet.ms[:,:,:,1:]))
-
-			# config_ = projector.ProjectorConfig()
-			# embedding = config_.embeddings.add()
-			# embedding.tensor_name = self.sepNet.embedding.name
-			# projector.visualize_embeddings(self.train_writer, config_)
-
+			# Save arguments
+			with open(os.path.join(config.log_dir,self.folder,self.runID,'params'), 'w') as f:
+				json.dump(self.args, f)
 
 	def create_saver(self, subset=None):
 		with self.graph.as_default():
@@ -186,11 +148,12 @@ class Adapt:
 		with self.graph.as_default():
 			self.centroids_saver = tf.train.Saver([self.sepNet.speaker_vectors], max_to_keep=10000000)
 
-	def restore_model(self, path, runID):
-		self.saver.restore(self.sess, os.path.join(path, name+'-'+runID, 'model.ckpt'))
+	def restore_model(self, path):
+		self.saver.restore(self.sess, tf.train.latest_checkpoint(path))
 	
 	def restore_last_checkpoint(self):
 		self.saver.restore(self.sess, tf.train.latest_checkpoint(os.path.join(config.log_dir, self.folder ,self.runID)))
+
 
 	def savedModel(self):
 		with self.graph.as_default():
@@ -256,7 +219,6 @@ class Adapt:
 			self.separator
 			self.back
 			self.cost
-
 
 	##
 	## Front End creating STFT like data
@@ -343,7 +305,6 @@ class Adapt:
 			overlapping = tf.reduce_mean(overlapping, -1) # Mean over combinations
 			self.overlapping = tf.reduce_mean(overlapping, -1) # Mean over batches
 
-
 			# filters = tf.divide(input_non_mix, tf.clip_by_value(input_mix, 1e-4, 1e10))
 			# filters = tf.square(input_non_mix) / tf.clip_by_value(tf.reduce_sum(tf.square(input_non_mix), 1, keep_dims=True), 1e-4, 1e10) 
 			# output = tf.reshape(input_mix * filters, [self.B*self.S, self.T_max_pooled, self.N, 1])
@@ -356,7 +317,7 @@ class Adapt:
 			output = tf.reshape(input_mix - X_add, [self.B*self.S, self.T_max_pooled, self.N, 1])
 			self.ou = output
 			return output, argmax_in
-		
+
 		return self.sepNet.output, argmax_in
 
 	@scope
@@ -459,12 +420,9 @@ class Adapt:
 			print 'ALL VARIABLE TRAINED'	
 		print self.trainable_variables
 
-		# optimizer = self.select_optimizer(self.optimizer)(self.learning_rate)
 		optimizer = AMSGrad(self.learning_rate, epsilon=0.001)
 		gradients, variables = zip(*optimizer.compute_gradients(self.cost, var_list=self.trainable_variables))
-		# gradients, _ = tf.clip_by_global_norm(gradients, 200.0)
 		optimize = optimizer.apply_gradients(zip(gradients, variables))
-		# optimize = self.select_optimizer(self.optimizer)(self.learning_rate).minimize(self.cost, var_list=self.trainable_variables)
 		return optimize
 
 	def sdr_improvement(self):
@@ -481,61 +439,40 @@ class Adapt:
 		s_target_mix_2 = tf.square(tf.reduce_sum(s_target*mix, axis=-1))
 
 		separated = 10. * log10(1.0/((s_target_norm*s_approx_norm)/s_target_s_2 - 1.0))
-
 		non_separated = 10. * log10(1.0/((s_target_norm*mix_norm)/s_target_mix_2 - 1.0))
-		# s_t_1 = s_target*(tf.reduce_sum(s_target*s, axis=-1, keep_dims=True) / tf.reduce_sum(tf.square(s_target), axis=-1, keep_dims=True))
-		# separated = tf.reduce_sum(tf.square(s_t_1), axis=-1) / tf.reduce_sum((s_t_1-s)*(s_t_1-s), axis=-1)
-		# separated = 10.*log10(separated)
-		# s_t_2 = s_target*(tf.reduce_sum(s_target*mix, axis=-1, keep_dims=True) / tf.reduce_sum(tf.square(s_target), axis=-1, keep_dims=True))
-		# non_separated = tf.reduce_sum(tf.square(s_t_2), axis=-1) / tf.reduce_sum((s_t_2-mix)*(s_t_2-mix), axis=-1)
-		# non_separated = 10.*log10(non_separated)
+
 		val = separated - non_separated
-		
 		val = tf.reduce_mean(val , -1) # Mean over speakers
 		val = tf.reduce_mean(val , -1) # Mean over batches
 
 		return val
 
 	def save(self, step):
-		path = os.path.join(config.log_dir, self.folder ,self.runID, "model.ckpt")
+		path = os.path.join(config.log_dir, self.folder ,self.runID, "model")
 		self.saver.save(self.sess, path, step)
 		return path
 
 	def save_centroids(self, step):
 		self.centroids_saver.save(self.sess, os.path.join(config.log_dir, self.folder ,self.runID, "centroids"), global_step=step)
 
-	def train(self, X_mix, X_non_mix, learning_rate, step, ind_train=None):
-		if ind_train is None:
+	def train(self, X_mix, X_non_mix, learning_rate, step, I=None):
+		if I is None:
 			summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_non_mix, self.training:True, self.learning_rate:learning_rate})
 		else:
-			summary, _, cost, centroids = self.sess.run([self.merged, self.optimize, self.cost, self.sepNet.speaker_vectors], {self.X_mix: X_mix, self.X_non_mix:X_non_mix, self.training:True, self.Ind:ind_train, self.learning_rate:learning_rate})
-		
-		# np.save(os.path.join(config.log_dir, self.folder ,self.runID, "centroids-{}".format(step)), centroids)
+			summary, _, cost, centroids = self.sess.run([self.merged, self.optimize, self.cost, self.sepNet.speaker_vectors], {self.X_mix: X_mix, self.X_non_mix:X_non_mix, self.training:True, self.Ind:I, self.learning_rate:learning_rate})
+
 		self.train_writer.add_summary(summary, step)
 		return cost
 
-	def valid_batch(self, X_mix_valid, X_non_mix_valid):
-		cost = self.sess.run(self.cost, {self.X_non_mix:X_non_mix_valid, self.X_mix:X_mix_valid,self.training:False})
-		return cost
+	def valid_batch(self, X_mix_valid, X_non_mix_valid, I=None):
+		if I is None:
+			return self.sess.run(self.cost, {self.X_non_mix:X_non_mix_valid, self.X_mix:X_mix_valid,self.training:False})
+		return self.sess.run(self.cost, {self.X_non_mix:X_non_mix_valid, self.X_mix:X_mix_valid,self.training:False, self.Ind:I})
 
 	def add_valid_summary(self, val, step):
 		summary = tf.Summary()
 		summary.value.add(tag="Valid Cost", simple_value=val)
 		self.valid_writer.add_summary(summary, step)
-
-
-		
-	def pretrain(self, X_non_mix, learning_rate, step):
-		_ ,summary, cost = self.sess.run([self.optimize, self.merged, self.cost], {self.X_non_mix:X_non_mix, self.training:True, self.learning_rate:learning_rate})#,  options=options, run_metadata=run_metadata)
-		self.train_writer.add_summary(summary, step)
-		return cost
-
-	def train_no_sum(self, X_mix, X_in, learning_rate, step, ind_train=None):
-		if ind_train is None:
-			_, cost = self.sess.run([self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_in, self.training:True, self.learning_rate:learning_rate})
-		else:
-			_, cost = self.sess.run([self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_in, self.training:True, self.Ind:ind_train, self.learning_rate:learning_rate})
-		return cost
 
 	def test_prediction(self, X_mix_test, X_non_mix_test, step):
 		pred, y = self.sess.run([self.sepNet.prediction, self.sepNet.y_test_export], {self.X_mix: X_mix_test, self.X_non_mix:X_non_mix_test, self.training:True})
@@ -544,26 +481,15 @@ class Adapt:
 		np.save(os.path.join(config.log_dir, self.folder ,self.runID, "bins-{}".format(step)), pred)
 		np.save(os.path.join(config.log_dir, self.folder ,self.runID, "labels-{}".format(step)), labels)
 
-
 	def connect_front(self, separator_class):
-		# Separate Mixed and Non Mixed 'spectrograms'
-		with tf.name_scope('split_front'):
-
-			X = tf.reshape(self.front[0][:self.B, :, :], [self.B, -1, self.N]) # Mix input [B, T, N]
-
-			# Non mix input [B, T, N, S]
-			X_non_mix = tf.cond(self.training, lambda: tf.transpose(tf.reshape(self.front[0][self.B:, :, :, :], [self.B, self.S, -1, self.N]), [0,2,3,1]), lambda: X)
-
-			input = tf.cond(self.training, lambda: (X, X_non_mix), lambda: (X, X),strict=False)
-		self.sepNet = separator_class(input, self)
+		self.sepNet = separator_class(self, **self.args)
 
 	def connect_back(self):
 		self.back
 
 	def freeze_front(self):
 		training_var = tf.trainable_variables()
-		training_var.remove(self.bases)
-		training_var.remove(self.window_filter)
+		training_var.remove(self.conv_filter)
 		self.trainable_variables = training_var
 
 	def freeze_back(self):
@@ -578,3 +504,15 @@ class Adapt:
 			if 'enhance' in var.name:
 				to_train.append(var)
 		self.trainable_variables = to_train
+
+	@staticmethod
+	def load(path, modified_args):
+		# Load parameters used for the desired model to load
+		params_path = os.path.join(path, 'params')
+		with open(params_path) as f:
+			args = json.load(f)
+		# Update with new args such as 'pretraining' or 'type'
+		args.update(modified_args)
+
+		# Create a new Adapt model with these parameters
+		return Adapt(**args)
