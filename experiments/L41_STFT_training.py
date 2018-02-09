@@ -26,7 +26,7 @@ def main(args):
 	additional_args = {
 		"tot_speakers" : len(H5_dic),
 		"freqs_size" : args.window_size//2 +1,
-		"type" : "L41_STFT"
+		"type" : "L41_STFT_training"
 	}
 
 	d = vars(args)
@@ -80,7 +80,7 @@ def main(args):
 			print 'Step #'  , step,' loss=', c ,' ETA = ', getETA(sum(time_spent)/float(np.count_nonzero(time_spent))
 				, nb_batches_train, b, nb_epochs, epoch)
 
-			if step%1000 == 0:
+			if step%args.validation_step == 0:
 				t = time.time()
 				# Select Validation set
 				mixed_data.select_split(1)

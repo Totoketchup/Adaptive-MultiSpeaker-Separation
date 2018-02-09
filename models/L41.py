@@ -115,12 +115,12 @@ class L41Model:
 	def init(self):
 			with self.graph.as_default():
 				self.sess.run(tf.global_variables_initializer())
- 
+ 	
 	@scope
 	def preprocessing(self):
 		self.stfts = tf.contrib.signal.stft(self.x_mix, 
 			frame_length=self.window_size, 
-			frame_step=self.window_size-self.hop_size, 
+			frame_step=self.window_size-self.hop_size,
 			fft_length=self.window_size)
 
 		self.B = tf.shape(self.x_non_mix)[0]
@@ -128,7 +128,7 @@ class L41Model:
 
 		self.stfts_non_mix = tf.contrib.signal.stft(tf.reshape(self.x_non_mix, [self.B*self.S, -1]), 
 			frame_length=self.window_size, 
-			frame_step=self.window_size-self.hop_size, 
+			frame_step=self.window_size-self.hop_size,
 			fft_length=self.window_size)
 
 		self.X = tf.sqrt(tf.abs(self.stfts))
@@ -162,8 +162,6 @@ class L41Model:
 		layers = [
 			BLSTM(self.layer_size, 'BLSTM_1'),#, dropout=True, drop_val=0.9),
 			BLSTM(self.layer_size, 'BLSTM_2'),#, dropout=True, drop_val=0.9),
-			# BLSTM(self.layer_size, 'BLSTM_3'),
-			# BLSTM(self.layer_size, 'BLSTM_4'),
 			Conv1D([1, self.layer_size, self.embedding_size*self.F]),
 			Reshape([shape[0], shape[1], self.F, self.embedding_size]),
 			Normalize(3)
@@ -339,7 +337,6 @@ class L41Model:
 
 	@scope
 	def optimize(self):
-
 		# optimizer = self.select_optimizer(self.optimizer)(self.learning_rate)
 		optimizer = AMSGrad(self.learning_rate, epsilon=0.001)
 		opt = optimizer.minimize(self.cost)
