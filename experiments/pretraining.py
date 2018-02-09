@@ -172,6 +172,8 @@ if __name__ == '__main__':
 		'--beta', type=float, help='Coefficient for Sparsity constraint', required=True)
 	parser.add_argument(
 		'--sparsity', type=float, help='Average Sparsity constraint', required=True)
+	parser.add_argument(
+		'--overlap_coef', type=float, help='Coefficient for Overlapping loss', required=True)
 
 	args = parser.parse_args()
 	print args

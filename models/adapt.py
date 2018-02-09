@@ -33,6 +33,7 @@ class Adapt:
 			self.S = kwargs['nb_speakers']
 			self.pretraining = kwargs['pretraining']
 			self.sepNet = kwargs['separator']
+			self.overlap_coef = kwargs['overlap_coef']
 
 		if runID is None:
 			# Run ID for tensorboard
@@ -441,7 +442,7 @@ class Adapt:
 		# Compute mean over batches
 		self.SDR  = tf.reduce_sum(self.mse, -1) #+  0.5*tf.reduce_mean(self.sdr) 
 		self.SDR  = tf.reduce_mean(self.SDR, -1)
-		self.cost = self.SDR + self.sparse_reg + self.reg + 1e-5*self.overlapping
+		self.cost = self.SDR + self.sparse_reg + self.reg + self.overlap_coef*self.overlapping
 
 		return self.cost
 
