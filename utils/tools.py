@@ -62,6 +62,6 @@ def normalize_mix(X_mix, X_non_mix, type='min-max'):
 		A = (b - a)/(max_val - min_val)
 		B = b - A * max_val
 		X_mix = A*X_mix + B
-		X_non_mix = A*X_non_mix + B / S
+		X_non_mix = A[:,:,np.newaxis]*X_non_mix + B[:,:,np.newaxis] / S
 
 	return X_mix, X_non_mix

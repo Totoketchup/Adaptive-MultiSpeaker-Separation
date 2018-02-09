@@ -1,7 +1,7 @@
 #!/bin/bash
 #$ -S /bin/bash
 #$ -cwd
-#$ -jc nvcr-tensorflow-1712_g1 
+#$ -jc nvcr-tensorflow-1712_g1
 #$ -e err_pretraining.o
 #$ -o std_pretraining.o
 
@@ -22,6 +22,6 @@ export PATH="/home/anthony/anaconda2/lib:$PATH"
 export LIBRARY_PATH="/home/anthony/anaconda2/lib:$LIBRARY_PATH"
 export PATH="/home/anthony/.local/bin:$PATH"
 
-python -m experiments.pretraining --dataset h5py_files/train-clean-100-8-s.h5 --chunk_size 20480 \
---nb_speakers 2 --epochs 1 --batch_size 16 --learning_rate 0.001 --window_size 1024 --max_pool 256 \
---filters 1024 --regularization 1e-4 --beta 0.0001 --sparsity 0.05 --no_random_picking
+python -u -m experiments.pretraining --dataset h5py_files/train-clean-100-8-s.h5 --chunk_size 20480 \
+--nb_speakers 4 --epochs 10 --batch_size 16 --learning_rate 0.001 --window_size 1024 --max_pool 512 \
+--filters 512 --regularization 0.0001 --beta 0.01 --sparsity 0.01 --overlap_coef 0.001 > overlapping_test512512.txt
