@@ -12,3 +12,5 @@ docs/
 gif/
 .ipynb*
 test\.py
+
+*.flac
