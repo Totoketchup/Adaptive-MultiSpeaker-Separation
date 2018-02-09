@@ -3,7 +3,7 @@ import tensorflow as tf
 from utils.tools import args_to_string
 import haikunator
 from models.Kmeans_2 import KMeans
-from utils.ops import BLSTM, Conv1D, Reshape, Normalize, f_props, scope, AMSGrad
+from utils.ops import BLSTM, Conv1D, Reshape, Normalize, f_props, scope, AMSGrad, variable_summaries
 from itertools import permutations
 import os
 import config
@@ -315,12 +315,10 @@ class L41Model:
 		# Average the cost over all batches
 		cost = tf.reduce_mean(cost, 0)
 
-		# training_vars = tf.trainable_variables()
-		# reg = []
-		# for var in training_vars:
-		# 	if 'prediction' in var.name:
-		# 		reg.append(tf.nn.l2_loss(var))
-		# reg = sum(reg)
+		training_vars = tf.trainable_variables()
+		for var in training_vars:
+			if 'prediction' in var.name:
+				variable_summaries(var)
 
 		# Average the cost over all T-F elements.  Here is where weighting to
 		# account for gradient confidence can occur
