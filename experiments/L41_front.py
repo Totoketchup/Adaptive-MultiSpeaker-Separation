@@ -39,7 +39,8 @@ def main(args):
 	adapt_model.create_saver()
 	adapt_model.restore_model(args.adapt_folder)
 	adapt_model.connect_only_front_to_separator(L41Model)
-	adapt_model.init()
+	# Initialize only non restored values
+	adapt_model.initialize_non_init()
 
 	print 'Total name :' 
 	print adapt_model.runID
