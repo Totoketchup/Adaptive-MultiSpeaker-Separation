@@ -6,6 +6,7 @@ from models.Kmeans_2 import KMeans
 import os
 import config
 import tensorflow as tf
+import json
 
 ############################################
 #       Deep Clustering Architecture       #
@@ -13,25 +14,36 @@ import tensorflow as tf
 
 class DPCL:
 
-	def __init__(self, runID=None, **kwargs):
+	def __init__(self, adapt=None, **kwargs):
 
-		if runID is not None:
-			self.F = kwargs['window_size']
+		if adapt is not None:
 			self.layer_size = kwargs['layer_size']
 			self.embedding_size = kwargs['embedding_size']
 			self.nonlinearity = kwargs['nonlinearity']
 			self.normalize = kwargs['normalize']
-			self.B = kwargs['B']
-			self.S = kwargs['nb_speakers']
-			self.adapt_front = kwargs['front']
+			
+			self.B = adapt.B
+			self.S = adapt.S
+			self.F = adapt.N
 
-			self.graph = self.adapt_front.graph
+			self.graph = adapt.graph
 
 			with self.graph.as_default():
-				self.X, self.X_non_mix = kwargs['input_tensor']
-				with tf.name_scope('create_masks'):
-					self.Y = tf.one_hot(tf.argmax(self.X_non_mix, axis=3), 2, 1.0, 0.0)
 
+				with tf.name_scope('split_front'):
+					self.X = tf.reshape(adapt.front[0][:self.B, :, :], [self.B, -1, self.F]) # Mix input [B, T, N]
+					# Non mix input [B, T, N, S]
+					self.X_non_mix = tf.transpose(tf.reshape(adapt.front[0][self.B:, :, :, :], [self.B, self.S, -1, self.F]), [0,2,3,1])
+
+				with tf.name_scope('create_masks'):
+					# # Batch of Masks (bins label)
+					# # shape = [ batch size, T, F, S]
+					argmax = tf.argmax(tf.abs(self.X_non_mix), axis=3)
+					self.Y = tf.one_hot(argmax, 2, 1.0, 0.0)
+					self.y_test_export = tf.reshape(self.Y[:, :, :, 0], [self.B, -1])
+
+				self.normalization01
+				self.prediction
 		else:
 
 			#Create a graph for this model
@@ -55,8 +67,6 @@ class DPCL:
 				# Run ID for tensorboard
 				self.runID = 'DPCL_STFT' + '-' + haikunator.Haikunator().haikunate()
 				print 'ID : {}'.format(self.runID)
-				if kwargs is not None:
-					self.runID += args_to_string(kwargs)
 
 				# Placeholder tensor for the mixed signals
 				self.x_mix = tf.placeholder("float", [None, None])
@@ -82,6 +92,10 @@ class DPCL:
 			self.train_writer = tf.summary.FileWriter(os.path.join(config.log_dir, self.folder, self.runID, 'train'), self.graph)
 			self.valid_writer = tf.summary.FileWriter(os.path.join(config.log_dir, self.folder, self.runID, 'valid'), self.graph)
 			self.saver = tf.train.Saver()
+
+			# Save arguments
+			with open(os.path.join(config.log_dir,self.folder,self.runID,'params'), 'w') as f:
+				json.dump(self.args, f)
 
 	def save(self, step):
 		path = os.path.join(config.log_dir, self.folder ,self.runID ,"model.ckpt")

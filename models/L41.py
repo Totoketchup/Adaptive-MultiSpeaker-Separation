@@ -1,16 +1,18 @@
 # -*- coding: utf-8 -*-
 import tensorflow as tf
-from utils.tools import args_to_string
 import haikunator
 from models.Kmeans_2 import KMeans
 from utils.ops import BLSTM, Conv1D, Reshape, Normalize, f_props, scope, AMSGrad, variable_summaries
 from itertools import permutations
 import os
 import config
+import json
 
 class L41Model:
 
 	def __init__(self, adapt=None, **kwargs):
+
+		self.args = kwargs
 
 		if adapt is not None:
 
@@ -77,8 +79,6 @@ class L41Model:
 				# Run ID for tensorboard
 				self.runID = 'L41_STFT' + '-' + haikunator.Haikunator().haikunate()
 				print 'ID : {}'.format(self.runID)
-				if kwargs is not None:
-					self.runID += args_to_string(kwargs)
 
 				# Placeholder tensor for the mixed signals
 				self.x_mix = tf.placeholder("float", [None, None])
@@ -112,6 +112,10 @@ class L41Model:
 			self.valid_writer = tf.summary.FileWriter(os.path.join(config.log_dir, self.folder, self.runID, 'valid'), self.graph)
 			self.saver = tf.train.Saver()
 
+			# Save arguments
+			with open(os.path.join(config.log_dir,self.folder,self.runID,'params'), 'w') as f:
+				json.dump(self.args, f)
+
 	def save(self, step):
 		path = os.path.join(config.log_dir, self.folder ,self.runID, "model.ckpt")
 		self.saver.save(self.sess, path, step)
@@ -120,10 +124,9 @@ class L41Model:
 	def restore_last_checkpoint(self):
 		self.saver.restore(self.sess, tf.train.latest_checkpoint(os.path.join(config.log_dir, self.folder ,self.runID)))
 
-
 	def init(self):
-			with self.graph.as_default():
-				self.sess.run(tf.global_variables_initializer())
+		with self.graph.as_default():
+			self.sess.run(tf.global_variables_initializer())
  	
 	@scope
 	def preprocessing(self):

@@ -1,5 +1,4 @@
 # coding: utf-8
-
 from data.dataset import H5PY_RW
 from data.data_tools import read_metadata, males_keys, females_keys
 from data.dataset import Mixer

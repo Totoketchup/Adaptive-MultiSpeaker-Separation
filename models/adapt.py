@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-from utils.tools import args_to_string
 from utils.ops import unpool, variable_summaries, get_scope_variable, scope, log10, AMSGrad
 import os
 import config
@@ -7,7 +6,6 @@ import tensorflow as tf
 import haikunator
 from itertools import compress, combinations, permutations
 from tensorflow.python.saved_model import builder as saved_model_builder
-name = 'AdaptiveNet'
 import numpy as np
 import json
 
@@ -38,10 +36,10 @@ class Adapt:
 
 		if runID is None:
 			# Run ID for tensorboard
-			self.runID = name + '-' + haikunator.Haikunator().haikunate()
+			self.runID = 'AdaptiveNet' + '-' + haikunator.Haikunator().haikunate()
 			print 'ID : {}'.format(self.runID)
 		else:
-			self.runID = name + '-' + runID
+			self.runID = 'AdaptiveNet' + '-' + runID
 
 
 		#Create a graph for this model
@@ -459,7 +457,7 @@ class Adapt:
 		if I is None:
 			summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_non_mix, self.training:True, self.learning_rate:learning_rate})
 		else:
-			summary, _, cost, centroids = self.sess.run([self.merged, self.optimize, self.cost, self.sepNet.speaker_vectors], {self.X_mix: X_mix, self.X_non_mix:X_non_mix, self.training:True, self.Ind:I, self.learning_rate:learning_rate})
+			summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_non_mix, self.training:True, self.Ind:I, self.learning_rate:learning_rate})
 
 		self.train_writer.add_summary(summary, step)
 		return cost
