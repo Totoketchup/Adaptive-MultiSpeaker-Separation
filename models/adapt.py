@@ -18,7 +18,6 @@ class Adapt:
 		##
 		## Model Configuration 
 		##
-		print kwargs
 		if kwargs is not None:
 			self.N = kwargs['filters']
 			self.max_pool_value = kwargs['max_pool']
@@ -153,6 +152,7 @@ class Adapt:
 		self.saver.restore(self.sess, tf.train.latest_checkpoint(os.path.join(config.log_dir, self.folder ,self.runID)))
 
 
+
 	def savedModel(self):
 		with self.graph.as_default():
 			path = os.path.join(config.log_dir,self.folder ,self.runID, 'SavedModel')
@@ -182,8 +182,6 @@ class Adapt:
 			builder.save()
 			print 'Successfully exported model to %s' % path
 
-
-
 	def init(self):
 		with self.graph.as_default():
 			self.sess.run(tf.global_variables_initializer())
@@ -198,6 +196,11 @@ class Adapt:
 			if len(not_initialized_vars):
 				init = tf.variables_initializer(not_initialized_vars)
 				return init
+
+	def initialize_non_init(self):
+		with self.graph.as_default():
+			self.sess.run(self.non_initialized_variables())
+
 
 	def connect_only_front_to_separator(self, separator, freeze_front=True):
 		with self.graph.as_default():
@@ -217,6 +220,13 @@ class Adapt:
 			self.separator
 			self.back
 			self.cost
+
+	def restore_front_separator(self, path, separator):
+		with self.graph.as_default():
+			self.connect_front(separator)
+			self.sepNet.output = self.sepNet.prediction
+			self.create_saver()
+			self.restore_model(path)
 
 	##
 	## Front End creating STFT like data
@@ -255,7 +265,6 @@ class Adapt:
 		self.latent_loss = tf.reduce_sum(self.kl_div(self.p, self.p_hat))
 
 		return self.y, argmax
-
 
 	@scope
 	def separator(self):
@@ -344,7 +353,6 @@ class Adapt:
 
 		return output
 
-
 	def logfunc(self, x, x2):
 		cx = tf.clip_by_value(x, 1e-10, 1.0)
 		cx2 = tf.clip_by_value(x2, 1e-10, 1.0)
@@ -355,7 +363,6 @@ class Adapt:
 		inv_p = 1 - p
 		inv_p_hat = 1 - p_hat 
 		return self.logfunc(p, p_hat) + self.logfunc(inv_p, inv_p_hat)
-
 
 	@scope
 	def cost(self):
@@ -369,8 +376,6 @@ class Adapt:
 		# input_shape = [B, S, L]
 		# Doing l2 norm on L axis : 
 		if self.pretraining:
-			print self.X_non_mix
-			print self.back
 			# self.mse = log10(tf.reduce_sum(tf.square(self.back), axis=-1)/tf.square(tf.reduce_sum(self.back*self.X_non_mix, axis=-1)))
 			self.mse = tf.reduce_sum(tf.square(self.X_non_mix - self.back), axis=-1)
 			# self.sdr = - tf.reduce_mean(self.back*self.X_non_mix, -1)**2/tf.reduce_mean(tf.square(self.back), -1) 
@@ -500,6 +505,14 @@ class Adapt:
 		to_train = []
 		for var in training_var:
 			if 'enhance' in var.name:
+				to_train.append(var)
+		self.trainable_variables = to_train
+
+	def freeze_all_except(self, prefix):
+		training_var = tf.trainable_variables()
+		to_train = []
+		for var in training_var:
+			if prefix in var.name:
 				to_train.append(var)
 		self.trainable_variables = to_train
 
