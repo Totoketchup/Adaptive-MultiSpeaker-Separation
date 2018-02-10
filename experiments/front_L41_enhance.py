@@ -3,7 +3,7 @@ from data.dataset import H5PY_RW
 from data.data_tools import read_metadata, males_keys, females_keys
 from data.dataset import Mixer
 from models.adapt import Adapt
-from models.dpcl import DPCL
+from models.L41 import L41Model
 from utils.tools import getETA, normalize_mix
 import time
 import numpy as np
@@ -25,22 +25,32 @@ def main(args):
 		nb_speakers=args.nb_speakers, random_picking=args.no_random_picking)
 
 	additional_args = {
-		"type" : "front_DPCL",
+		"type" : "front_L41_enhance",
 		"pretraining": False,
 		"separator": None,
+		"tot_speakers" : len(H5_dic),
 	}
 
 	d = vars(args)
 	d.update(additional_args)
 
 	####
-	adapt_model = Adapt.load(args.adapt_folder, d)
-	adapt_model.create_saver()
-	adapt_model.restore_model(args.adapt_folder)
-	adapt_model.connect_only_front_to_separator(DPCL)
+	adapt_model = Adapt.load(args.model_folder, d)
+
+	# Restoring previous Model:
+	adapt_model.restore_front_separator(args.model_folder, L41Model)
+
+	with adapt_model.graph.as_default() : 
+		# Creating new graph with enhance layer
+		adapt_model.sepNet.output = adapt_model.sepNet.enhance
+		adapt_model.cost = adapt_model.sepNet.enhance_cost
+		adapt_model.freeze_all_except('enhance')
+		adapt_model.optimize
+
+	adapt_model.tensorboard_init()
+
 	# Initialize only non restored values
 	adapt_model.initialize_non_init()
-
 
 	print 'Total name :' 
 	print adapt_model.runID
@@ -150,7 +160,7 @@ if __name__ == '__main__':
 
 	# Adapt model to load + params
 	parser.add_argument(
-		'--adapt_folder', help='Path to Adapt folder to load', required=True)
+		'--model_folder', help='Path to the Model folder to load', required=True)
 
 	# Training arguments
 	parser.add_argument(
