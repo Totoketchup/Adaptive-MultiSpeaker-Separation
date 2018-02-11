@@ -25,7 +25,7 @@ def main(args):
 
 	additional_args = {
 		"freqs_size" : args.window_size//2 +1,
-		"type" : "DPCL_STFT_training"
+		"type" : "STFT_DPCL"
 	}
 
 	d = vars(args)
@@ -133,11 +133,11 @@ if __name__ == '__main__':
 
 	# DataSet arguments
 	parser.add_argument(
-		'--dataset', help='Path to H5 dataset from workspace', required=True)
+		'--dataset', help='Path to H5 dataset from workspace', required=False, default='h5py_files/train-clean-100-8-s.h5')
 	parser.add_argument(
-		'--chunk_size', type=int, help='Chunk size for inputs', required=True)
+		'--chunk_size', type=int, help='Chunk size for inputs', required=False, default=20480)
 	parser.add_argument(
-		'--nb_speakers', type=int, help='Number of mixed speakers', required=True)
+		'--nb_speakers', type=int, help='Number of mixed speakers', required=False, default=2)
 	parser.add_argument(
 		'--no_random_picking', help='Do not pick random genders when mixing', action="store_false")
 	parser.add_argument(
@@ -145,29 +145,28 @@ if __name__ == '__main__':
 
 	# Training arguments
 	parser.add_argument(
-		'--epochs', type=int, help='Number of epochs', required=True)
+		'--epochs', type=int, help='Number of epochs', required=False, default=10)
 	parser.add_argument(
-		'--batch_size', type=int, help='Batch size', required=True)
+		'--batch_size', type=int, help='Batch size', required=False, default=64)
 	parser.add_argument(
-		'--learning_rate', type=float, help='learning rate for training', required=True)
-
+		'--learning_rate', type=float, help='learning rate for training', required=False, default=0.1)
+	
 	#Preprocess arguments
 	parser.add_argument(
-		'--window_size', type=int, help='Size of the window for STFT', required=True)
+		'--window_size', type=int, help='Size of the window for STFT', required=False, default=512)
 	parser.add_argument(
-		'--hop_size', type=int, help='Hop size for the STFT', required=True)
+		'--hop_size', type=int, help='Hop size for the STFT', required=False, default=256)
 
 	#Network arguments
 	parser.add_argument(
-		'--layer_size', type=int, help='Size of hidden layers in BLSTM', required=True)
+		'--layer_size', type=int, help='Size of hidden layers in BLSTM', required=False, default=600)
 	parser.add_argument(
-		'--embedding_size', type=int, help='Size of the embedding output', required=True)
+		'--embedding_size', type=int, help='Size of the embedding output', required=False, default=40)
 	parser.add_argument(
 		'--nonlinearity', help='Nonlinearity used', required=False, default='logistic')
 	parser.add_argument(
 		'--normalize', help='Normalization of the embedded space', action="store_false")
-
-
+	
 	args = parser.parse_args()
 	print args
 	main(args)
