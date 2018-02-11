@@ -1,13 +1,12 @@
 # -*- coding: utf-8 -*-
 from utils.ops import BLSTM, Conv1D, Reshape, Normalize, f_props, scope, AMSGrad
-from utils.tools import args_to_string
 import haikunator
 from models.Kmeans_2 import KMeans
 import os
 import config
 import tensorflow as tf
 import json
-
+from itertools import permutations, compress
 ############################################
 #       Deep Clustering Architecture       #
 ############################################
@@ -15,6 +14,8 @@ import json
 class DPCL:
 
 	def __init__(self, adapt=None, **kwargs):
+
+		self.args = kwargs
 
 		if adapt is not None:
 			self.layer_size = kwargs['layer_size']
@@ -63,9 +64,10 @@ class DPCL:
 				self.embedding_size = kwargs['embedding_size']
 				self.normalize = kwargs['normalize']
 				self.learning_rate = kwargs['learning_rate']
+				self.S = kwargs['nb_speakers']
 
 				# Run ID for tensorboard
-				self.runID = 'DPCL_STFT' + '-' + haikunator.Haikunator().haikunate()
+				self.runID = haikunator.Haikunator().haikunate()
 				print 'ID : {}'.format(self.runID)
 
 				# Placeholder tensor for the mixed signals
@@ -78,8 +80,10 @@ class DPCL:
 				self.preprocessing
 				self.normalization01
 				self.prediction
-				self.cost
-				self.optimize
+
+				if 'enhance' not in self.folder:
+					self.cost
+					self.optimize
 
 				config_ = tf.ConfigProto()
 				config_.gpu_options.allow_growth = True
@@ -88,28 +92,56 @@ class DPCL:
 
 	def tensorboard_init(self):
 		with self.graph.as_default():
+			self.saver = tf.train.Saver()
 			self.merged = tf.summary.merge_all()
 			self.train_writer = tf.summary.FileWriter(os.path.join(config.log_dir, self.folder, self.runID, 'train'), self.graph)
-			self.valid_writer = tf.summary.FileWriter(os.path.join(config.log_dir, self.folder, self.runID, 'valid'), self.graph)
-			self.saver = tf.train.Saver()
+			self.valid_writer = tf.summary.FileWriter(os.path.join(config.log_dir, self.folder, self.runID, 'valid'))
 
 			# Save arguments
-			with open(os.path.join(config.log_dir,self.folder,self.runID,'params'), 'w') as f:
+			with open(os.path.join(config.log_dir, self.folder, self.runID, 'params'), 'w') as f:
 				json.dump(self.args, f)
 
 	def save(self, step):
-		path = os.path.join(config.log_dir, self.folder ,self.runID ,"model.ckpt")
-		self.saver.save(self.sess, path, step)
-		return path
+		with self.graph.as_default():
+			path = os.path.join(config.log_dir, self.folder, self.runID,"model.ckpt")
+			self.saver.save(self.sess, path, step)
+			return path
+
+	def restore_model(self, path):
+		with self.graph.as_default():
+			temp_saver = tf.train.Saver()
+			temp_saver.restore(self.sess, tf.train.latest_checkpoint(path))
 
 	def restore_last_checkpoint(self):
 		self.saver.restore(self.sess, tf.train.latest_checkpoint(os.path.join(config.log_dir, self.folder ,self.runID)))
 
-
 	def init(self):
-			with self.graph.as_default():
-				self.sess.run(tf.global_variables_initializer())
+		with self.graph.as_default():
+			self.sess.run(tf.global_variables_initializer())
 
+	def non_initialized_variables(self):
+		with self.graph.as_default():
+			global_vars = tf.global_variables()
+			is_not_initialized = self.sess.run([~(tf.is_variable_initialized(var)) \
+										   for var in global_vars])
+			not_initialized_vars = list(compress(global_vars, is_not_initialized))
+			print 'not init: ', [v.name for v in not_initialized_vars]
+			if len(not_initialized_vars):
+				init = tf.variables_initializer(not_initialized_vars)
+				return init
+
+	def initialize_non_init(self):
+		with self.graph.as_default():
+			self.sess.run(self.non_initialized_variables())
+
+	def add_enhance_layer(self):
+		with self.graph.as_default():
+			self.separate
+			self.enhance
+			self.enhance_cost
+			self.cost = self.enhance_cost
+			self.freeze_all_except('enhance')
+			self.optimize
 
 	@scope
 	def normalization01(self):
@@ -131,7 +163,6 @@ class DPCL:
 			fft_length=self.window_size)
 
 		self.B = tf.shape(self.x_non_mix)[0]
-		self.S = tf.shape(self.x_non_mix)[1]
 
 		self.stfts_non_mix = tf.contrib.signal.stft(tf.reshape(self.x_non_mix, [self.B*self.S, -1]), 
 			frame_length=self.window_size, 
@@ -232,11 +263,94 @@ class DPCL:
 		return separated
 
 	@scope
+	def enhance(self):
+		# [B, S, T, F]
+		separated = tf.reshape(self.separate, [self.B, self.S, -1, self.F])
+
+		# X [B, T, F]
+		# Tiling the input S time - like [ a, b, c] -> [ a, a, b, b, c, c], not [a, b, c, a, b, c]
+		X_in = tf.expand_dims(self.X, 1)
+		X_in = tf.tile(X_in, [1, self.S, 1, 1])
+		X_in = tf.reshape(X_in, [self.B, self.S, -1, self.F])
+
+		# Concat the binary separated input and the actual tiled input
+		sep_and_in = tf.concat([separated, X_in], axis = 3)
+		sep_and_in = tf.reshape(sep_and_in, [self.B*self.S, -1, 2*self.F])
+		
+		layers = [
+			BLSTM(self.layer_size, 'BLSTM_1'),
+			BLSTM(self.layer_size, 'BLSTM_2'),
+			BLSTM(self.layer_size, 'BLSTM_3'),
+		]
+
+		mean, var = tf.nn.moments(sep_and_in, [1,2], keep_dims=True)
+		sep_and_in = (sep_and_in - mean)/var
+
+		y = f_props(layers, sep_and_in)
+		y = tf.layers.dense(y, self.F)
+
+		y = tf.reshape(y, [self.B, self.S, -1]) # [B, S, TF]
+
+		y = tf.transpose(y, [0, 2, 1]) # [B, TF, S]
+
+		y = tf.nn.softmax(y) * tf.reshape(self.X, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
+		# y = y * tf.reshape(self.X, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
+		self.cost_in = y
+		y =  tf.transpose(y, [0, 2, 1])
+		return tf.reshape(y , [self.B*self.S, -1, self.F, 1])
+
+	@scope
+	def enhance_cost(self):
+		# Compute all permutations among the enhanced filters [B, TF, S] -> [B, TF, P, S]
+		perms = list(permutations(range(self.S))) # ex with 3: [0, 1, 2], [0, 2 ,1], [1, 0, 2], [1, 2, 0], [2, 1, 0], [2, 0, 1]
+		length_perm = len(perms)
+
+		# enhance [ B, TF, S] , X [B, T, F] -> [ B, TF, S]
+		test_enhance = tf.tile(tf.reshape(tf.transpose(self.cost_in, [0,2,1]), [self.B, 1, self.S, -1]), [1, length_perm, 1, 1]) # [B, S, TF]
+
+		
+		perms = tf.reshape(tf.constant(perms), [1, length_perm, self.S, 1])
+		perms = tf.tile(perms, [self.B, 1, 1, 1])
+
+		batch_range = tf.tile(tf.reshape(tf.range(self.B, dtype=tf.int32), shape=[self.B, 1, 1, 1]), [1, length_perm, self.S, 1])
+		perm_range = tf.tile(tf.reshape(tf.range(length_perm, dtype=tf.int32), shape=[1, length_perm, 1, 1]), [self.B, 1, self.S, 1])
+		indicies = tf.concat([batch_range, perm_range, perms], axis=3)
+
+		# [B, P, S, TF]
+		permuted_approx= tf.gather_nd(test_enhance, indicies)
+
+		# X_non_mix [B, T, F, S]
+		X_non_mix = tf.transpose(tf.reshape(self.X_non_mix, [self.B, 1, -1, self.S]), [0, 1, 3, 2])
+		cost = tf.reduce_sum(tf.square(X_non_mix-permuted_approx), axis=-1) # Square difference on each bin 
+		cost = tf.reduce_sum(cost, axis=-1) # Sum among all speakers
+
+		cost = tf.reduce_min(cost, axis=-1) # Take the minimum permutation error
+
+		# training_vars = tf.trainable_variables()
+		# reg = []
+		# for var in training_vars:
+		# 	if 'enhance' in var.name:
+		# 		reg.append(tf.nn.l2_loss(var))
+		# reg = sum(reg)
+
+		cost = tf.reduce_mean(cost) #+ self.adapt_front.l * reg
+
+		# tf.summary.scalar('regularization',  reg)
+		tf.summary.scalar('cost', cost)
+
+		return cost
+
+	@scope
 	def optimize(self):
-		# optimizer = self.select_optimizer(self.optimizer)(self.learning_rate)
+		if hasattr(self, 'trainable_variables') == False:
+			self.trainable_variables = tf.global_variables()
+			print 'ALL VARIABLE TRAINED'	
+		print self.trainable_variables
+
 		optimizer = AMSGrad(self.learning_rate, epsilon=0.001)
-		opt = optimizer.minimize(self.cost)
-		return opt
+		gradients, variables = zip(*optimizer.compute_gradients(self.cost, var_list=self.trainable_variables))
+		optimize = optimizer.apply_gradients(zip(gradients, variables))
+		return optimize
 
 	def train(self, X_mix, X_non_mix, step):
 		summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.x_mix: X_mix, self.x_non_mix:X_non_mix})
@@ -252,3 +366,23 @@ class DPCL:
 		summary = tf.Summary()
 		summary.value.add(tag="Valid Cost", simple_value=val)
 		self.valid_writer.add_summary(summary, step)
+
+	@staticmethod
+	def load(path, modified_args):
+		# Load parameters used for the desired model to load
+		params_path = os.path.join(path, 'params')
+		with open(params_path) as f:
+			args = json.load(f)
+		# Update with new args such as 'pretraining' or 'type'
+		args.update(modified_args)
+
+		# Create a new Adapt model with these parameters
+		return DPCL(**args)
+
+	def freeze_all_except(self, prefix):
+		training_var = tf.trainable_variables()
+		to_train = []
+		for var in training_var:
+			if prefix in var.name:
+				to_train.append(var)
+		self.trainable_variables = to_train
