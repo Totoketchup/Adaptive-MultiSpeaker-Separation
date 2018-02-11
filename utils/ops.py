@@ -18,6 +18,17 @@ def scope(function):
         return getattr(self,attribute)
     return decorator
 
+def logfunc(x, x2):
+    cx = tf.clip_by_value(x, 1e-10, 1.0)
+    cx2 = tf.clip_by_value(x2, 1e-10, 1.0)
+    return tf.multiply(x, tf.log(tf.div(cx,cx2)))
+
+
+def kl_div(p, p_hat):
+    inv_p = 1 - p
+    inv_p_hat = 1 - p_hat 
+    return logfunc(p, p_hat) + logfunc(inv_p, inv_p_hat)
+
 def log10(x):
     numerator = tf.log(x)
     denominator = tf.log(tf.constant(10., dtype=numerator.dtype))
