@@ -3,7 +3,7 @@ import tensorflow as tf
 import haikunator
 from models.Kmeans_2 import KMeans
 from utils.ops import BLSTM, Conv1D, Reshape, Normalize, f_props, scope, AMSGrad, variable_summaries
-from itertools import permutations
+from itertools import permutations, compress
 import os
 import config
 import json
@@ -75,9 +75,10 @@ class L41Model:
 				self.nonlinearity = kwargs['nonlinearity']
 				self.normalize = kwargs['normalize']
 				self.learning_rate = kwargs['learning_rate']
+				self.S = kwargs['nb_speakers']
 
 				# Run ID for tensorboard
-				self.runID = 'L41_STFT' + '-' + haikunator.Haikunator().haikunate()
+				self.runID = haikunator.Haikunator().haikunate()
 				print 'ID : {}'.format(self.runID)
 
 				# Placeholder tensor for the mixed signals
@@ -97,8 +98,10 @@ class L41Model:
 				self.preprocessing
 				self.normalization01
 				self.prediction
-				self.cost
-				self.optimize
+
+				if 'enhance' not in self.folder:
+					self.cost
+					self.optimize
 
 				config_ = tf.ConfigProto()
 				config_.gpu_options.allow_growth = True
@@ -107,19 +110,24 @@ class L41Model:
 
 	def tensorboard_init(self):
 		with self.graph.as_default():
+			self.saver = tf.train.Saver()
 			self.merged = tf.summary.merge_all()
 			self.train_writer = tf.summary.FileWriter(os.path.join(config.log_dir, self.folder, self.runID, 'train'), self.graph)
 			self.valid_writer = tf.summary.FileWriter(os.path.join(config.log_dir, self.folder, self.runID, 'valid'), self.graph)
-			self.saver = tf.train.Saver()
 
 			# Save arguments
 			with open(os.path.join(config.log_dir,self.folder,self.runID,'params'), 'w') as f:
 				json.dump(self.args, f)
 
 	def save(self, step):
-		path = os.path.join(config.log_dir, self.folder ,self.runID, "model.ckpt")
-		self.saver.save(self.sess, path, step)
-		return path
+		with self.graph.as_default():
+			path = os.path.join(config.log_dir, self.folder ,self.runID, "model.ckpt")
+			self.saver.save(self.sess, path, step)
+			return path
+
+	def restore_model(self, path):
+		with self.graph.as_default():
+			tf.train.Saver().restore(self.sess, tf.train.latest_checkpoint(path))
 
 	def restore_last_checkpoint(self):
 		self.saver.restore(self.sess, tf.train.latest_checkpoint(os.path.join(config.log_dir, self.folder ,self.runID)))
@@ -127,7 +135,30 @@ class L41Model:
 	def init(self):
 		with self.graph.as_default():
 			self.sess.run(tf.global_variables_initializer())
- 	
+
+	def non_initialized_variables(self):
+		with self.graph.as_default():
+			global_vars = tf.global_variables()
+			is_not_initialized = self.sess.run([~(tf.is_variable_initialized(var)) \
+										   for var in global_vars])
+			not_initialized_vars = list(compress(global_vars, is_not_initialized))
+			print 'not init: ', [v.name for v in not_initialized_vars]
+			if len(not_initialized_vars):
+				init = tf.variables_initializer(not_initialized_vars)
+				return init
+
+	def initialize_non_init(self):
+		with self.graph.as_default():
+			self.sess.run(self.non_initialized_variables())
+
+	def add_enhance_layer(self):
+		with self.graph.as_default():
+			self.separate
+			self.enhance
+			self.cost = self.enhance_cost
+			self.freeze_all_except('enhance')
+			self.optimize
+
 	@scope
 	def preprocessing(self):
 		self.stfts = tf.contrib.signal.stft(self.x_mix, 
@@ -136,7 +167,6 @@ class L41Model:
 			fft_length=self.window_size)
 
 		self.B = tf.shape(self.x_non_mix)[0]
-		self.S = tf.shape(self.x_non_mix)[1]
 
 		self.stfts_non_mix = tf.contrib.signal.stft(tf.reshape(self.x_non_mix, [self.B*self.S, -1]), 
 			frame_length=self.window_size, 
@@ -212,7 +242,6 @@ class L41Model:
 	def enhance(self):
 		# [B, S, T, F]
 		separated = tf.reshape(self.separate, [self.B, self.S, -1, self.F])
-
 
 		# X [B, T, F]
 		# Tiling the input S time - like [ a, b, c] -> [ a, a, b, b, c, c], not [a, b, c, a, b, c]
@@ -347,10 +376,15 @@ class L41Model:
 
 	@scope
 	def optimize(self):
-		# optimizer = self.select_optimizer(self.optimizer)(self.learning_rate)
+		if hasattr(self, 'trainable_variables') == False:
+			self.trainable_variables = tf.global_variables()
+			print 'ALL VARIABLE TRAINED'	
+		print self.trainable_variables
+
 		optimizer = AMSGrad(self.learning_rate, epsilon=0.001)
-		opt = optimizer.minimize(self.cost)
-		return opt
+		gradients, variables = zip(*optimizer.compute_gradients(self.cost, var_list=self.trainable_variables))
+		optimize = optimizer.apply_gradients(zip(gradients, variables))
+		return optimize
 
 	def get_centroids(self):
 		return self.speaker_vectors.eval()
@@ -369,3 +403,23 @@ class L41Model:
 		summary = tf.Summary()
 		summary.value.add(tag="Valid Cost", simple_value=val)
 		self.valid_writer.add_summary(summary, step)
+
+	@staticmethod
+	def load(path, modified_args):
+		# Load parameters used for the desired model to load
+		params_path = os.path.join(path, 'params')
+		with open(params_path) as f:
+			args = json.load(f)
+		# Update with new args such as 'pretraining' or 'type'
+		args.update(modified_args)
+
+		# Create a new Adapt model with these parameters
+		return L41Model(**args)
+
+	def freeze_all_except(self, prefix):
+		training_var = tf.trainable_variables()
+		to_train = []
+		for var in training_var:
+			if prefix in var.name:
+				to_train.append(var)
+		self.trainable_variables = to_train
