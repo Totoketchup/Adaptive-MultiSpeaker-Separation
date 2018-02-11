@@ -1,87 +1,45 @@
 # -*- coding: utf-8 -*-
-from utils.ops import unpool, variable_summaries, get_scope_variable, scope, log10, AMSGrad
+from utils.ops import unpool, variable_summaries, get_scope_variable, scope, log10, kl_div
 import os
 import config
 import tensorflow as tf
-import haikunator
-from itertools import compress, combinations, permutations
+from itertools import combinations, permutations
 from tensorflow.python.saved_model import builder as saved_model_builder
 import numpy as np
-import json
+from network import Network
 
 #############################################
 #     Adaptive Front and Back End Model     #
 #############################################
-
-class Adapt:
-	def __init__(self, runID=None, **kwargs):
+		
+class Adapt(Network):
+	def __init__(self, *args, **kwargs):
 		##
 		## Model Configuration 
 		##
+		super(Adapt, self).__init__(*args, **kwargs)
+
 		if kwargs is not None:
 			self.N = kwargs['filters']
 			self.max_pool_value = kwargs['max_pool']
 			self.l = kwargs['regularization']
-			self.folder = kwargs['type']
 			self.beta = kwargs['beta']
 			self.p = kwargs['sparsity']
 			self.window = kwargs['window_size']
 			self.optimizer = kwargs['optimizer']
-			self.S = kwargs['nb_speakers']
 			self.pretraining = kwargs['pretraining']
 			self.sepNet = kwargs['separator']
 			self.overlap_coef = kwargs['overlap_coef']
-			self.args = kwargs
-
-		if runID is None:
-			# Run ID for tensorboard
-			self.runID = 'AdaptiveNet' + '-' + haikunator.Haikunator().haikunate()
-			print 'ID : {}'.format(self.runID)
-		else:
-			self.runID = 'AdaptiveNet' + '-' + runID
-
-
-		#Create a graph for this model
-		self.graph = tf.Graph()
 
 		with self.graph.as_default():
 
-			tf.set_random_seed(42) # Constant seed for uniform results
-			np.random.seed(42)
-			# Boolean placeholder signaling if the model is in learning/training mode
-			self.training = tf.placeholder(tf.bool, name='is_training')
-
-			# Placeholder for the learning rate
-			self.learning_rate = tf.placeholder("float", name='learning_rate')
-
-			# Batch of raw non-mixed audio
-			# shape = [ batch size , number of speakers, samples ] = [ B, S, L]
-			self.X_non_mix = tf.placeholder("float", [None, None, None], name='non_mix_input')
-
-			# Batch of raw mixed audio - Input data
-			# shape = [ batch size , samples ] = [ B , L ]
-			self.X_mix = tf.placeholder("float", [None, None], name='mix_input')
-
-			if self.pretraining:
-				shape_in = tf.shape(self.X_non_mix)
-				self.B = shape_in[0]
-				self.L = shape_in[2]
-
-				self.x = tf.concat([self.X_mix,  tf.reshape(self.X_non_mix, [self.B*self.S, self.L])], axis=0)
-				self.B_tot = tf.shape(self.x)[0]
-			else:
-
-				# Speakers indicies used in the mixtures
-				# shape = [ batch size, #speakers]
-				self.Ind = tf.placeholder(tf.int32, [None, None], name='indicies')
-				shape_in = tf.shape(self.X_mix)
-
-				self.B = shape_in[0]
-				self.L = shape_in[1]
-
-				self.x =tf.concat([self.X_mix,  tf.reshape(self.X_non_mix, [self.B*self.S, self.L])], axis=0)
-
-				self.B_tot = self.B*(self.S+1)
+			with tf.name_scope('preprocessing'):
+				if self.pretraining:
+					self.x = tf.concat([self.x_mix,  tf.reshape(self.x_non_mix, [self.B*self.S, self.L])], axis=0)
+					self.B_tot = tf.shape(self.x)[0]
+				else:
+					self.x =tf.concat([self.x_mix,  tf.reshape(self.x_non_mix, [self.B*self.S, self.L])], axis=0)
+					self.B_tot = self.B*(self.S+1)
 					
 			if self.pretraining:
 				self.front
@@ -92,66 +50,10 @@ class Adapt:
 			else:
 				self.front
 
-		# Create a session for this model based on the constructed graph
-		config_ = tf.ConfigProto()
-		config_.gpu_options.allow_growth = True
-		config_.allow_soft_placement = True
-		self.sess = tf.Session(graph=self.graph, config=config_)
-
-	def tensorboard_init(self):
-		with self.graph.as_default():
-
-			if self.pretraining:
-				variable_summaries(self.conv_filter)
-				variable_summaries(self.conv_filter_2)
-
-				tf.summary.audio(name= "input/non-mixed", tensor = tf.reshape(self.X_non_mix, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
-				tf.summary.audio(name= "input/mixed", tensor = self.x[:self.B], sample_rate = config.fs, max_outputs=1)
-
-				trs = lambda x : tf.transpose(x, [0, 2, 1, 3])
-				tf.summary.image(name= "mix", tensor = trs(self.inmix), max_outputs=1)
-				tf.summary.image(name= "non_mix", tensor = trs(self.innonmix), max_outputs=2)
-				tf.summary.image(name= "separated", tensor = trs(self.ou), max_outputs=2)
-				tf.summary.image(name= "separated", tensor = trs(self.unpool_board), max_outputs=2)
-
-				tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
-				with tf.name_scope('loss_values'):
-					tf.summary.scalar('loss', self.SDR)
-					tf.summary.scalar('mse', tf.reduce_mean(self.mse))
-					tf.summary.scalar('SDR', self.sdr_improvement())
-					tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
-					tf.summary.scalar('sparse_reg', self.sparse_reg)
-					tf.summary.scalar('regularization', self.reg)
-					tf.summary.scalar('training_cost', self.cost)
-					tf.summary.scalar('overlapping', self.overlapping)
-
-			self.merged = tf.summary.merge_all()
-			self.train_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID,'train'), self.graph)
-			self.valid_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID,'valid'), self.graph)
-			self.saver = tf.train.Saver()
-
-			# Save arguments
-			with open(os.path.join(config.log_dir,self.folder,self.runID,'params'), 'w') as f:
-				json.dump(self.args, f)
-
-	def create_saver(self, subset=None):
-		with self.graph.as_default():
-			if subset is None:
-				self.saver = tf.train.Saver()
-			else:
-				self.saver = tf.train.Saver(subset)
 
 	def create_centroids_saver(self):
 		with self.graph.as_default():
 			self.centroids_saver = tf.train.Saver([self.sepNet.speaker_vectors], max_to_keep=10000000)
-
-	def restore_model(self, path):
-		self.saver.restore(self.sess, tf.train.latest_checkpoint(path))
-	
-	def restore_last_checkpoint(self):
-		self.saver.restore(self.sess, tf.train.latest_checkpoint(os.path.join(config.log_dir, self.folder ,self.runID)))
-
-
 
 	def savedModel(self):
 		with self.graph.as_default():
@@ -159,7 +61,7 @@ class Adapt:
 			builder = saved_model_builder.SavedModelBuilder(path)
 
 			# Build signatures
-			input_tensor_info = tf.saved_model.utils.build_tensor_info(self.X_mix)
+			input_tensor_info = tf.saved_model.utils.build_tensor_info(self.x_mix)
 			output_tensor_info = tf.saved_model.utils.build_tensor_info(self.back)
 
 			signature = tf.saved_model.signature_def_utils.build_signature_def(
@@ -181,26 +83,6 @@ class Adapt:
 
 			builder.save()
 			print 'Successfully exported model to %s' % path
-
-	def init(self):
-		with self.graph.as_default():
-			self.sess.run(tf.global_variables_initializer())
- 
-	def non_initialized_variables(self):
-		with self.graph.as_default():
-			global_vars = tf.global_variables()
-			is_not_initialized = self.sess.run([~(tf.is_variable_initialized(var)) \
-										   for var in global_vars])
-			not_initialized_vars = list(compress(global_vars, is_not_initialized))
-			print 'not init: ', [v.name for v in not_initialized_vars]
-			if len(not_initialized_vars):
-				init = tf.variables_initializer(not_initialized_vars)
-				return init
-
-	def initialize_non_init(self):
-		with self.graph.as_default():
-			self.sess.run(self.non_initialized_variables())
-
 
 	def connect_only_front_to_separator(self, separator, freeze_front=True):
 		with self.graph.as_default():
@@ -262,7 +144,7 @@ class Adapt:
 		y_shape = tf.shape(self.y)
 		y = tf.reshape(self.y, [self.B_tot, y_shape[1]*y_shape[2]])
 		self.p_hat = tf.reduce_mean(tf.abs(y), 0)
-		self.latent_loss = tf.reduce_sum(self.kl_div(self.p, self.p_hat))
+		self.latent_loss = tf.reduce_sum(kl_div(self.p, self.p_hat))
 
 		return self.y, argmax
 
@@ -353,17 +235,6 @@ class Adapt:
 
 		return output
 
-	def logfunc(self, x, x2):
-		cx = tf.clip_by_value(x, 1e-10, 1.0)
-		cx2 = tf.clip_by_value(x2, 1e-10, 1.0)
-		return tf.multiply(x, tf.log(tf.div(cx,cx2)))
-
-
-	def kl_div(self, p, p_hat):
-		inv_p = 1 - p
-		inv_p_hat = 1 - p_hat 
-		return self.logfunc(p, p_hat) + self.logfunc(inv_p, inv_p_hat)
-
 	@scope
 	def cost(self):
 		# Definition of cost for Adapt model
@@ -377,7 +248,7 @@ class Adapt:
 		# Doing l2 norm on L axis : 
 		if self.pretraining:
 			# self.mse = log10(tf.reduce_sum(tf.square(self.back), axis=-1)/tf.square(tf.reduce_sum(self.back*self.X_non_mix, axis=-1)))
-			self.mse = tf.reduce_sum(tf.square(self.X_non_mix - self.back), axis=-1)
+			self.mse = tf.reduce_sum(tf.square(self.x_non_mix - self.back), axis=-1)
 			# self.sdr = - tf.reduce_mean(self.back*self.X_non_mix, -1)**2/tf.reduce_mean(tf.square(self.back), -1) 
 			# self.sdr = tf.reduce_mean(self.sdr, -1)
 
@@ -396,7 +267,7 @@ class Adapt:
 			# [B, P, S, L]
 			permuted_back = tf.gather_nd(tf.tile(tf.reshape(self.back, [self.B, 1, self.S, self.L]), [1, length_perm, 1, 1]), indicies) # 
 
-			X_nmr = tf.reshape(self.X_non_mix, [self.B, 1, self.S, self.L])
+			X_nmr = tf.reshape(self.x_non_mix, [self.B, 1, self.S, self.L])
 
 			cost = tf.reduce_sum(tf.pow(X_nmr - permuted_back, 2), axis=3) / tf.cast(self.L, tf.float32)
 			cost = tf.reduce_sum(cost, axis = 2) # Take the mean among speakers
@@ -406,33 +277,40 @@ class Adapt:
 		# Compute mean over batches
 		self.SDR  = tf.reduce_sum(self.mse, -1) #+  0.5*tf.reduce_mean(self.sdr) 
 		self.SDR  = tf.reduce_mean(self.SDR, -1)
-		self.cost = self.SDR + self.sparse_reg + self.reg + self.overlap_coef*self.overlapping
+		self.cost_value = self.SDR + self.sparse_reg + self.reg + self.overlap_coef*self.overlapping
 
-		return self.cost
+		self.trainable_variables = tf.global_variables()
 
-	def select_optimizer(self,string):
-		return {
-			'Adam': tf.train.AdamOptimizer,
-			'RMS': tf.train.RMSPropOptimizer,
-		}[string]
+		variable_summaries(self.conv_filter)
+		variable_summaries(self.conv_filter_2)
 
-	@scope
-	def optimize(self):
-		if hasattr(self, 'trainable_variables') == False:
-			self.trainable_variables = tf.global_variables()
-			print 'ALL VARIABLE TRAINED'	
-		print self.trainable_variables
+		tf.summary.audio(name= "input/non-mixed", tensor = tf.reshape(self.x_non_mix, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
+		tf.summary.audio(name= "input/mixed", tensor = self.x[:self.B], sample_rate = config.fs, max_outputs=1)
 
-		optimizer = AMSGrad(self.learning_rate, epsilon=0.001)
-		gradients, variables = zip(*optimizer.compute_gradients(self.cost, var_list=self.trainable_variables))
-		optimize = optimizer.apply_gradients(zip(gradients, variables))
-		return optimize
+		trs = lambda x : tf.transpose(x, [0, 2, 1, 3])
+		tf.summary.image(name= "mix", tensor = trs(self.inmix), max_outputs=1)
+		tf.summary.image(name= "non_mix", tensor = trs(self.innonmix), max_outputs=2)
+		tf.summary.image(name= "separated", tensor = trs(self.ou), max_outputs=2)
+		tf.summary.image(name= "separated", tensor = trs(self.unpool_board), max_outputs=2)
+
+		tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
+		with tf.name_scope('loss_values'):
+			tf.summary.scalar('loss', self.SDR)
+			tf.summary.scalar('mse', tf.reduce_mean(self.mse))
+			tf.summary.scalar('SDR', self.sdr_improvement())
+			tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
+			tf.summary.scalar('sparse_reg', self.sparse_reg)
+			tf.summary.scalar('regularization', self.reg)
+			tf.summary.scalar('training_cost', self.cost_value)
+			tf.summary.scalar('overlapping', self.overlapping)
+
+		return self.cost_value
 
 	def sdr_improvement(self):
 		# B S L
-		s_target = self.X_non_mix 
+		s_target = self.x_non_mix 
 		s = self.back
-		mix = tf.tile(tf.expand_dims(self.X_mix, 1) ,[1, self.S, 1])
+		mix = tf.tile(tf.expand_dims(self.x_mix, 1) ,[1, self.S, 1])
 
 		s_target_norm = tf.reduce_sum(tf.square(s_target), axis=-1)
 		s_approx_norm = tf.reduce_sum(tf.square(s), axis=-1)
@@ -450,35 +328,8 @@ class Adapt:
 
 		return val
 
-	def save(self, step):
-		path = os.path.join(config.log_dir, self.folder ,self.runID, "model")
-		self.saver.save(self.sess, path, step)
-		return path
-
-	def save_centroids(self, step):
-		self.centroids_saver.save(self.sess, os.path.join(config.log_dir, self.folder ,self.runID, "centroids"), global_step=step)
-
-	def train(self, X_mix, X_non_mix, learning_rate, step, I=None):
-		if I is None:
-			summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_non_mix, self.training:True, self.learning_rate:learning_rate})
-		else:
-			summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost], {self.X_mix: X_mix, self.X_non_mix:X_non_mix, self.training:True, self.Ind:I, self.learning_rate:learning_rate})
-
-		self.train_writer.add_summary(summary, step)
-		return cost
-
-	def valid_batch(self, X_mix_valid, X_non_mix_valid, I=None):
-		if I is None:
-			return self.sess.run(self.cost, {self.X_non_mix:X_non_mix_valid, self.X_mix:X_mix_valid,self.training:False})
-		return self.sess.run(self.cost, {self.X_non_mix:X_non_mix_valid, self.X_mix:X_mix_valid,self.training:False, self.Ind:I})
-
-	def add_valid_summary(self, val, step):
-		summary = tf.Summary()
-		summary.value.add(tag="Valid Cost", simple_value=val)
-		self.valid_writer.add_summary(summary, step)
-
 	def test_prediction(self, X_mix_test, X_non_mix_test, step):
-		pred, y = self.sess.run([self.sepNet.prediction, self.sepNet.y_test_export], {self.X_mix: X_mix_test, self.X_non_mix:X_non_mix_test, self.training:True})
+		pred, y = self.sess.run([self.sepNet.prediction, self.sepNet.y_test_export], {self.x_mix: x_mix_test, self.x_non_mix:X_non_mix_test, self.training:True})
 		pred = np.reshape(pred, [X_mix_test.shape[0], -1, 40])
 		labels = [['r' if b == 1 else 'b' for b in batch]for batch in y]
 		np.save(os.path.join(config.log_dir, self.folder ,self.runID, "bins-{}".format(step)), pred)
@@ -489,41 +340,3 @@ class Adapt:
 
 	def connect_back(self):
 		self.back
-
-	def freeze_front(self):
-		training_var = tf.trainable_variables()
-		training_var.remove(self.conv_filter)
-		self.trainable_variables = training_var
-
-	def freeze_back(self):
-		self.trainable_variables.remove(self.bases_2)
-		self.trainable_variables.remove(self.window_filter_2)
-
-	# TODO
-	def freeze_variables(self):
-		training_var = tf.trainable_variables()
-		to_train = []
-		for var in training_var:
-			if 'enhance' in var.name:
-				to_train.append(var)
-		self.trainable_variables = to_train
-
-	def freeze_all_except(self, prefix):
-		training_var = tf.trainable_variables()
-		to_train = []
-		for var in training_var:
-			if prefix in var.name:
-				to_train.append(var)
-		self.trainable_variables = to_train
-
-	@staticmethod
-	def load(path, modified_args):
-		# Load parameters used for the desired model to load
-		params_path = os.path.join(path, 'params')
-		with open(params_path) as f:
-			args = json.load(f)
-		# Update with new args such as 'pretraining' or 'type'
-		args.update(modified_args)
-
-		# Create a new Adapt model with these parameters
-		return Adapt(**args)

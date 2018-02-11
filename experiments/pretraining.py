@@ -37,7 +37,7 @@ def main(args):
 	####
 	adapt_model = Adapt(**d)
 	adapt_model.tensorboard_init()
-	adapt_model.init()
+	adapt_model.init_all()
 
 	print 'Total name :' 
 	print adapt_model.runID
@@ -72,11 +72,11 @@ def main(args):
 	for epoch in range(nb_epochs):
 		for b in range(nb_batches_train):
 			step = nb_batches_train*epoch + b
-			X_non_mix, X_mix, _ = mixed_data.get_batch(batch_size_train)
+			X_non_mix, X_mix, I = mixed_data.get_batch(batch_size_train)
 			X_mix, X_non_mix = normalize_mix(X_mix, X_non_mix)
 
 			t = time.time()
-			c = adapt_model.train(X_mix, X_non_mix, args.learning_rate, step)
+			c = adapt_model.train(X_mix, X_non_mix, args.learning_rate, step, I)
 			t_f = time.time()
 			time_spent = time_spent[1:] +[t_f-t]
 
@@ -91,10 +91,10 @@ def main(args):
 				# Compute validation mean cost with batches
 				costs = []
 				for _ in range(nb_batches_valid):
-					X_v_non_mix, X_v_mix, _ = mixed_data.get_batch(batch_size_valid_test)
+					X_v_non_mix, X_v_mix, I = mixed_data.get_batch(batch_size_valid_test)
 					X_v_mix, X_v_non_mix = normalize_mix(X_v_mix, X_v_non_mix)
 
-					cost = adapt_model.valid_batch(X_v_mix, X_v_non_mix)
+					cost = adapt_model.valid_batch(X_v_mix, X_v_non_mix, I)
 					costs.append(cost)
 
 				valid_cost = np.mean(costs)
@@ -121,10 +121,10 @@ def main(args):
 	adapt_model.restore_last_checkpoint()
 	mixed_data.select_split(2)
 	for _ in range(nb_batches_test):
-		X_t_non_mix, X_t_mix, _ = mixed_data.get_batch(batch_size_valid_test)
+		X_t_non_mix, X_t_mix, I = mixed_data.get_batch(batch_size_valid_test)
 		X_t_mix, X_t_non_mix = normalize_mix(X_t_mix, X_t_non_mix)
 
-		cost = adapt_model.valid_batch(X_t_mix, X_t_non_mix)
+		cost = adapt_model.valid_batch(X_t_mix, X_t_non_mix, I)
 		costs.append(cost)
 	print 'Test cost = ', np.mean(costs)
 	mixed_data.reset()
