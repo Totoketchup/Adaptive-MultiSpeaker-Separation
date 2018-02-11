@@ -3,7 +3,7 @@ from data.dataset import H5PY_RW
 from data.data_tools import read_metadata, males_keys, females_keys
 from data.dataset import Mixer
 from models.adapt import Adapt
-from models.L41 import L41Model
+from models.dpcl import DPCL
 from utils.tools import getETA, normalize_mix
 import time
 import numpy as np
@@ -25,7 +25,7 @@ def main(args):
 		nb_speakers=args.nb_speakers, random_picking=args.no_random_picking)
 
 	additional_args = {
-		"type" : "front_L41_enhance",
+		"type" : "front_DPCL_enhance",
 		"pretraining": False,
 		"separator": None,
 		"tot_speakers" : len(H5_dic),
@@ -38,7 +38,7 @@ def main(args):
 	adapt_model = Adapt.load(args.model_folder, d)
 
 	# Restoring previous Model:
-	adapt_model.restore_front_separator(args.model_folder, L41Model)
+	adapt_model.restore_front_separator(args.model_folder, DPCL)
 	
 	# Expanding the graph with enhance layer
 	with adapt_model.graph.as_default() : 
