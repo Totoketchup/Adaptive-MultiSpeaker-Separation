@@ -3,7 +3,7 @@ from data.dataset import H5PY_RW
 from data.data_tools import read_metadata, males_keys, females_keys
 from data.dataset import Mixer
 from models.adapt import Adapt
-from models.L41 import L41Model
+from models.dpcl import DPCL
 from utils.tools import getETA, normalize_mix
 import time
 import numpy as np
@@ -25,10 +25,9 @@ def main(args):
 		nb_speakers=args.nb_speakers, random_picking=args.no_random_picking)
 
 	additional_args = {
-		"type" : "front_L41",
+		"type" : "front_DPCL",
 		"pretraining": False,
 		"separator": None,
-		"tot_speakers" : len(H5_dic),
 	}
 
 	d = vars(args)
@@ -38,9 +37,10 @@ def main(args):
 	adapt_model = Adapt.load(args.adapt_folder, d)
 	adapt_model.create_saver()
 	adapt_model.restore_model(args.adapt_folder)
-	adapt_model.connect_only_front_to_separator(L41Model)
+	adapt_model.connect_only_front_to_separator(DPCL)
 	# Initialize only non restored values
 	adapt_model.initialize_non_init()
+
 
 	print 'Total name :' 
 	print adapt_model.runID
