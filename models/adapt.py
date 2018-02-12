@@ -26,9 +26,7 @@ class Adapt(Network):
 			self.beta = kwargs['beta']
 			self.p = kwargs['sparsity']
 			self.window = kwargs['window_size']
-			self.optimizer = kwargs['optimizer']
 			self.pretraining = kwargs['pretraining']
-			self.sepNet = kwargs['separator']
 			self.overlap_coef = kwargs['overlap_coef']
 
 		with self.graph.as_default():
@@ -38,6 +36,7 @@ class Adapt(Network):
 					self.x = tf.concat([self.x_mix,  tf.reshape(self.x_non_mix, [self.B*self.S, self.L])], axis=0)
 					self.B_tot = tf.shape(self.x)[0]
 				else:
+
 					self.x =tf.concat([self.x_mix,  tf.reshape(self.x_non_mix, [self.B*self.S, self.L])], axis=0)
 					self.B_tot = self.B*(self.S+1)
 					
@@ -45,11 +44,12 @@ class Adapt(Network):
 				self.front
 				self.separator
 				self.back
-				self.cost
+				self.cost_model = self.cost
+				self.finish_construction()
 				self.optimize
 			else:
+				# self.sepNet = kwargs['separator']
 				self.front
-
 
 	def create_centroids_saver(self):
 		with self.graph.as_default():
@@ -84,32 +84,6 @@ class Adapt(Network):
 			builder.save()
 			print 'Successfully exported model to %s' % path
 
-	def connect_only_front_to_separator(self, separator, freeze_front=True):
-		with self.graph.as_default():
-			self.connect_front(separator)
-			self.sepNet.output = self.sepNet.prediction
-			self.cost = self.sepNet.cost
-			if freeze_front:
-				self.freeze_front()
-			self.optimize
-			self.tensorboard_init()
-
-	def connect_front_back_to_separator(self, separator):
-		with self.graph.as_default():
-			self.connect_front(separator)
-			self.sepNet.prediction
-			self.sepNet.output = self.sepNet.separate
-			self.separator
-			self.back
-			self.cost
-
-	def restore_front_separator(self, path, separator):
-		with self.graph.as_default():
-			self.connect_front(separator)
-			self.sepNet.output = self.sepNet.prediction
-			self.create_saver()
-			self.restore_model(path)
-
 	##
 	## Front End creating STFT like data
 	##
@@ -139,7 +113,7 @@ class Adapt(Network):
 		# Max Pooling with argmax for unpooling later in the back-end layer
 		# Along the T axis (time)
 		self.y, argmax = tf.nn.max_pool_with_argmax(self.X, (1, self.max_pool_value, 1, 1),
-													strides=[1, self.max_pool_value, 1, 1], padding="SAME")
+													strides=[1, self.max_pool_value, 1, 1], padding="SAME", name='output')
 
 		y_shape = tf.shape(self.y)
 		y = tf.reshape(self.y, [self.B_tot, y_shape[1]*y_shape[2]])
@@ -279,8 +253,6 @@ class Adapt(Network):
 		self.SDR  = tf.reduce_mean(self.SDR, -1)
 		self.cost_value = self.SDR + self.sparse_reg + self.reg + self.overlap_coef*self.overlapping
 
-		self.trainable_variables = tf.global_variables()
-
 		variable_summaries(self.conv_filter)
 		variable_summaries(self.conv_filter_2)
 
@@ -329,14 +301,39 @@ class Adapt(Network):
 		return val
 
 	def test_prediction(self, X_mix_test, X_non_mix_test, step):
-		pred, y = self.sess.run([self.sepNet.prediction, self.sepNet.y_test_export], {self.x_mix: x_mix_test, self.x_non_mix:X_non_mix_test, self.training:True})
+		pred, y = self.sess.run([self.sepNet.prediction, self.sepNet.y_test_export], {self.x_mix: X_mix_test, self.x_non_mix:X_non_mix_test, self.training:True})
 		pred = np.reshape(pred, [X_mix_test.shape[0], -1, 40])
 		labels = [['r' if b == 1 else 'b' for b in batch]for batch in y]
 		np.save(os.path.join(config.log_dir, self.folder ,self.runID, "bins-{}".format(step)), pred)
 		np.save(os.path.join(config.log_dir, self.folder ,self.runID, "labels-{}".format(step)), labels)
 
 	def connect_front(self, separator_class):
-		self.sepNet = separator_class(self, **self.args)
+		self.sepNet = separator_class(self.graph, **self.args)
 
 	def connect_back(self):
 		self.back
+
+	def connect_only_front_to_separator(self, separator, freeze_front=True):
+		with self.graph.as_default():
+			self.connect_front(separator)
+			self.sepNet.output = self.sepNet.prediction
+			self.cost_model = self.sepNet.cost
+			self.finish_construction()
+			self.freeze_all_with('front')
+			self.optimize
+			self.tensorboard_init()
+
+	def connect_front_back_to_separator(self, separator):
+		with self.graph.as_default():
+			self.connect_front(separator)
+			self.sepNet.prediction
+			self.sepNet.output = self.sepNet.separate
+			self.separator
+			self.back
+			self.cost
+
+	def restore_front_separator(self, path, separator):
+		with self.graph.as_default():
+			self.connect_front(separator)
+			self.sepNet.output = self.sepNet.prediction
+			self.restore_model(path)
