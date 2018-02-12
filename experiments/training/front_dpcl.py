@@ -1,4 +1,5 @@
-from experiments.trainer import MyArgs, Front_Separator_Trainer
+# coding: utf-8
+from utils.trainer import MyArgs, Front_Separator_Trainer
 from models.dpcl import DPCL
 
 if __name__ == '__main__':

@@ -1,5 +1,5 @@
 # coding: utf-8
-from experiments.trainer import MyArgs, STFT_DPCL_enhance_Trainer
+from utils.trainer import MyArgs, STFT_DPCL_enhance_Trainer
 
 if __name__ == '__main__':
 	p = MyArgs()

@@ -1,10 +1,6 @@
 # coding: utf-8
-from experiments.trainer import MyArgs, Adapt_Pretrainer
+from utils.trainer import MyArgs, Adapt_Pretrainer
 
-###
-### EXAMPLE
-# python -m experiments.pretraining --dataset h5py_files/train-clean-100-8-s.h5 --chunk_size 5120 --nb_speakers 2 --epochs 1 --batch_size 3 --learning_rate 0.01 --window_size 1024 --max_pool 256 --filters 512 --regularization 1e-4 --beta 0.01 --sparsity 0.1 --no_random_picking
-###
 if __name__ == '__main__':
 	p = MyArgs()
 	#Preprocess arguments
