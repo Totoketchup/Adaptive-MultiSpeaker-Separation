@@ -243,15 +243,13 @@ class Adapt(Network):
 
 			X_nmr = tf.reshape(self.x_non_mix, [self.B, 1, self.S, self.L])
 
-			cost = tf.reduce_sum(tf.pow(X_nmr - permuted_back, 2), axis=3) / tf.cast(self.L, tf.float32)
-			cost = tf.reduce_sum(cost, axis = 2) # Take the mean among speakers
-			cost = tf.reduce_min(cost, axis = 1) # Take the permutation minimizing the cost
-		
+			self.mse = tf.reduce_sum(tf.square(X_nmr - permuted_back), axis=-1)
+			
 		# shape = [B]
 		# Compute mean over batches
 		self.SDR  = tf.reduce_sum(self.mse, -1) #+  0.5*tf.reduce_mean(self.sdr) 
 		self.SDR  = tf.reduce_mean(self.SDR, -1)
-		self.cost_value = self.SDR + self.sparse_reg + self.reg + self.overlap_coef*self.overlapping
+		self.cost_value = self.SDR + self.sparse_reg + self.reg #+ self.overlap_coef*self.overlapping TODO
 
 		variable_summaries(self.conv_filter)
 		variable_summaries(self.conv_filter_2)
@@ -260,21 +258,21 @@ class Adapt(Network):
 		tf.summary.audio(name= "input/mixed", tensor = self.x[:self.B], sample_rate = config.fs, max_outputs=1)
 
 		trs = lambda x : tf.transpose(x, [0, 2, 1, 3])
-		tf.summary.image(name= "mix", tensor = trs(self.inmix), max_outputs=1)
-		tf.summary.image(name= "non_mix", tensor = trs(self.innonmix), max_outputs=2)
-		tf.summary.image(name= "separated", tensor = trs(self.ou), max_outputs=2)
-		tf.summary.image(name= "separated", tensor = trs(self.unpool_board), max_outputs=2)
+		# tf.summary.image(name= "mix", tensor = trs(self.inmix), max_outputs=1)
+		# tf.summary.image(name= "non_mix", tensor = trs(self.innonmix), max_outputs=2)
+		# tf.summary.image(name= "separated", tensor = trs(self.ou), max_outputs=2)
+		# tf.summary.image(name= "separated", tensor = trs(self.unpool_board), max_outputs=2)
 
 		tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
 		with tf.name_scope('loss_values'):
-			tf.summary.scalar('loss', self.SDR)
+			# tf.summary.scalar('loss', self.SDR)
 			tf.summary.scalar('mse', tf.reduce_mean(self.mse))
 			tf.summary.scalar('SDR', self.sdr_improvement())
 			tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
 			tf.summary.scalar('sparse_reg', self.sparse_reg)
 			tf.summary.scalar('regularization', self.reg)
 			tf.summary.scalar('training_cost', self.cost_value)
-			tf.summary.scalar('overlapping', self.overlapping)
+			# tf.summary.scalar('overlapping', self.overlapping)
 
 		return self.cost_value
 
@@ -318,6 +316,7 @@ class Adapt(Network):
 			self.connect_front(separator)
 			self.sepNet.output = self.sepNet.prediction
 			self.cost_model = self.sepNet.cost
+			self.back # To save the back values !
 			self.finish_construction()
 			self.freeze_all_with('front')
 			self.optimize
@@ -336,4 +335,5 @@ class Adapt(Network):
 		with self.graph.as_default():
 			self.connect_front(separator)
 			self.sepNet.output = self.sepNet.prediction
+			self.back
 			self.restore_model(path)

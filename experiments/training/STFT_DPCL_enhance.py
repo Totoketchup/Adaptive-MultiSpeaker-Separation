@@ -1,5 +1,6 @@
 # coding: utf-8
-from utils.trainer import MyArgs, STFT_DPCL_enhance_Trainer
+from utils.trainer import MyArgs, STFT_Separator_enhance_Trainer
+from models.dpcl import DPCL
 
 if __name__ == '__main__':
 	p = MyArgs()
@@ -24,6 +25,6 @@ if __name__ == '__main__':
 
 	args = p.get_args()
 
-	trainer = STFT_DPCL_enhance_Trainer(**vars(args))
+	trainer = STFT_Separator_enhance_Trainer(DPCL, 'STFT_DPCL_enhance', **vars(args))
 	trainer.build_model()
 	trainer.train()

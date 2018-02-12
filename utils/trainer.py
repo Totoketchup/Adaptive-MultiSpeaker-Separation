@@ -154,49 +154,25 @@ class Trainer(object):
 		print 'Test cost = ', np.mean(costs)
 		self.mixed_data.reset()
 
-
-from models.L41 import L41Model
-from models.dpcl import DPCL
 from models.adapt import Adapt
 
-class STFT_L41_Trainer(Trainer):
-	def __init__(self, **kwargs):
-		super(STFT_L41_Trainer, self).__init__(trainer_type='STFT_L41', **kwargs)
+class STFT_Separator_Trainer(Trainer):
+	def __init__(self, separator, name, **kwargs):
+		self.separator = separator
+		super(STFT_Separator_Trainer, self).__init__(trainer_type=name, **kwargs)
 
 	def build_model(self):
-		self.model = L41Model(**self.args)
+		self.model = self.separator(**self.args)
 		self.model.tensorboard_init()
 		self.model.init_all()
 
-class STFT_DPCL_Trainer(Trainer):
-	def __init__(self, **kwargs):
-		super(STFT_DPCL_Trainer, self).__init__(trainer_type='STFT_DPCL', **kwargs)
+class STFT_Separator_enhance_Trainer(Trainer):
+	def __init__(self, separator, name, **kwargs):
+		self.separator = separator
+		super(STFT_Separator_enhance_Trainer, self).__init__(trainer_type=name, **kwargs)
 
 	def build_model(self):
-		self.model = DPCL(**self.args)
-		self.model.tensorboard_init()
-		self.model.init_all()
-
-
-class STFT_DPCL_enhance_Trainer(Trainer):
-	def __init__(self, **kwargs):
-		super(STFT_DPCL_enhance_Trainer, self).__init__(trainer_type='STFT_DPCL_enhance', **kwargs)
-
-	def build_model(self):
-		self.model = DPCL.load(self.args['model_folder'], self.args)
-		self.model.restore_model(self.args['model_folder'])
-		self.model.add_enhance_layer()
-		self.model.tensorboard_init()
-		# Initialize only non restored values
-		self.model.initialize_non_init()
-	
-
-class STFT_L41_enhance_Trainer(Trainer):
-	def __init__(self, **kwargs):
-		super(STFT_L41_enhance_Trainer, self).__init__(trainer_type='STFT_L41_enhance', **kwargs)
-
-	def build_model(self):
-		self.model = L41Model.load(self.args['model_folder'], self.args)
+		self.model = self.separator.load(self.args['model_folder'], self.args)
 		self.model.restore_model(self.args['model_folder'])
 		self.model.add_enhance_layer()
 		self.model.tensorboard_init()
@@ -241,6 +217,28 @@ class Front_Separator_Enhance_Trainer(Trainer):
 			self.model.cost_model = self.model.sepNet.enhance_cost
 			self.model.finish_construction()
 			self.model.freeze_all_except('enhance')
+			self.model.optimize
+		self.model.tensorboard_init()
+		# Initialize only non restored values
+		self.model.initialize_non_init()
+
+class Front_Separator_Enhance_Finetuning_Trainer(Trainer):
+	def __init__(self, separator, name, **kwargs):
+		super(Front_Separator_Enhance_Finetuning_Trainer, self).__init__(trainer_type=name, **kwargs)
+		self.separator = separator
+
+	def build_model(self):
+		self.model = Adapt.load(self.args['model_folder'], self.args)
+		# Restoring the front layer:
+
+		# Expanding the graph with enhance layer
+		with self.model.graph.as_default() : 
+			self.model.connect_front(self.separator)
+			self.model.sepNet.output = self.model.sepNet.enhance
+			self.model.back
+			self.model.restore_model(self.args['model_folder'])
+			self.model.cost_model = self.model.cost
+			self.model.finish_construction()
 			self.model.optimize
 		self.model.tensorboard_init()
 		# Initialize only non restored values

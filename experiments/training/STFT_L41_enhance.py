@@ -1,6 +1,6 @@
 # coding: utf-8
-from utils.trainer import MyArgs, STFT_L41_enhance_Trainer
-
+from utils.trainer import MyArgs, STFT_Separator_enhance_Trainer
+from models.L41 import L41Model
 if __name__ == '__main__':
 	p = MyArgs()
 	#Preprocess arguments
@@ -8,6 +8,7 @@ if __name__ == '__main__':
 		'--window_size', type=int, help='Size of the window for STFT', required=False, default=512)
 	p.parser.add_argument(
 		'--hop_size', type=int, help='Hop size for the STFT', required=False, default=256)
+
 	#Network arguments
 	p.parser.add_argument(
 		'--layer_size', type=int, help='Size of hidden layers in BLSTM', required=False, default=600)
@@ -24,6 +25,6 @@ if __name__ == '__main__':
 
 	args = p.get_args()
 
-	trainer = STFT_L41_enhance_Trainer(**vars(args))
+	trainer = STFT_Separator_enhance_Trainer(L41Model, 'STFT_L41_enhance', **vars(args))
 	trainer.build_model()
 	trainer.train()
