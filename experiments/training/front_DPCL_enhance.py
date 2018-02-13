@@ -10,16 +10,8 @@ if __name__ == '__main__':
 	p.parser.add_argument(
 		'--model_folder', help='Path to Adapt folder to load', required=True)
 
-	#Network arguments
-	p.parser.add_argument(
-		'--layer_size', type=int, help='Size of hidden layers in BLSTM', required=False, default=600)
-	p.parser.add_argument(
-		'--embedding_size', type=int, help='Size of the embedding output', required=False, default=40)
-	p.parser.add_argument(
-		'--nonlinearity', help='Nonlinearity used', required=False, default='logistic')
-	p.parser.add_argument(
-		'--normalize', help='Normalization of the embedded space', action="store_false")
-
+	p.add_separator_args()
+	p.add_enhance_layer_args()
 	args = p.get_args()
 
 	trainer = Front_Separator_Enhance_Trainer(DPCL, 'front_DPCL_enhance', pretraining=False, **vars(args))

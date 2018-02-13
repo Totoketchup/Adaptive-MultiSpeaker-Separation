@@ -185,7 +185,8 @@ class Separator(Network):
 		self.layer_size = kwargs['layer_size']
 		self.embedding_size = kwargs['embedding_size']
 		self.nonlinearity = kwargs['nonlinearity']
-		self.normalize = kwargs['normalize']
+		self.normalize = kwargs['no_normalize']
+		self.nb_layers = kwargs['nb_layers']
 		self.a = kwargs['mask_a']
 		self.b = kwargs['mask_b']
 
@@ -319,9 +320,7 @@ class Separator(Network):
 		sep_and_in = tf.reshape(sep_and_in, [self.B*self.S, -1, 2*self.F])
 		
 		layers = [
-			BLSTM(self.layer_size, 'BLSTM_1'),
-			BLSTM(self.layer_size, 'BLSTM_2'),
-			BLSTM(self.layer_size, 'BLSTM_3'),
+			BLSTM(self.args['layer_size_enhance'], 'BLSTM_'+str(i)) for i in range(self.args['nb_layers_enhance'])
 		]
 
 		# todo

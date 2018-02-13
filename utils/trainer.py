@@ -35,6 +35,31 @@ class MyArgs(object):
 
 		self.parser = parser
 
+	def add_stft_args(self):
+		self.parser.add_argument(
+			'--window_size', type=int, help='Size of the window for STFT', required=False, default=512)
+		self.parser.add_argument(
+			'--hop_size', type=int, help='Hop size for the STFT', required=False, default=256)
+
+
+	def add_separator_args(self):
+		self.parser.add_argument(
+			'--nb_layers', type=int, help='Number of stacked BLSTMs', required=False, default=3)
+		self.parser.add_argument(
+			'--layer_size', type=int, help='Size of hidden layers in BLSTM', required=False, default=600)
+		self.parser.add_argument(
+			'--embedding_size', type=int, help='Size of the embedding output', required=False, default=40)
+		self.parser.add_argument(
+			'--nonlinearity', help='Nonlinearity used', required=False, default='logistic')
+		self.parser.add_argument(
+			'--no_normalize', help='Normalization of the embedded space', action="store_false")
+
+	def add_enhance_layer_args(self):
+		self.parser.add_argument(
+			'--nb_layers_enhance', type=int, help='Number of stacked BLSTMs for the enhance layer', required=False, default=3)
+		self.parser.add_argument(
+			'--layer_size_enhance', type=int, help='Size of hidden layers in BLSTM', required=False, default=600)
+
 	def get_args(self):
 		return self.parser.parse_args()
 
@@ -73,9 +98,7 @@ class Trainer(object):
 		batch_size_train = self.args['batch_size']
 		batch_size_valid_test = batch_size_train
 
-		#
 		# Get the number of batches in an epoch for each set (train/Valid/test)
-		#
 		nb_batches_train = self.mixed_data.nb_batches(batch_size_train)
 		self.mixed_data.select_split(1) # Switch on Validation set
 		nb_batches_valid = self.mixed_data.nb_batches(batch_size_valid_test)

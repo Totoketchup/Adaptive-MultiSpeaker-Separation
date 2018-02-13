@@ -21,21 +21,20 @@ class L41Model(Separator):
 
 	@scope
 	def prediction(self):
-		"""
-		Construct the op for the network used in [1].  This consists of two
-		BLSTM layers followed by a dense layer giving a set of T-F vectors of
-		dimension embedding_size
-		"""
-		shape = tf.shape(self.X)	
+		# L41 network
 
-		layers = [
-			BLSTM(self.layer_size, 'BLSTM_1'),#, dropout=True, drop_val=0.9),
-			BLSTM(self.layer_size, 'BLSTM_2'),#, dropout=True, drop_val=0.9),
+		shape = tf.shape(self.X)
+
+		layers = [BLSTM(self.layer_size, 'BLSTM_'+str(i)) for i in range(self.nb_layers)]
+
+		layers_sp = [
 			Conv1D([1, self.layer_size, self.embedding_size*self.F]),
-			Reshape([shape[0], shape[1], self.F, self.embedding_size]),
+			Reshape([self.B, shape[1], self.F, self.embedding_size]),
 			Normalize(3)
 		]
-		# Produce embeddings [B, T, F, E]
+
+		layers += layers_sp
+
 		y = f_props(layers, self.X)
 		
 		return y

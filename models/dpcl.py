@@ -21,13 +21,15 @@ class DPCL(Separator):
 
 		shape = tf.shape(self.X)
 
-		layers = [
-			BLSTM(self.layer_size, 'BLSTM_1'),
-			BLSTM(self.layer_size, 'BLSTM_2'),
+		layers = [BLSTM(self.layer_size, 'BLSTM_'+str(i)) for i in range(self.nb_layers)]
+
+		layers_sp = [
 			Conv1D([1, self.layer_size, self.embedding_size*self.F]),
 			Reshape([self.B, shape[1], self.F, self.embedding_size]),
 			Normalize(3)
 		]
+
+		layers += layers_sp
 
 		y = f_props(layers, self.X)
 		
