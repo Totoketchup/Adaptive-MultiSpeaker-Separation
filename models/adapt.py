@@ -242,15 +242,16 @@ class Adapt(Network):
 			permuted_back = tf.gather_nd(tf.tile(tf.reshape(self.back, [self.B, 1, self.S, self.L]), [1, length_perm, 1, 1]), indicies) # 
 
 			X_nmr = tf.reshape(self.x_non_mix, [self.B, 1, self.S, self.L])
-
+			# TODO
 			self.mse = tf.reduce_sum(tf.square(X_nmr - permuted_back), axis=-1)
-			
+			self.mse = tf.reduce_min(self.mse, axis=1)
+		
 		# shape = [B]
 		# Compute mean over batches
-		self.SDR  = tf.reduce_sum(self.mse, -1) #+  0.5*tf.reduce_mean(self.sdr) 
+		self.SDR  = tf.reduce_sum(self.mse, -1) #+  0.5*tf.reduce_mean(self.sdr)
 		self.SDR  = tf.reduce_mean(self.SDR, -1)
 		self.cost_value = self.SDR + self.sparse_reg + self.reg #+ self.overlap_coef*self.overlapping TODO
-
+		print self.SDR, self.sparse_reg, self.reg
 		variable_summaries(self.conv_filter)
 		variable_summaries(self.conv_filter_2)
 

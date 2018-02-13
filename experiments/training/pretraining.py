@@ -3,6 +3,7 @@ from utils.trainer import MyArgs, Adapt_Pretrainer
 
 if __name__ == '__main__':
 	p = MyArgs()
+	
 	#Preprocess arguments
 	p.parser.add_argument(
 		'--window_size', type=int, help='Size of the 1D Conv width', required=False, default=1024)
