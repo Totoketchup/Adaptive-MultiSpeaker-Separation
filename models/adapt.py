@@ -261,9 +261,12 @@ class Adapt(Network):
 		# shape = [B]
 		# Compute mean over batches
 		cost_value = loss
-		cost_value += self.beta * self.sparse_constraint 
-		cost_value += self.l * regularization 
-		cost_value += self.overlap_coef * self.overlapping_constraint
+		if self.beta != 0.0:
+			cost_value += self.beta * self.sparse_constraint
+		if self.l != 0.0:
+			cost_value += self.l * regularization 
+		if self.overlap_coef != 0.0:
+			cost_value += self.overlap_coef * self.overlapping_constraint
 
 		variable_summaries(self.conv_filter)
 		variable_summaries(self.conv_filter_2)
