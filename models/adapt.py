@@ -28,6 +28,7 @@ class Adapt(Network):
 			self.window = kwargs['window_size']
 			self.pretraining = kwargs['pretraining']
 			self.overlap_coef = kwargs['overlap_coef']
+			self.overlap_value = kwargs['overlap_value']
 
 		with self.graph.as_default():
 
@@ -164,9 +165,11 @@ class Adapt(Network):
 			# Combination of non mixed representations : [B, len(comb), nb, T*N]
 			comb_non_mix = tf.abs(comb_non_mix)
 			measure = 1.0 - tf.abs(comb_non_mix[:,:,0,:] - comb_non_mix[:,:,1,:]) / tf.reduce_max(comb_non_mix, axis=2)
-			overlapping = tf.reduce_sum(measure, -1)
-			overlapping = tf.reduce_mean(overlapping, -1) # Mean over combinations
-			self.overlapping = tf.reduce_mean(overlapping, -1) # Mean over batches
+			# overlapping = tf.reduce_mean(measure, -1) # Mean over the bins
+			overlapping = tf.reduce_mean(measure, -2) # Mean over combinations
+			self.overlapping = tf.reduce_mean(overlapping, 0) # Mean over batches
+			self.overlapping_loss = tf.reduce_sum(kl_div(self.overlap_value, self.overlapping))
+
 
 			# filters = tf.divide(input_non_mix, tf.clip_by_value(input_mix, 1e-4, 1e10))
 			# filters = tf.square(input_non_mix) / tf.clip_by_value(tf.reduce_sum(tf.square(input_non_mix), 1, keep_dims=True), 1e-4, 1e10) 
@@ -250,7 +253,7 @@ class Adapt(Network):
 		# Compute mean over batches
 		self.SDR  = tf.reduce_sum(self.mse, -1) #+  0.5*tf.reduce_mean(self.sdr)
 		self.SDR  = tf.reduce_mean(self.SDR, -1)
-		self.cost_value = self.SDR + self.sparse_reg + self.reg #+ self.overlap_coef*self.overlapping TODO
+		self.cost_value = self.sdr_improvement()[1] + self.sparse_reg + self.reg #+ self.overlap_coef*self.overlapping_loss
 		print self.SDR, self.sparse_reg, self.reg
 		variable_summaries(self.conv_filter)
 		variable_summaries(self.conv_filter_2)
@@ -258,7 +261,7 @@ class Adapt(Network):
 		tf.summary.audio(name= "input/non-mixed", tensor = tf.reshape(self.x_non_mix, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
 		tf.summary.audio(name= "input/mixed", tensor = self.x[:self.B], sample_rate = config.fs, max_outputs=1)
 
-		trs = lambda x : tf.transpose(x, [0, 2, 1, 3])
+		# trs = lambda x : tf.transpose(x, [0, 2, 1, 3])
 		# tf.summary.image(name= "mix", tensor = trs(self.inmix), max_outputs=1)
 		# tf.summary.image(name= "non_mix", tensor = trs(self.innonmix), max_outputs=2)
 		# tf.summary.image(name= "separated", tensor = trs(self.ou), max_outputs=2)
@@ -268,12 +271,13 @@ class Adapt(Network):
 		with tf.name_scope('loss_values'):
 			# tf.summary.scalar('loss', self.SDR)
 			tf.summary.scalar('mse', tf.reduce_mean(self.mse))
-			tf.summary.scalar('SDR', self.sdr_improvement())
+			tf.summary.scalar('SDR', self.sdr_improvement()[0])
 			tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
 			tf.summary.scalar('sparse_reg', self.sparse_reg)
 			tf.summary.scalar('regularization', self.reg)
 			tf.summary.scalar('training_cost', self.cost_value)
-			# tf.summary.scalar('overlapping', self.overlapping)
+			tf.summary.scalar('overlapping', tf.reduce_mean(self.overlapping))
+			tf.summary.scalar('overlapping_loss', self.overlapping_loss)
 
 		return self.cost_value
 
@@ -293,11 +297,13 @@ class Adapt(Network):
 		separated = 10. * log10(1.0/((s_target_norm*s_approx_norm)/s_target_s_2 - 1.0))
 		non_separated = 10. * log10(1.0/((s_target_norm*mix_norm)/s_target_mix_2 - 1.0))
 
+		loss = tf.reduce_mean(tf.reduce_mean(- separated,-1),-1)
+
 		val = separated - non_separated
 		val = tf.reduce_mean(val , -1) # Mean over speakers
 		val = tf.reduce_mean(val , -1) # Mean over batches
 
-		return val
+		return val, loss
 
 	def test_prediction(self, X_mix_test, X_non_mix_test, step):
 		pred, y = self.sess.run([self.sepNet.prediction, self.sepNet.y_test_export], {self.x_mix: X_mix_test, self.x_non_mix:X_non_mix_test, self.training:True})

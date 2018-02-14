@@ -1,10 +1,9 @@
 # coding: utf-8
-from data.dataset import Dataset, ConsistentRandom
+from data.dataset import Dataset
 import time
 import numpy as np
 import argparse
 from utils.tools import getETA
-import config
 
 class MyArgs(object):
 
@@ -23,7 +22,11 @@ class MyArgs(object):
 			'--no_random_picking', help='Do not pick random genders when mixing', action="store_false")
 		parser.add_argument(
 			'--validation_step',type=int, help='Nb of steps between each validation', required=False, default=1000)
-
+		parser.add_argument(
+			'--men', help='Use men voices', action="store_true")
+		parser.add_argument(
+			'--women', help='Use women voices', action="store_true")
+		
 		# Training arguments
 		parser.add_argument(
 			'--epochs', type=int, help='Number of epochs', required=False, default=10)
@@ -59,8 +62,36 @@ class MyArgs(object):
 		self.parser.add_argument(
 			'--layer_size_enhance', type=int, help='Size of hidden layers in BLSTM', required=False, default=600)
 
+	def add_adapt_args(self):
+		#Preprocess arguments
+		self.parser.add_argument(
+			'--window_size', type=int, help='Size of the 1D Conv width', required=False, default=1024)
+		self.parser.add_argument(
+			'--filters', type=int, help='Number of filters/bases for the 1D Conv', required=False, default=512)
+		self.parser.add_argument(
+			'--max_pool', type=int, help='Max Pooling size', required=False, default=512)
+
+		#Loss arguments
+		self.parser.add_argument(
+			'--regularization', type=float, help='Coefficient for L2 regularization', required=False, default=1e-4)
+		self.parser.add_argument(
+			'--beta', type=float, help='Coefficient for Sparsity constraint', required=False, default=1e-2)
+		self.parser.add_argument(
+			'--sparsity', type=float, help='Average Sparsity constraint', required=False, default=0.01)
+		self.parser.add_argument(
+			'--overlap_coef', type=float, help='Coefficient for Overlapping loss', required=False, default=0.1)
+		self.parser.add_argument(
+			'--overlap_value', type=float, help='Coefficient for Overlapping loss', required=False, default=0.1)
+
 	def get_args(self):
-		return self.parser.parse_args()
+		parsed = self.parser.parse_args()
+
+		sex = []
+		if parsed.men : sex.append('M')
+		if parsed.women : sex.append('F')
+		parsed.sex = sex
+
+		return parsed 
 
 class Trainer(object):
 	def __init__(self, trainer_type, **kwargs):

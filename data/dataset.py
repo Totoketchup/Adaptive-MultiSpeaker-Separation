@@ -25,7 +25,7 @@ class ConsistentRandom:
 
 class Dataset(object):
 
-	def __init__(self, ratio=[0.90, 0.05, 0.05], sex=['M', 'F'], **kwargs):
+	def __init__(self, ratio=[0.90, 0.05, 0.05], **kwargs):
 		"""
 		Inputs:
 			path: path to the h5 file
@@ -33,7 +33,7 @@ class Dataset(object):
 		"""
 		np.random.seed(config.seed)
 		self.nb_speakers = kwargs['nb_speakers']
-		self.sex = sex
+		self.sex = kwargs['sex']
 		self.batch_size = kwargs['batch_size']
 		self.chunk_size = kwargs['chunk_size']
 
@@ -45,17 +45,17 @@ class Dataset(object):
 		# TODO 
 		metadata = data_tools.read_metadata()
 
-		if sex != ['M', 'F'] and sex != ['F', 'M'] and sex != ['M'] and sex != ['F']:
+		if self.sex != ['M', 'F'] and self.sex != ['F', 'M'] and self.sex != ['M'] and self.sex != ['F']:
 			raise Exception('Sex must be ["M","F"] |  ["F","M"] | ["M"] | [F"]')
 
 		self.key_to_index = {}
 		j = 0
-		if 'M' in sex:
+		if 'M' in self.sex:
 			self.M = data_tools.males_keys(metadata)
 			for k in self.M:
 				self.key_to_index[k] = j
 				j += 1 
-		if 'F' in sex:
+		if 'F' in self.sex:
 			self.F = data_tools.females_keys(metadata)
 			for k in self.F:
 				self.key_to_index[k] = j
@@ -69,13 +69,13 @@ class Dataset(object):
 		# Define all the items related to each key/speaker
 		self.total_items = []
 
-		if 'M' in sex:
+		if 'M' in self.sex:
 			for key in self.M:
 				for val in self.file[key]:
 					chunks = self.file['/'.join([key,val])].shape[0]//self.chunk_size
 					self.total_items += ['/'.join([key,val,str(i)]) for i in range(chunks)]
 
-		if 'F' in sex:
+		if 'F' in self.sex:
 			for key in self.F:
 				for val in self.file[key]:
 					chunks = self.file['/'.join([key,val])].shape[0]//self.chunk_size
@@ -164,7 +164,8 @@ class Dataset(object):
 		mix = []
 		for s in self.sex:
 			nb = sum(map(int,genre == s))
-			if nb > len(used[s].keys()):
+
+			if nb > len(used[s].keys()) or len(used[s].keys()) == 0:
 				raise StopIteration()
 
 			keys = np.random.choice(used[s].keys(), nb, replace=False)
@@ -203,26 +204,6 @@ class Dataset(object):
 		for _ in tqdm(self.get_batch(self.TRAIN, batch_size, fake=True), desc='Counting batches'):
 			i+=1
 		return i
-
-	def empty_next(self):
-		genre = np.random.choice(self.sex, self.nb_speakers)
-
-		mix = []
-		for s in self.sex:
-			nb = sum(map(int,genre == s))
-			if nb > len(self.used[s].keys()):
-				self.used = copy.deepcopy(self.items)
-				raise StopIteration()
-
-			keys = np.random.choice(self.used[s].keys(), nb, replace=False)
-
-			for key in keys:
-				choice = np.random.choice(self.used[s][key])	
-				mix.append(choice)
-				self.used[s][key].remove(choice)
-				if len(self.used[s][key]) == 0:
-					del self.used[s][key]
-		return
 
 	@staticmethod
 	def create_h5_dataset(self, output_fn, subset=config.data_subset, data_root=config.data_root):
