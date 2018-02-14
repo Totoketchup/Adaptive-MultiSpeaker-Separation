@@ -1,11 +1,10 @@
 # coding: utf-8
-from data.dataset import H5PY_RW
-from data.data_tools import read_metadata, males_keys, females_keys
-from data.dataset import Mixer
+from data.dataset import Dataset, ConsistentRandom
 import time
 import numpy as np
 import argparse
 from utils.tools import getETA
+import config
 
 class MyArgs(object):
 
@@ -66,20 +65,10 @@ class MyArgs(object):
 class Trainer(object):
 	def __init__(self, trainer_type, **kwargs):
 
-		H5_dic = read_metadata()
-		males = H5PY_RW(kwargs['dataset'], subset = males_keys(H5_dic))
-		fem = H5PY_RW(kwargs['dataset'], subset = females_keys(H5_dic))
-
-		print 'Data with', len(H5_dic), 'male and female speakers'
-		print males.length(), 'elements'
-		print fem.length(), 'elements'
-
-		self.mixed_data = Mixer([males, fem], chunk_size= kwargs['chunk_size'], 
-			with_mask=False, with_inputs=True, shuffling=True,
-			nb_speakers=kwargs['nb_speakers'], random_picking=kwargs['no_random_picking'])
+		self.dataset = Dataset(**kwargs)
 
 		additional_args = {
-			"tot_speakers" : len(H5_dic),
+			"tot_speakers" : self.dataset.tot_speakers,
 			"type" : trainer_type
 		}
 
@@ -95,55 +84,32 @@ class Trainer(object):
 		print 'Total name :' 
 		print self.model.runID
 
-		batch_size_train = self.args['batch_size']
-		batch_size_valid_test = batch_size_train
-
-		# Get the number of batches in an epoch for each set (train/Valid/test)
-		nb_batches_train = self.mixed_data.nb_batches(batch_size_train)
-		self.mixed_data.select_split(1) # Switch on Validation set
-		nb_batches_valid = self.mixed_data.nb_batches(batch_size_valid_test)
-		self.mixed_data.select_split(2) # Switch on Test set
-		nb_batches_test = self.mixed_data.nb_batches(batch_size_valid_test)
-		self.mixed_data.select_split(0) # Switch back on Training set
-
-
-		print '####TRAINING####'
-		print nb_batches_train
-		print '####VALID####'
-		print nb_batches_valid
-		print '####TEST####'
-		print nb_batches_test
-
 		nb_epochs = self.args['epochs']
-
+		batch_size = self.args['batch_size']
 		time_spent = [0 for _ in range(5)]
+		nb_batches = self.dataset.nb_batch(batch_size)
 
 		best_validation_cost = 1e100
 
+		step = 0
 		for epoch in range(nb_epochs):
-			for b in range(nb_batches_train):
-				step = nb_batches_train*epoch + b
-				X_non_mix, X_mix, I = self.mixed_data.get_batch(batch_size_train)
+			for b ,(x_mix, x_non_mix, I) in enumerate(self.dataset.get_batch(self.dataset.TRAIN, batch_size)):
 
 				t = time.time()
-				c = self.model.train(X_mix, X_non_mix, I, step)
+				c = self.model.train(x_mix, x_non_mix, I, step)
 				t_f = time.time()
 				time_spent = time_spent[1:] +[t_f-t]
 
-				print 'Step #'  , step,' loss=', c ,' ETA = ', getETA(sum(time_spent)/float(np.count_nonzero(time_spent))
-					, nb_batches_train, b, nb_epochs, epoch)
+				print 'Epoch #', epoch+1,'Step #', step+1,' loss=', c ,' ETA = ', getETA(sum(time_spent)/float(np.count_nonzero(time_spent))
+					, nb_batches, b, nb_epochs, epoch)
 
 				if step%self.args['validation_step'] == 0:
 					t = time.time()
-					# Select Validation set
-					self.mixed_data.select_split(1)
-
 					# Compute validation mean cost with batches
 					costs = []
-					for _ in range(nb_batches_valid):
-						X_v_non_mix, X_v_mix, I = self.mixed_data.get_batch(batch_size_valid_test)
+					for x_mix_v, x_non_mix_v, I_v in self.dataset.get_batch(self.dataset.VALID, batch_size):
 
-						cost = self.model.valid_batch(X_v_mix, X_v_non_mix, I)
+						cost = self.model.valid_batch(x_mix_v, x_non_mix_v, I_v)
 						costs.append(cost)
 
 					valid_cost = np.mean(costs)
@@ -155,27 +121,22 @@ class Trainer(object):
 						best_path = self.model.save(step)
 						print 'Save best model with :', best_validation_cost
 
-					self.mixed_data.reset()
-					self.mixed_data.select_split(0)
-
 					t_f = time.time()
 					print 'Validation set tested in ', t_f - t, ' seconds'
 					print 'Validation set: ', valid_cost
-			self.mixed_data.reset() # Reset the Training set from the beginning
+				
+				step += 1
 
 		print 'Best model with Validation:  ', best_validation_cost
 		print 'Path = ', best_path
 
 		# Load the best model on validation set and test it
 		self.model.restore_last_checkpoint()
-		self.mixed_data.select_split(2)
-		for _ in range(nb_batches_test):
-			X_t_non_mix, X_t_mix, I = self.mixed_data.get_batch(batch_size_valid_test)
-
-			cost = self.model.valid_batch(X_t_mix, X_t_non_mix)
+		
+		for x_mix_t, x_non_mix_t, I_t in self.dataset.get_batch(self.dataset.TEST, batch_size):
+			cost = self.model.valid_batch(x_mix_t, x_non_mix_t, I_t)
 			costs.append(cost)
 		print 'Test cost = ', np.mean(costs)
-		self.mixed_data.reset()
 
 from models.adapt import Adapt
 

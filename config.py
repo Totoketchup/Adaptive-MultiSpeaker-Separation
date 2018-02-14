@@ -3,6 +3,7 @@
 ########################
 import os
 
+seed = 42
 
 workdir = os.path.dirname(os.path.abspath(__file__))
 floydhub = (workdir == '/code' or workdir == '/output') #We are on Floydhub
@@ -17,7 +18,6 @@ else:
 	h5py_root = os.path.join(workdir, 'h5py_files')
 	model_root = workdir
 	log_dir = os.path.join(workdir,'log')
-
 
 ###
 ## Raw data

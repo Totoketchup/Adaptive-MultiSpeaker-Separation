@@ -5,113 +5,226 @@ import data_tools
 import soundfile as sf
 import os
 import config
-from utils.audio import create_spectrogram, downsample
-from sets import Set
+from utils.audio import create_spectrogram
 from utils.tools import print_progress
 from tqdm import tqdm 
+import copy
 
-class H5PY_RW:
+class ConsistentRandom:
+	def __init__(self, seed):
+		self.previous_state = np.random.get_state()
+		np.random.seed(seed)
+		self.state = np.random.get_state()
 
-	def __init__(self, path, subset=None):
+	def __enter__(self):
+		np.random.set_state(self.state)
+
+	def __exit__(self, exc_type, exc_value, traceback):
+		np.random.set_state(self.previous_state)
+
+
+class Dataset(object):
+
+	def __init__(self, ratio=[0.90, 0.05, 0.05], sex=['M', 'F'], **kwargs):
 		"""
-		Open a LibriSpeech H5PY file.
-		
 		Inputs:
-			filename: name of h5 file
+			path: path to the h5 file
 			subset: subset of speakers used, default = None (all in the file)
 		"""
+		print kwargs
+		np.random.seed(config.seed)
+		self.nb_speakers = kwargs['nb_speakers']
+		self.sex = sex
+		self.batch_size = kwargs['batch_size']
+		self.chunk_size = kwargs['chunk_size']
 
-		self.h5 = h5py.File(path, 'r')
-		
-		# Define the the keys for each speaker
-		if subset == None:
-			self.keys = [key for key in self.h5] # All
-		else:
-			self.keys = subset # Subset of the H5 file
+		self.TRAIN = 0
+		self.VALID = 1
+		self.TEST = 2
+
+
+		# TODO 
+		metadata = data_tools.read_metadata()
+
+		if sex != ['M', 'F'] and sex != ['F', 'M'] and sex != ['M'] and sex != ['F']:
+			raise Exception('Sex must be ["M","F"] |  ["F","M"] | ["M"] | [F"]')
+
+		self.key_to_index = {}
+		j = 0
+		if 'M' in sex:
+			self.M = data_tools.males_keys(metadata)
+			for k in self.M:
+				self.key_to_index[k] = j
+				j += 1 
+		if 'F' in sex:
+			self.F = data_tools.females_keys(metadata)
+			for k in self.F:
+				self.key_to_index[k] = j
+				j += 1
+
+		self.tot_speakers = j
+
+		self.file = h5py.File(kwargs['dataset'], 'r')
 
 
 		# Define all the items related to each key/speaker
-		items = []
-		for key in self.keys:
-			items += [key + '/' + val  for val in self.h5[key]]
+		self.total_items = []
 
-		self.raw_items = items # Original definition of items, never modified
-		self.items = items # current definition of items, modified according to 'chunk' parameter
-		self.index_item = 0 # current index 
+		if 'M' in sex:
+			for key in self.M:
+				for val in self.file[key]:
+					chunks = self.file['/'.join([key,val])].shape[0]//self.chunk_size
+					self.total_items += ['/'.join([key,val,str(i)]) for i in range(chunks)]
 
-		self.chunk_size = 0 # If = 0 then no chunk applied, all the audio is used
+		if 'F' in sex:
+			for key in self.F:
+				for val in self.file[key]:
+					chunks = self.file['/'.join([key,val])].shape[0]//self.chunk_size
+					self.total_items += ['/'.join([key,val,str(i)]) for i in range(chunks)]
 
-	def set_chunk(self, chunk_size):
-		"""
-		Define the size of the chunk: each data is chunked with 'chunk_size'
-		"""
-		self.chunk_size = chunk_size
-		items = []
+		np.random.shuffle(self.total_items)
 
-		# Chunk along the first axis
-		# Define items like this:
-		# items = ['speaker_key/audio_file/part_according_to_chunk']
-		# For example, with 3 parts:
-		# items = ['speaker_key/audio_file/0', 'speaker_key/audio_file/1', 'speaker_key/audio_file/2']
-		for item in self.raw_items:
-			L = self.h5[item].shape[0]//chunk_size
-			items += [item +'/' + str(part) for part in range(L)]
-		# Update the items into chunked items
-		self.items = items
+		L = len(self.total_items)
+		# Shuffle all the items
 
-		return self
-
-	def next_in_split(self, splits, split_index):
-		"""
-		Return next chunked item in the indicated split
-		Input:
-			splits: ratio of each split (array)
-			index: split index
-		"""
-
-		if not hasattr(self, 'index_item_split'):
-			self.index_item_split = np.array([ int(sum(splits[0:i])*len(self.items)) for i in range(len(splits))], dtype = np.int32)
-		item_path = self.items[self.index_item_split[split_index]]
-		split_path = item_path.split('/')
-		# Speaker indice
-		key = int(split_path[0])
-
-		if self.chunk_size !=0:
-			# Which part to chunk
-			i = int(split_path[2])
-
-			# Cut the data according to the chunk
-			item_path = '/'.join(split_path[:2])
-			X = self.h5[item_path][i*self.chunk_size : (i+1)*self.chunk_size]
-		else:
-		 	X = self.h5[item_path][:] # get the full data
-
-		self.index_item_split[split_index]+=1
-		if self.index_item_split[split_index] >= int(sum(splits[0:split_index+1])*len(self.items)):
-			self.index_item_split[split_index] = int(sum(splits[0:split_index])*len(self.items))
-
-		return X, key
-
-	def reset_split(self, splits, index):
-		self.index_item_split[index] = int(sum(splits[0:index])*len(self.items))
-
-	def shuffle(self, seed=1):
-		np.random.seed(seed)
-		np.random.shuffle(self.items)
-		return self
-
-	def speakers(self):
-		return self.keys
-
-	def length(self):
-		return len(self.items)
+		# Training / Valid / Test Separation
+		train = self.create_tree(self.total_items[:int(L*ratio[0])])
+		valid = self.create_tree(self.total_items[int(L*ratio[0]):int(L*(ratio[0]+ratio[1]))])
+		test = self.create_tree(self.total_items[int(L*(ratio[0]+ratio[1])):])
+		self.items = [train, valid, test]
+		# Init Seed here
 
 	def __iter__(self):
+		self.used = copy.deepcopy(self.items[self.index])
 		return self
 
+	def create_tree(self, items_list):
 
+		items = {'M':{}, 'F':{}}
+		tot_M = 0
+		tot_F = 0
+		for item in tqdm(items_list, desc='Creating Dataset'):
+			splits = item.split('/')
+			key = splits[0]
+			if 'M' in self.sex and key in self.M:
+				if key in items['M']:
+					items['M'][key].append(item)
+				else:
+					items['M'][key] = [item]
+				tot_M += 1
+			if 'F' in self.sex and key in self.F:
+				if key in items['F']:
+					items['F'][key].append(item)
+				else:
+					items['F'][key] = [item]
+				tot_F += 1
 
+		if len(self.sex) > 1:
+			if tot_M < tot_F:
+				D = tot_F - tot_M
+				K = items['F'].keys()
+				L = len(K)
+				for i in range(D):
+					l = items['F'][K[i%L]]
+					l.remove(np.random.choice(l))
+					if len(l) == 0:
+						del items['F'][K[i%L]]
+					tot_F -= 1
+			else:
+				D = tot_M - tot_F
+				K = items['M'].keys()
+				L = len(K)
+				for i in range(D):
+					l = items['M'][K[i%L]]
+					l.remove(np.random.choice(l))
+					if len(l) == 0:
+						del items['M'][K[i%L]]
+					tot_M -= 1
+		print items
+		items['tot'] = tot_F + tot_M
+		return items
 
+	def get_batch(self, index, batch_size, fake=False):
+		with ConsistentRandom(config.seed):
+			used = copy.deepcopy(self.items[index])
+			while True:
+				batch = ([], [], [])
+				for i in range(batch_size):
+					if fake: 
+						self.next_item(used, fake)
+					else: 
+						mix, non_mix, I = self.next_item(used, fake)
+						batch[0].append(mix)
+						batch[1].append(non_mix)
+						batch[2].append(I)
+				yield batch
+
+	def next_item(self, used, fake=False):
+
+		genre = np.random.choice(self.sex, self.nb_speakers)
+
+		mix = []
+		for s in self.sex:
+			nb = sum(map(int,genre == s))
+			if nb > len(used[s].keys()):
+				raise StopIteration()
+
+			keys = np.random.choice(used[s].keys(), nb, replace=False)
+
+			for key in keys:
+				choice = np.random.choice(used[s][key])	
+				mix.append(choice)
+				used[s][key].remove(choice)
+				if len(used[s][key]) == 0:
+					del used[s][key]
+
+		if not fake:
+			# TODO MIXING TYPE !
+			mix_array = np.zeros((self.chunk_size))
+			# non_mix_array = np.zeros((self.nb_speakers, self.chunk_size))
+			# indices = np.zeros((self.nb_speakers), dtype=int)
+			# mix_array = np.zeros()
+			non_mix_array = []
+			indices = []
+			for i, m in enumerate(mix):
+				splits = m.split('/')
+				key_index = self.key_to_index[splits[0]]
+				chunk = int(splits[-1])
+				item_path = '/'.join(splits[:-1])
+
+				item = self.file[item_path][chunk*self.chunk_size:(chunk+1)*self.chunk_size]
+				mix_array +=item
+
+				non_mix_array.append(item)
+				indices.append(key_index)
+
+			return mix_array, non_mix_array, indices
+
+	def nb_batch(self, batch_size):
+		i = 0 
+		for _ in tqdm(self.get_batch(self.TRAIN, batch_size, fake=True), desc='Counting batches'):
+			i+=1
+		return i
+
+	def empty_next(self):
+		genre = np.random.choice(self.sex, self.nb_speakers)
+
+		mix = []
+		for s in self.sex:
+			nb = sum(map(int,genre == s))
+			if nb > len(self.used[s].keys()):
+				self.used = copy.deepcopy(self.items)
+				raise StopIteration()
+
+			keys = np.random.choice(self.used[s].keys(), nb, replace=False)
+
+			for key in keys:
+				choice = np.random.choice(self.used[s][key])	
+				mix.append(choice)
+				self.used[s][key].remove(choice)
+				if len(self.used[s][key]) == 0:
+					del self.used[s][key]
+		return
 
 	@staticmethod
 	def create_h5_dataset(self, output_fn, subset=config.data_subset, data_root=config.data_root):
@@ -211,264 +324,17 @@ class H5PY_RW:
 
 		print 'Dataset for the subset: ' + subset + ' has been built'
 
-class Mixer:
-
-	def __init__(self, datasets, chunk_size=0, shuffling=False, with_mask=True, 
-		with_inputs=False, splits = [0.9, 0.05, 0.05], mixing_type='add', mask_positive_value=1, 
-		mask_negative_value=-1, nb_speakers = 2, random_picking=False):
-		"""
-		Mix multiple H5PY file writer/reader (H5PY_RW)
-		Inputs:
-			datasets: array of H5PY reader
-			mixing_type: 'add' (Default), 'mean'
-			splits: Percentage for Training Set (Default 0.8), for Testing set (Default 0.1), for Validation Set (Default 0.1)
-			mask_positive_value: Bin value if the spectrogram bin belong to the mask
-			mask_negative_value: Bin value if the spectrogram bin does not belong to the mask
-		"""
-		np.random.seed(42)
-
-		self.datasets = datasets
-		self.type = mixing_type
-		self.create_labels()
-		self.with_mask = with_mask
-		self.with_inputs = with_inputs
-		self.mixing_type = mixing_type
-		self.mask_negative_value = mask_negative_value
-		self.mask_positive_value = mask_negative_value
-		self.splits = splits
-		self.split_index = 0 # Training split by default
-		self.chunk_size = chunk_size
-		self.nb_speakers = nb_speakers
-		self.random_picking = random_picking
-
-		if chunk_size !=0:
-			for dataset in datasets:
-				dataset.set_chunk(chunk_size)
-
-		if shuffling:
-			self.shuffle()
-
-		# Align both dataset:
-		self.size = np.amin([x.length() for x in datasets])
-		for dataset in datasets:
-			# Adjust size to the smallest dataset in order to have 
-			# regular epochs
-			dataset.items = dataset.items[0:self.size]
-
-		self.splits_size = [int(split_ratio*self.size) for split_ratio in splits]
-
-	def shuffle(self):
-		for i, dataset in enumerate(self.datasets):
-			dataset.shuffle(seed=i+1)
-
-	def select_split(self, index):
-		self.split_index = index
-		return self
-
-	def selected_split_size(self):
-		return int(self.splits[self.split_index]*self.size)
-
-	def reset(self):
-		np.random.seed(42)
-		for d in self.datasets:
-			d.reset_split(self.splits, self.split_index)
-
-	def nb_batches(self, batch_size):
-		return int(self.splits[self.split_index]*self.size/batch_size)
-
-	def next(self):
-		X_d = []
-		key_d = []
-
-		# Where dataset are chosen:
-		if self.random_picking:
-			# Take the number of desired speakers randomly among the datasets [Males, Females]
-			choice = np.random.choice(len(self.datasets), self.nb_speakers, replace=True)
-		else:
-			# Take [M, F, M, F ... ] 'nb_speakers times'
-			choice = []
-			indicies = np.arange(len(self.datasets))
-			choice = np.array([indicies[i%len(indicies)] for i in range(self.nb_speakers)])
-
-		for dataset in np.array(self.datasets)[choice]:
-			X, key = dataset.next_in_split(self.splits, self.split_index)
-			X_d.append(X)
-			key_d.append(key)
-
-		if self.datasets[0].chunk_size == 0: # If there is no chunk but the full data
-			# Adjust the size of each input to the smallest one 
-			lengths = [len(x) for x in X_d]
-			min_ = np.amin(lengths)
-			X_d = [x[:min_] for x in X_d]
-
-		key_d = np.array(key_d)
-		X_non_mix = np.array(X_d)
- 
-		if self.mixing_type == 'add':
-			X_mix = np.sum(X_non_mix, axis=0)
-		elif self.mixing_type == 'mean':
-			X_mix = np.mean(X_non_mix, axis=0)
-
-		if self.with_mask:
-			Y_pos = np.argmax(X_non_mix, axis=0)
-			Y_pos[Y_pos == 0 ] = self.mask_negative_value
-			Y = np.array([Y_pos, -Y_pos]).transpose((1,2,0))
-
-		if self.with_inputs:
-			return X_non_mix, X_mix, key_d
-		elif self.with_inputs and self.with_mask:
-			return X_mix, Y, key_d, X_non_mix
-		else:
-			return X_mix, key_d
-
-	def get_batch(self, batch_size):
-		X_mix = []
-		Ind = []
-
-		if self.with_mask:
-			Y = []
-		if self.with_inputs:
-			X_non_mix = []
-
-		for i in range(batch_size):
-			if self.with_mask:
-				x_mix, y, ind = self.next()
-				Y.append(y)
-			elif self.with_inputs:
-				x_non_mix, x_mix, ind = self.next()
-				X_non_mix.append(x_non_mix)
-
-			X_mix.append(x_mix)
-			Ind.append([self.dico[j] for j in ind])
-
-		if self.with_mask:
-			return np.array(X_mix), np.array(Y), np.array(Ind)
-
-		if self.with_inputs:
-			return np.array(X_non_mix), np.array(X_mix), np.array(Ind)
-
-		return np.array(X_mix), np.array(Ind)
-
-	def get_only_first_items(self, size):
-		batch = self.get_batch(size)
-		# Hack on the split index -> reset to zero
-		for dataset in self.datasets:
-			dataset.reset_split(self.splits, self.split_index)
-		return batch
-
-	def create_labels(self):
-		# Create a set of all the speaker indicies 
-		self.items = Set()
-		for dataset in self.datasets:
-			self.items.update(dataset.speakers())
-
-		self.items = list(self.items)
-		self.items.sort()
-		self.dico = {}
-
-		# Assign ordered indicies to each speaker indicies
-		for i, item in enumerate(self.items):
-			self.dico[int(item)] = i
-
-	def __iter__(self):
-		return self
-
-	def get_labels(self):
-		return self.dico
-
-from data_tools import read_metadata, males_keys, females_keys
 
 if __name__ == "__main__":
-	pass
 	###
 	### TEST
 	##
-	H5_dic = read_metadata()
-	# print H5_dic
-	# chunk_size = 512*100
-
-	# males = H5PY_RW('test_raw.h5py', subset = males_keys(H5_dic))
-	# fem = H5PY_RW('test_raw.h5py', subset = females_keys(H5_dic))
-
-	# print 'Data with', len(H5_dic), 'male and female speakers'
-	# print males.length(), 'elements'
-	# print fem.length(), 'elements'
-
-	# mixed_data = Mixer([males, fem], chunk_size= chunk_size, with_mask=False, with_inputs=True, shuffling=True)
-
-	# batch_size = 128
-
-	# mixed_data.adjust_split_size_to_batchsize(batch_size)
-	# nb_batches = mixed_data.nb_batches(batch_size)
-
-	# nb_to_speaker = mixed_data.dico
-	# id_f = []
-	# id_m = []
-
-	# for i in range(nb_batches):
-	# 		_,_, ind = mixed_data.get_batch(batch_size)
-	# 		for key, id_ in nb_to_speaker.iteritems():
-	# 			for b in range(batch_size):
-	# 				if id_ == ind[b][0]:
-	# 					if b == 0:
-	# 						id_m += [key]
-	# 					assert H5_dic[str(key)]['sex'] == 'M' 
-	# 				if id_ == ind[b][1]:
-	# 					if b == 0:
-	# 						id_f += [key]
-	# 					assert H5_dic[str(key)]['sex'] == 'F' 
-
-	# mixed_data.select_split(1)
-	# x_non_test , x_test , _ = mixed_data.get_only_first_items(8)
-	# mixed_data.select_split(0)
-
-	# for j in range(2):
-	# 	for i in range(nb_batches):
-	# 		_,_, ind = mixed_data.get_batch(batch_size)
-	# 		for key, id_ in nb_to_speaker.iteritems():
-	# 			if id_ == ind[0][0]:
-	# 				assert id_m[i] == key 
-	# 			if id_ == ind[0][1]:
-	# 				assert id_f[i] == key
-	# sH5PY_RW.create_raw_audio_dataset('train-clean-100-8-s.h5', subset='train-clean-100')
-	# print nb_to_speaker.values()
-	# print ind
-
-	# H5_dic = read_metadata()
-	# males = H5PY_RW('dev-clean.h5', subset = males_keys(H5_dic))
-	
-
-	males = H5PY_RW("h5py_files/train-clean-100-8-s.h5", subset = males_keys(H5_dic))
-	fem = H5PY_RW("h5py_files/train-clean-100-8-s.h5", subset = females_keys(H5_dic))
-
-	mixed_data = Mixer([males, fem], chunk_size=5120, 
-		with_mask=False, with_inputs=True, shuffling=True,
-		nb_speakers=2, random_picking=False)
-
-	print mixed_data.splits_size
-
-	bs = 4
-	nb_batches = mixed_data.nb_batches(bs)
-
-	for epoch in range(2):
-		for b in range(nb_batches):
-			print '-----'
-			X_non_mix, X_mix, _ = mixed_data.get_batch(bs)
-
-			if b%5 == 0:
-				mixed_data.select_split(1)
-				valid_batch = mixed_data.nb_batches(bs)
-				for v_b in range(valid_batch):
-					print 'xxxxxxxxxx'
-					mixed_data.get_batch(bs)
-				mixed_data.reset()
-				mixed_data.select_split(0)
-
-		mixed_data.reset()
-
-	mixed_data.select_split(2)
-	test_nb_batch = mixed_data.nb_batches(bs)
-	for t_b in range(test_nb_batch):
-		print 'xxxxxxxxxx'
-		mixed_data.get_batch(bs)
-	mixed_data.reset()
+	d = Dataset(dataset="h5py_files/train-clean-100-8-s.h5", chunk_size=20480, batch_size=100, nb_speakers=2)
+	print 'NB BATCHE', d.nb_batch(batch_size=1)
+	for i ,(x_mix, x_non_mix, I) in enumerate(d.get_batch(d.TRAIN, 1)):
+		print I
+		if i%10 == 0:
+			for i ,(x_mix, x_non_mix, I) in enumerate(d.get_batch(d.VALID, 1)):
+				print I
+	for i ,(x_mix, x_non_mix, I) in enumerate(d.get_batch(d.TRAIN, 1)):
+		print I

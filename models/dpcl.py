@@ -2,6 +2,7 @@
 from utils.ops import BLSTM, Conv1D, Reshape, Normalize, f_props, scope
 from network import Separator
 import tensorflow as tf
+
 ############################################
 #       Deep Clustering Architecture       #
 ############################################
@@ -11,7 +12,7 @@ class DPCL(Separator):
 	def __init__(self, graph=None, **kwargs):
 		kwargs['mask_a'] = 1.0
 		kwargs['mask_b'] = 0.0
-		
+
 		super(DPCL, self).__init__(graph, **kwargs)
 		self.init_separator()
 
