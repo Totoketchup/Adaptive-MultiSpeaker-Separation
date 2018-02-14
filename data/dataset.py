@@ -158,10 +158,10 @@ class Dataset(object):
 
 	def next_item(self, used, fake=False):
 
-		if self.no_random_picking:
-			genre = np.array(['M' if i%2 == 0 else 'F' for i in range(self.nb_speakers)])
-		else:
+		if not self.no_random_picking or len(self.sex) == 1:
 			genre = np.random.choice(self.sex, self.nb_speakers)
+		else:
+			genre = np.array(['M' if i%2 == 0 else 'F' for i in range(self.nb_speakers)])
 
 		mix = []
 		for s in self.sex:
