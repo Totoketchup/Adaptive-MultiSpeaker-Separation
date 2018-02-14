@@ -165,7 +165,7 @@ class Adapt(Network):
 
 			# Combination of non mixed representations : [B, len(comb), nb, T*N]
 			comb_non_mix = tf.abs(comb_non_mix)
-			measure = 1.0 - tf.abs(comb_non_mix[:,:,0,:] - comb_non_mix[:,:,1,:]) / tf.reduce_max(comb_non_mix, axis=2)
+			measure = 1.0 - tf.abs(comb_non_mix[:,:,0,:] - comb_non_mix[:,:,1,:]) / (tf.reduce_max(comb_non_mix, axis=2) + 1e-8)
 			overlapping = tf.reduce_mean(measure, -1) # Mean over the bins
 			overlapping = tf.reduce_mean(overlapping, -1) # Mean over combinations
 			self.overlapping = tf.reduce_mean(overlapping, -1) # Mean over batces
