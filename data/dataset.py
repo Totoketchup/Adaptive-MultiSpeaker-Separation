@@ -36,11 +36,10 @@ class Dataset(object):
 		self.sex = kwargs['sex']
 		self.batch_size = kwargs['batch_size']
 		self.chunk_size = kwargs['chunk_size']
-
+		self.no_random_picking = kwargs['no_random_picking']
 		self.TRAIN = 0
 		self.VALID = 1
 		self.TEST = 2
-
 
 		# TODO 
 		metadata = data_tools.read_metadata()
@@ -159,7 +158,10 @@ class Dataset(object):
 
 	def next_item(self, used, fake=False):
 
-		genre = np.random.choice(self.sex, self.nb_speakers)
+		if self.no_random_picking:
+			genre = np.array(['M' if i%2 == 0 else 'F' for i in range(self.nb_speakers)])
+		else:
+			genre = np.random.choice(self.sex, self.nb_speakers)
 
 		mix = []
 		for s in self.sex:

@@ -253,7 +253,7 @@ class Adapt(Network):
 		# Compute mean over batches
 		self.SDR  = tf.reduce_sum(self.mse, -1) #+  0.5*tf.reduce_mean(self.sdr)
 		self.SDR  = tf.reduce_mean(self.SDR, -1)
-		self.cost_value = self.sdr_improvement()[1] + self.sparse_reg + self.reg #+ self.overlap_coef*self.overlapping_loss
+		self.cost_value = self.sdr_improvement()[1] + self.sparse_reg + self.reg + self.overlap_coef*self.overlapping_loss
 		print self.SDR, self.sparse_reg, self.reg
 		variable_summaries(self.conv_filter)
 		variable_summaries(self.conv_filter_2)

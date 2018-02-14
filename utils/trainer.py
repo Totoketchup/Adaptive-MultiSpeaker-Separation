@@ -19,7 +19,7 @@ class MyArgs(object):
 		parser.add_argument(
 			'--nb_speakers', type=int, help='Number of mixed speakers', required=False, default=2)
 		parser.add_argument(
-			'--no_random_picking', help='Do not pick random genders when mixing', action="store_false")
+			'--no_random_picking', help='Do not pick random genders when mixing', action="store_true")
 		parser.add_argument(
 			'--validation_step',type=int, help='Nb of steps between each validation', required=False, default=1000)
 		parser.add_argument(
@@ -79,7 +79,7 @@ class MyArgs(object):
 		self.parser.add_argument(
 			'--sparsity', type=float, help='Average Sparsity constraint', required=False, default=0.01)
 		self.parser.add_argument(
-			'--overlap_coef', type=float, help='Coefficient for Overlapping loss', required=False, default=0.1)
+			'--overlap_coef', type=float, help='Coefficient for Overlapping loss', required=False, default=0.001)
 		self.parser.add_argument(
 			'--overlap_value', type=float, help='Coefficient for Overlapping loss', required=False, default=0.1)
 
