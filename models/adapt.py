@@ -29,6 +29,7 @@ class Adapt(Network):
 			self.pretraining = kwargs['pretraining']
 			self.overlap_coef = kwargs['overlap_coef']
 			self.overlap_value = kwargs['overlap_value']
+			self.loss = kwargs['loss']
 
 		with self.graph.as_default():
 
@@ -119,7 +120,7 @@ class Adapt(Network):
 		y_shape = tf.shape(self.y)
 		y = tf.reshape(self.y, [self.B_tot, y_shape[1]*y_shape[2]])
 		self.p_hat = tf.reduce_mean(tf.abs(y), 0)
-		self.latent_loss = tf.reduce_sum(kl_div(self.p, self.p_hat))
+		self.sparse_constraint = tf.reduce_sum(kl_div(self.p, self.p_hat))
 
 		return self.y, argmax
 
@@ -168,7 +169,7 @@ class Adapt(Network):
 			# overlapping = tf.reduce_mean(measure, -1) # Mean over the bins
 			overlapping = tf.reduce_mean(measure, -2) # Mean over combinations
 			self.overlapping = tf.reduce_mean(overlapping, 0) # Mean over batches
-			self.overlapping_loss = tf.reduce_sum(kl_div(self.overlap_value, self.overlapping))
+			self.overlapping_constraint = tf.reduce_sum(kl_div(self.overlap_value, self.overlapping))
 
 
 			# filters = tf.divide(input_non_mix, tf.clip_by_value(input_mix, 1e-4, 1e10))
@@ -216,19 +217,25 @@ class Adapt(Network):
 	def cost(self):
 		# Definition of cost for Adapt model
 		# Regularisation
-		# shape = [B_tot, T, N]
-		self.sparse_reg = self.beta * self.latent_loss
-		
-		self.reg = self.l * (tf.nn.l2_loss(self.conv_filter_2)+ tf.nn.l2_loss(self.conv_filter))
+		# shape = [B_tot, T, N]		
+		regularization = tf.nn.l2_loss(self.conv_filter_2) + tf.nn.l2_loss(self.conv_filter)
 		
 		# input_shape = [B, S, L]
 		# Doing l2 norm on L axis : 
 		if self.pretraining:
-			# self.mse = log10(tf.reduce_sum(tf.square(self.back), axis=-1)/tf.square(tf.reduce_sum(self.back*self.X_non_mix, axis=-1)))
-			self.mse = tf.reduce_sum(tf.square(self.x_non_mix - self.back), axis=-1)
-			# self.sdr = - tf.reduce_mean(self.back*self.X_non_mix, -1)**2/tf.reduce_mean(tf.square(self.back), -1) 
-			# self.sdr = tf.reduce_mean(self.sdr, -1)
+			
+			l2 = tf.reduce_sum(tf.square(self.x_non_mix - self.back), axis=-1)
+			l2 = tf.reduce_sum(l2, -1) # Sum over all the speakers 
+			l2 = tf.reduce_mean(l2, -1) # Mean over batches
 
+			sdr = self.sdr_improvement()[1]
+			sdr = tf.reduce_mean(sdr) # Mean over speakers
+			sdr = tf.reduce_mean(sdr) # Mean over batches
+
+			if self.loss == 'l2':
+				loss = l2
+			elif self.loss == 'sdr':
+				loss = sdr
 		else:
 			# Compute loss over all possible permutations
 			
@@ -245,16 +252,17 @@ class Adapt(Network):
 			permuted_back = tf.gather_nd(tf.tile(tf.reshape(self.back, [self.B, 1, self.S, self.L]), [1, length_perm, 1, 1]), indicies) # 
 
 			X_nmr = tf.reshape(self.x_non_mix, [self.B, 1, self.S, self.L])
-			# TODO
-			self.mse = tf.reduce_sum(tf.square(X_nmr - permuted_back), axis=-1)
-			self.mse = tf.reduce_min(self.mse, axis=1)
+
+			loss = tf.reduce_sum(tf.square(X_nmr - permuted_back), axis=-1) # L2^2 norm
+			loss = tf.reduce_min(loss, axis=1) # Get the minimum over all possible permutations
 		
 		# shape = [B]
 		# Compute mean over batches
-		self.SDR  = tf.reduce_sum(self.mse, -1) #+  0.5*tf.reduce_mean(self.sdr)
-		self.SDR  = tf.reduce_mean(self.SDR, -1)
-		self.cost_value = self.sdr_improvement()[1] + self.sparse_reg + self.reg + self.overlap_coef*self.overlapping_loss
-		print self.SDR, self.sparse_reg, self.reg
+		cost_value = loss
+		cost_value += self.beta * self.sparse_constraint 
+		cost_value += self.l * regularization 
+		cost_value += self.overlap_coef * self.overlapping_constraint
+
 		variable_summaries(self.conv_filter)
 		variable_summaries(self.conv_filter_2)
 
@@ -269,17 +277,17 @@ class Adapt(Network):
 
 		tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
 		with tf.name_scope('loss_values'):
-			# tf.summary.scalar('loss', self.SDR)
-			tf.summary.scalar('mse', tf.reduce_mean(self.mse))
-			tf.summary.scalar('SDR', self.sdr_improvement()[0])
+			tf.summary.scalar('l2_loss', l2)
+			tf.summary.scalar('SDR', sdr)
+			tf.summary.scalar('SDR_improvement', self.sdr_improvement()[0])			
 			tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
-			tf.summary.scalar('sparse_reg', self.sparse_reg)
-			tf.summary.scalar('regularization', self.reg)
-			tf.summary.scalar('training_cost', self.cost_value)
+			tf.summary.scalar('sparsity_loss', self.sparse_constraint)
+			tf.summary.scalar('L2_reg', regularization)
+			tf.summary.scalar('loss', cost_value)
 			tf.summary.scalar('overlapping', tf.reduce_mean(self.overlapping))
-			tf.summary.scalar('overlapping_loss', self.overlapping_loss)
+			tf.summary.scalar('overlapping_loss', self.overlapping_constraint)
 
-		return self.cost_value
+		return cost_value
 
 	def sdr_improvement(self):
 		# B S L
@@ -294,10 +302,11 @@ class Adapt(Network):
 		s_target_s_2 = tf.square(tf.reduce_sum(s_target*s, axis=-1))
 		s_target_mix_2 = tf.square(tf.reduce_sum(s_target*mix, axis=-1))
 
-		separated = 10. * log10(1.0/((s_target_norm*s_approx_norm)/s_target_s_2 - 1.0))
+		sep = 1.0/((s_target_norm*s_approx_norm)/s_target_s_2 - 1.0)
+		separated = 10. * log10(sep)
 		non_separated = 10. * log10(1.0/((s_target_norm*mix_norm)/s_target_mix_2 - 1.0))
 
-		loss = tf.reduce_mean(tf.reduce_mean(- separated,-1),-1)
+		loss = 1/(sep+1.0)
 
 		val = separated - non_separated
 		val = tf.reduce_mean(val , -1) # Mean over speakers
@@ -315,9 +324,6 @@ class Adapt(Network):
 	def connect_front(self, separator_class):
 		self.sepNet = separator_class(self.graph, **self.args)
 
-	def connect_back(self):
-		self.back
-
 	def connect_only_front_to_separator(self, separator, freeze_front=True):
 		with self.graph.as_default():
 			self.connect_front(separator)
@@ -328,15 +334,6 @@ class Adapt(Network):
 			self.freeze_all_with('front')
 			self.optimize
 			self.tensorboard_init()
-
-	def connect_front_back_to_separator(self, separator):
-		with self.graph.as_default():
-			self.connect_front(separator)
-			self.sepNet.prediction
-			self.sepNet.output = self.sepNet.separate
-			self.separator
-			self.back
-			self.cost
 
 	def restore_front_separator(self, path, separator):
 		with self.graph.as_default():

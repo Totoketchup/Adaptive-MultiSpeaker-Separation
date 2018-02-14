@@ -82,6 +82,7 @@ class MyArgs(object):
 			'--overlap_coef', type=float, help='Coefficient for Overlapping loss', required=False, default=0.001)
 		self.parser.add_argument(
 			'--overlap_value', type=float, help='Coefficient for Overlapping loss', required=False, default=0.1)
+		self.parser.add_argument('--loss', choices=['l2', 'sdr'], required=False, default='sdr')
 
 	def get_args(self):
 		parsed = self.parser.parse_args()
@@ -108,7 +109,6 @@ class Trainer(object):
 
 	def build_model(self):
 		pass
-
 
 	def train(self):
 
