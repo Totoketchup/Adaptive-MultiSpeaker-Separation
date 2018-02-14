@@ -125,7 +125,6 @@ class Trainer(object):
 		step = 0
 		for epoch in range(nb_epochs):
 			for b ,(x_mix, x_non_mix, I) in enumerate(self.dataset.get_batch(self.dataset.TRAIN, batch_size)):
-
 				t = time.time()
 				c = self.model.train(x_mix, x_non_mix, I, step)
 				t_f = time.time()

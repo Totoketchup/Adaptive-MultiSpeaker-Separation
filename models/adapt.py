@@ -166,10 +166,10 @@ class Adapt(Network):
 			# Combination of non mixed representations : [B, len(comb), nb, T*N]
 			comb_non_mix = tf.abs(comb_non_mix)
 			measure = 1.0 - tf.abs(comb_non_mix[:,:,0,:] - comb_non_mix[:,:,1,:]) / tf.reduce_max(comb_non_mix, axis=2)
-			# overlapping = tf.reduce_mean(measure, -1) # Mean over the bins
-			overlapping = tf.reduce_mean(measure, -2) # Mean over combinations
-			self.overlapping = tf.reduce_mean(overlapping, 0) # Mean over batches
-			self.overlapping_constraint = tf.reduce_sum(kl_div(self.overlap_value, self.overlapping))
+			overlapping = tf.reduce_mean(measure, -1) # Mean over the bins
+			overlapping = tf.reduce_mean(overlapping, -1) # Mean over combinations
+			self.overlapping = tf.reduce_mean(overlapping, -1) # Mean over batces
+			self.overlapping_constraint = self.overlapping
 
 
 			# filters = tf.divide(input_non_mix, tf.clip_by_value(input_mix, 1e-4, 1e10))
@@ -283,11 +283,11 @@ class Adapt(Network):
 			tf.summary.scalar('SDR', sdr)
 			tf.summary.scalar('SDR_improvement', self.sdr_improvement()[0])			
 			tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
-			tf.summary.scalar('sparsity_loss', self.sparse_constraint)
-			tf.summary.scalar('L2_reg', regularization)
+			tf.summary.scalar('sparsity_loss', self.beta * self.sparse_constraint)
+			tf.summary.scalar('L2_reg', self.l * regularization)
 			tf.summary.scalar('loss', cost_value)
-			tf.summary.scalar('overlapping', tf.reduce_mean(self.overlapping))
-			tf.summary.scalar('overlapping_loss', self.overlapping_constraint)
+			tf.summary.scalar('overlapping', self.overlapping)
+			tf.summary.scalar('overlapping_loss', self.overlap_coef * self.overlapping_constraint)
 
 		return cost_value
 
