@@ -31,7 +31,6 @@ class Dataset(object):
 			path: path to the h5 file
 			subset: subset of speakers used, default = None (all in the file)
 		"""
-		print kwargs
 		np.random.seed(config.seed)
 		self.nb_speakers = kwargs['nb_speakers']
 		self.sex = sex
@@ -140,7 +139,6 @@ class Dataset(object):
 					if len(l) == 0:
 						del items['M'][K[i%L]]
 					tot_M -= 1
-		print items
 		items['tot'] = tot_F + tot_M
 		return items
 
