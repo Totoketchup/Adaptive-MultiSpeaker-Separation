@@ -9,6 +9,7 @@ if __name__ == '__main__':
 	p.parser.add_argument(
 		'--model_folder', help='Path to model folder to load', required=True)
 
+	p.add_adapt_args()
 	p.add_separator_args()
 	p.add_enhance_layer_args()
 	

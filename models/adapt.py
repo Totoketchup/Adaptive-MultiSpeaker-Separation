@@ -137,6 +137,29 @@ class Adapt(Network):
 		argmax_in = tf.tile(argmax_in, [1, self.S, 1, 1 ,1])
 		argmax_in = tf.reshape(argmax_in, shape*repeats)
 
+		# Compute the overlapping rate:
+		nb = 2
+		comb = list(combinations(range(self.S), nb))
+		len_comb = len(comb)
+		combs = tf.reshape(tf.constant(comb), [1, len_comb, 2, 1])
+		combs = tf.tile(combs, [self.B, 1, 1, 1])
+		batch_range = tf.tile(tf.reshape(tf.range(self.B, dtype=tf.int32), shape=[self.B, 1, 1, 1]), [1, len_comb, nb, 1])
+		comb_range = tf.tile(tf.reshape(tf.range(len_comb, dtype=tf.int32), shape=[1, len_comb, 1, 1]), [self.B, 1, nb, 1])
+		indicies = tf.concat([batch_range, comb_range, combs], axis=3)
+		self.T_max_pooled = tf.shape(separator_in)[1]
+		input = tf.reshape(separator_in, [self.B_tot, self.T_max_pooled, self.N])
+		input_non_mix = tf.reshape(input[self.B:, : , :], [self.B, self.S, self.T_max_pooled, self.N]) # B*S others non mix
+		comb_non_mix = tf.gather_nd(tf.tile(tf.reshape(input_non_mix, [self.B, 1, self.S, self.T_max_pooled*self.N]), [1, len_comb, 1, 1]), indicies) # 
+
+		# Combination of non mixed representations : [B, len(comb), nb, T*N]
+		comb_non_mix = tf.abs(comb_non_mix)
+		measure = 1.0 - tf.abs(comb_non_mix[:,:,0,:] - comb_non_mix[:,:,1,:]) / (tf.reduce_max(comb_non_mix, axis=2) + 1e-8)
+		overlapping = tf.reduce_mean(measure, -1) # Mean over the bins
+		overlapping = tf.reduce_mean(overlapping, -1) # Mean over combinations
+		self.overlapping = tf.reduce_mean(overlapping, -1) # Mean over batces
+		self.overlapping_constraint = self.overlapping
+
+
 		if self.pretraining:
 			self.T_max_pooled = tf.shape(separator_in)[1]
 
@@ -151,26 +174,6 @@ class Adapt(Network):
 			self.innonmix = tf.reshape(input_non_mix, [self.B*self.S, self.T_max_pooled, self.N, 1])
 
 			input_mix = tf.tile(input_mix, [1, self.S, 1, 1])
-
-			# Compute the overlapping rate:
-			nb = 2
-			comb = list(combinations(range(self.S), nb))
-			len_comb = len(comb)
-			combs = tf.reshape(tf.constant(comb), [1, len_comb, 2, 1])
-			combs = tf.tile(combs, [self.B, 1, 1, 1])
-			batch_range = tf.tile(tf.reshape(tf.range(self.B, dtype=tf.int32), shape=[self.B, 1, 1, 1]), [1, len_comb, nb, 1])
-			comb_range = tf.tile(tf.reshape(tf.range(len_comb, dtype=tf.int32), shape=[1, len_comb, 1, 1]), [self.B, 1, nb, 1])
-			indicies = tf.concat([batch_range, comb_range, combs], axis=3)
-			comb_non_mix = tf.gather_nd(tf.tile(tf.reshape(input_non_mix, [self.B, 1, self.S, self.T_max_pooled*self.N]), [1, len_comb, 1, 1]), indicies) # 
-
-			# Combination of non mixed representations : [B, len(comb), nb, T*N]
-			comb_non_mix = tf.abs(comb_non_mix)
-			measure = 1.0 - tf.abs(comb_non_mix[:,:,0,:] - comb_non_mix[:,:,1,:]) / (tf.reduce_max(comb_non_mix, axis=2) + 1e-8)
-			overlapping = tf.reduce_mean(measure, -1) # Mean over the bins
-			overlapping = tf.reduce_mean(overlapping, -1) # Mean over combinations
-			self.overlapping = tf.reduce_mean(overlapping, -1) # Mean over batces
-			self.overlapping_constraint = self.overlapping
-
 
 			# filters = tf.divide(input_non_mix, tf.clip_by_value(input_mix, 1e-4, 1e10))
 			# filters = tf.square(input_non_mix) / tf.clip_by_value(tf.reduce_sum(tf.square(input_non_mix), 1, keep_dims=True), 1e-4, 1e10) 
@@ -220,6 +223,8 @@ class Adapt(Network):
 		# shape = [B_tot, T, N]		
 		regularization = tf.nn.l2_loss(self.conv_filter_2) + tf.nn.l2_loss(self.conv_filter)
 		
+		
+
 		# input_shape = [B, S, L]
 		# Doing l2 norm on L axis : 
 		if self.pretraining:
@@ -228,7 +233,7 @@ class Adapt(Network):
 			l2 = tf.reduce_sum(l2, -1) # Sum over all the speakers 
 			l2 = tf.reduce_mean(l2, -1) # Mean over batches
 
-			sdr = self.sdr_improvement()[1]
+			sdr_improvement, sdr = self.sdr_improvement(self.x_non_mix, self.back)
 			sdr = tf.reduce_mean(sdr) # Mean over speakers
 			sdr = tf.reduce_mean(sdr) # Mean over batches
 
@@ -237,7 +242,7 @@ class Adapt(Network):
 			elif self.loss == 'sdr':
 				loss = sdr
 			else:
-				loss = 0.01*l2 + sdr
+				loss = 1e-3**l2 + sdr
 		else:
 			# Compute loss over all possible permutations
 			
@@ -255,8 +260,25 @@ class Adapt(Network):
 
 			X_nmr = tf.reshape(self.x_non_mix, [self.B, 1, self.S, self.L])
 
-			loss = tf.reduce_sum(tf.square(X_nmr - permuted_back), axis=-1) # L2^2 norm
-			loss = tf.reduce_min(loss, axis=1) # Get the minimum over all possible permutations
+			l2 = tf.reduce_sum(tf.square(X_nmr - permuted_back), axis=-1) # L2^2 norm
+			l2 = tf.reduce_min(l2, axis=1) # Get the minimum over all possible permutations : B S
+			l2 = tf.reduce_sum(l2, -1)
+			l2 = tf.reduce_mean(l2, -1)
+
+			sdr_improvement, sdr = self.sdr_improvement(X_nmr, self.back, True)
+			sdr = tf.reduce_min(sdr, 1) # Get the minimum over all possible permutations : B S
+			sdr = tf.reduce_sum(sdr, -1)
+			sdr = tf.reduce_mean(sdr, -1)
+
+			if self.loss == 'l2':
+				loss = l2
+			elif self.loss == 'sdr':
+				loss = sdr
+			else:
+				loss = 1e-3*l2 + sdr
+
+			
+
 		
 		# shape = [B]
 		# Compute mean over batches
@@ -284,7 +306,7 @@ class Adapt(Network):
 		with tf.name_scope('loss_values'):
 			tf.summary.scalar('l2_loss', l2)
 			tf.summary.scalar('SDR', sdr)
-			tf.summary.scalar('SDR_improvement', self.sdr_improvement()[0])			
+			tf.summary.scalar('SDR_improvement', sdr_improvement)			
 			tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
 			tf.summary.scalar('sparsity_loss', self.beta * self.sparse_constraint)
 			tf.summary.scalar('L2_reg', self.l * regularization)
@@ -294,17 +316,15 @@ class Adapt(Network):
 
 		return cost_value
 
-	def sdr_improvement(self):
-		# B S L
-		s_target = self.x_non_mix 
-		s = self.back
+	def sdr_improvement(self, s_target, s_approx, with_perm=False):
+		# B S L or B P S L
 		mix = tf.tile(tf.expand_dims(self.x_mix, 1) ,[1, self.S, 1])
 
 		s_target_norm = tf.reduce_sum(tf.square(s_target), axis=-1)
-		s_approx_norm = tf.reduce_sum(tf.square(s), axis=-1)
+		s_approx_norm = tf.reduce_sum(tf.square(s_approx), axis=-1)
 		mix_norm = tf.reduce_sum(tf.square(mix), axis=-1)
 
-		s_target_s_2 = tf.square(tf.reduce_sum(s_target*s, axis=-1))
+		s_target_s_2 = tf.square(tf.reduce_sum(s_target*s_approx, axis=-1))
 		s_target_mix_2 = tf.square(tf.reduce_sum(s_target*mix, axis=-1))
 
 		sep = 1.0/((s_target_norm*s_approx_norm)/s_target_s_2 - 1.0)
@@ -315,9 +335,15 @@ class Adapt(Network):
 
 		val = separated - non_separated
 		val = tf.reduce_mean(val , -1) # Mean over speakers
-		val = tf.reduce_mean(val , -1) # Mean over batches
+		if not with_perm:
+			val = tf.reduce_mean(val , -1) # Mean over batches
+		else:
+			val = tf.reduce_mean(val , 0) # Mean over batches
+			val = tf.reduce_min(val, -1)
 
 		return val, loss
+
+
 
 	def test_prediction(self, X_mix_test, X_non_mix_test, step):
 		pred, y = self.sess.run([self.sepNet.prediction, self.sepNet.y_test_export], {self.x_mix: X_mix_test, self.x_non_mix:X_non_mix_test, self.training:True})
