@@ -30,6 +30,7 @@ class Adapt(Network):
 			self.overlap_coef = kwargs['overlap_coef']
 			self.overlap_value = kwargs['overlap_value']
 			self.loss = kwargs['loss']
+			self.separation = kwargs['separation']
 
 		with self.graph.as_default():
 
@@ -175,17 +176,17 @@ class Adapt(Network):
 
 			input_mix = tf.tile(input_mix, [1, self.S, 1, 1])
 
-			# filters = tf.divide(input_non_mix, tf.clip_by_value(input_mix, 1e-4, 1e10))
-			# filters = tf.square(input_non_mix) / tf.clip_by_value(tf.reduce_sum(tf.square(input_non_mix), 1, keep_dims=True), 1e-4, 1e10) 
-			# output = tf.reshape(input_mix * filters, [self.B*self.S, self.T_max_pooled, self.N, 1])
+			if self.separation == 'mask':
+				filters = tf.divide(input_non_mix, tf.clip_by_value(input_mix, 1e-4, 1e10))
+				filters = tf.square(input_non_mix) / tf.clip_by_value(tf.reduce_sum(tf.square(input_non_mix), 1, keep_dims=True), 1e-4, 1e10) 
+				output = tf.reshape(input_mix * filters, [self.B*self.S, self.T_max_pooled, self.N, 1])
+			elif self.separation == 'perfect':
+				# From [a, b, c ,d] -> [a+b+c+d, a+b+c+d, a+b+c+d, a+b+c+d]
+				tiled_sum = tf.tile(tf.reduce_sum(input_non_mix, 1, keep_dims=True), [1, self.S, 1, 1])
+				# From [a+b+c+d, a+b+c+d, a+b+c+d, a+b+c+d] ->  [b+c+d, a+c+d, a+b+d, a+b+c]
+				X_add = tiled_sum - input_non_mix
+				output = tf.reshape(input_mix - X_add, [self.B*self.S, self.T_max_pooled, self.N, 1])
 
-			# From [a, b, c ,d] -> [a+b+c+d, a+b+c+d, a+b+c+d, a+b+c+d]
-			tiled_sum = tf.tile(tf.reduce_sum(input_non_mix, 1, keep_dims=True), [1, self.S, 1, 1])
-			# From [a+b+c+d, a+b+c+d, a+b+c+d, a+b+c+d] ->  [b+c+d, a+c+d, a+b+d, a+b+c]
-			X_add = tiled_sum - input_non_mix
-
-			output = tf.reshape(input_mix - X_add, [self.B*self.S, self.T_max_pooled, self.N, 1])
-			self.ou = output
 			return output, argmax_in
 
 		return self.sepNet.output, argmax_in
@@ -295,12 +296,6 @@ class Adapt(Network):
 
 		tf.summary.audio(name= "input/non-mixed", tensor = tf.reshape(self.x_non_mix, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
 		tf.summary.audio(name= "input/mixed", tensor = self.x[:self.B], sample_rate = config.fs, max_outputs=1)
-
-		# trs = lambda x : tf.transpose(x, [0, 2, 1, 3])
-		# tf.summary.image(name= "mix", tensor = trs(self.inmix), max_outputs=1)
-		# tf.summary.image(name= "non_mix", tensor = trs(self.innonmix), max_outputs=2)
-		# tf.summary.image(name= "separated", tensor = trs(self.ou), max_outputs=2)
-		# tf.summary.image(name= "separated", tensor = trs(self.unpool_board), max_outputs=2)
 
 		tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
 		with tf.name_scope('loss_values'):

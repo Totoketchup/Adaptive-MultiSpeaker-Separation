@@ -82,7 +82,10 @@ class MyArgs(object):
 			'--overlap_coef', type=float, help='Coefficient for Overlapping loss', required=False, default=0.001)
 		self.parser.add_argument(
 			'--overlap_value', type=float, help='Coefficient for Overlapping loss', required=False, default=0.1)
-		self.parser.add_argument('--loss', choices=['l2', 'sdr', 'l2+sdr', 'sdr+l2'], required=False, default='sdr')
+		self.parser.add_argument(
+			'--loss', choices=['l2', 'sdr', 'l2+sdr', 'sdr+l2'], required=False, default='sdr')
+		self.parser.add_argument(
+			'--separation', choices=['perfect', 'mask'], required=False, default='perfect')
 
 	def get_args(self):
 		parsed = self.parser.parse_args()
