@@ -242,7 +242,7 @@ class Adapt(Network):
 			elif self.loss == 'sdr':
 				loss = sdr
 			else:
-				loss = 1e-3**l2 + sdr
+				loss = 1e-3*l2 + sdr
 		else:
 			# Compute loss over all possible permutations
 			
