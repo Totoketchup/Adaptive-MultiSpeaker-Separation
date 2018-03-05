@@ -133,12 +133,13 @@ class Trainer(object):
 				t_f = time.time()
 				time_spent = time_spent[1:] +[t_f-t]
 
-				print 'Epoch #', epoch+1,'Step #', step+1,' loss=', c ,' ETA = ', getETA(sum(time_spent)/float(np.count_nonzero(time_spent))
+				print 'Epoch #', epoch+1,'Step #', step+1,' loss=', c \
+					, ' ETA = ', getETA(sum(time_spent)/float(np.count_nonzero(time_spent)) \
 					, nb_batches, b, nb_epochs, epoch)
 
 				if step%self.args['validation_step'] == 0:
 					t = time.time()
-					# Compute validation mean cost with batches
+					# Compute validation mean cost with batches to avoid memory problems
 					costs = []
 					for x_mix_v, x_non_mix_v, I_v in self.dataset.get_batch(self.dataset.VALID, batch_size):
 
@@ -148,7 +149,7 @@ class Trainer(object):
 					valid_cost = np.mean(costs)
 					self.model.add_valid_summary(valid_cost, step)
 
-					#Save model if it is better:
+					# Save the model if it is better:
 					if valid_cost < best_validation_cost:
 						best_validation_cost = valid_cost # Save as new lowest cost
 						best_path = self.model.save(step)
