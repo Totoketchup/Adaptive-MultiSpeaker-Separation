@@ -52,8 +52,6 @@ class MyArgs(object):
 		self.parser.add_argument(
 			'--embedding_size', type=int, help='Size of the embedding output', required=False, default=40)
 		self.parser.add_argument(
-			'--nonlinearity', help='Nonlinearity used', required=False, default='logistic')
-		self.parser.add_argument(
 			'--no_normalize', help='Normalization of the embedded space', action="store_false")
 
 	def add_enhance_layer_args(self):
@@ -61,6 +59,8 @@ class MyArgs(object):
 			'--nb_layers_enhance', type=int, help='Number of stacked BLSTMs for the enhance layer', required=False, default=3)
 		self.parser.add_argument(
 			'--layer_size_enhance', type=int, help='Size of hidden layers in BLSTM', required=False, default=600)
+		self.parser.add_argument(
+			'--nonlinearity', help='Nonlinearity used in output', choices=['tanh', 'softmax'], required=False, default='softmax')
 
 	def add_adapt_args(self):
 		#Preprocess arguments

@@ -184,7 +184,6 @@ class Separator(Network):
 		self.num_speakers = kwargs['tot_speakers']
 		self.layer_size = kwargs['layer_size']
 		self.embedding_size = kwargs['embedding_size']
-		self.nonlinearity = kwargs['nonlinearity']
 		self.normalize = kwargs['no_normalize']
 		self.nb_layers = kwargs['nb_layers']
 		self.a = kwargs['mask_a']
@@ -308,6 +307,9 @@ class Separator(Network):
 	def enhance(self):
 		# [B, S, T, F]
 		separated = tf.reshape(self.separate, [self.B, self.S, -1, self.F])
+		min_ = tf.reduce_min(separated, axis=[1,2], keep_dims=True)
+		max_ = tf.reduce_max(separated, axis=[1,2], keep_dims=True)
+		separated = (separated - min_) / (max_ - min_)
 
 		# X [B, T, F]
 		# Tiling the input S time - like [ a, b, c] -> [ a, a, b, b, c, c], not [a, b, c, a, b, c]
@@ -323,18 +325,17 @@ class Separator(Network):
 			BLSTM(self.args['layer_size_enhance'], 'BLSTM_'+str(i)) for i in range(self.args['nb_layers_enhance'])
 		]
 
-		# todo
-		mean, var = tf.nn.moments(sep_and_in, [1,2], keep_dims=True)
-		sep_and_in = (sep_and_in - mean)/var
-
 		y = f_props(layers, sep_and_in)
 		y = tf.layers.dense(y, self.F)
 
 		y = tf.reshape(y, [self.B, self.S, -1]) # [B, S, TF]
 
 		y = tf.transpose(y, [0, 2, 1]) # [B, TF, S]
+		if self.args['nonlinearity'] == 'softmax':
+			y = tf.nn.softmax(y) * tf.reshape(self.X, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
+		elif self.args['nonlinearity'] == 'tanh':
+			y = tf.nn.tanh(y) * tf.reshape(self.X, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
 
-		y = tf.nn.softmax(y) * tf.reshape(self.X, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
 		# y = y * tf.reshape(self.X, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
 		self.cost_in = y
 
