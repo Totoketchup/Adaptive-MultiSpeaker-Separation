@@ -2,24 +2,28 @@
 import h5py
 import numpy as np
 import data_tools
-import soundfile as sf
 import os
 import config
-from utils.audio import create_spectrogram
-from utils.tools import print_progress
 from tqdm import tqdm 
 import copy
 
+"""
+Class used to have a consistent Randomness between Training/Validation/Test for
+different batch size
+"""
 class ConsistentRandom:
 	def __init__(self, seed):
+		# Create a new Random State and save the current one
 		self.previous_state = np.random.get_state()
 		np.random.seed(seed)
 		self.state = np.random.get_state()
 
 	def __enter__(self):
+		# Apply the new state
 		np.random.set_state(self.state)
 
 	def __exit__(self, exc_type, exc_value, traceback):
+		# Restore the previous state
 		np.random.set_state(self.previous_state)
 
 
@@ -28,15 +32,19 @@ class Dataset(object):
 	def __init__(self, ratio=[0.90, 0.05, 0.05], **kwargs):
 		"""
 		Inputs:
-			path: path to the h5 file
-			subset: subset of speakers used, default = None (all in the file)
+			ratio: ratio for train / valid / test set
+			kwargs: Dataset parameters
 		"""
+
 		np.random.seed(config.seed)
+
 		self.nb_speakers = kwargs['nb_speakers']
 		self.sex = kwargs['sex']
 		self.batch_size = kwargs['batch_size']
 		self.chunk_size = kwargs['chunk_size']
 		self.no_random_picking = kwargs['no_random_picking']
+
+		# Flags for Training/Validation/Testing sets
 		self.TRAIN = 0
 		self.VALID = 1
 		self.TEST = 2
@@ -47,15 +55,21 @@ class Dataset(object):
 		if self.sex != ['M', 'F'] and self.sex != ['F', 'M'] and self.sex != ['M'] and self.sex != ['F']:
 			raise Exception('Sex must be ["M","F"] |  ["F","M"] | ["M"] | [F"]')
 
+		# Create a key to speaker index dictionnary
+		# And count the numbers of speakers
 		self.key_to_index = {}
+		self.sex_to_keys = {}
 		j = 0
+
 		if 'M' in self.sex:
 			self.M = data_tools.males_keys(metadata)
+			self.sex_to_keys['M'] = self.M
 			for k in self.M:
 				self.key_to_index[k] = j
 				j += 1 
 		if 'F' in self.sex:
 			self.F = data_tools.females_keys(metadata)
+			self.sex_to_keys['F'] = self.F
 			for k in self.F:
 				self.key_to_index[k] = j
 				j += 1
@@ -68,19 +82,17 @@ class Dataset(object):
 		# Define all the items related to each key/speaker
 		self.total_items = []
 
-		if 'M' in self.sex:
-			for key in self.M:
-				for val in self.file[key]:
-					chunks = self.file['/'.join([key,val])].shape[0]//self.chunk_size
-					self.total_items += ['/'.join([key,val,str(i)]) for i in range(chunks)]
-
-		if 'F' in self.sex:
-			for key in self.F:
-				for val in self.file[key]:
-					chunks = self.file['/'.join([key,val])].shape[0]//self.chunk_size
-					self.total_items += ['/'.join([key,val,str(i)]) for i in range(chunks)]
+		for key in self.key_to_index.keys():
+			for val in self.file[key]:
+				# Get one file related to a speaker and check how many chunks can be obtained
+				# with the current chunk size
+				chunks = self.file['/'.join([key,val])].shape[0]//self.chunk_size
+				# Add each possible chunks in the items with the following form:
+				# 'key/file/#chunk'
+				self.total_items += ['/'.join([key,val,str(i)]) for i in range(chunks)]
 
 		np.random.shuffle(self.total_items)
+		self.total_items = self.total_items[0:1000] 	
 
 		L = len(self.total_items)
 		# Shuffle all the items
@@ -90,7 +102,6 @@ class Dataset(object):
 		valid = self.create_tree(self.total_items[int(L*ratio[0]):int(L*(ratio[0]+ratio[1]))])
 		test = self.create_tree(self.total_items[int(L*(ratio[0]+ratio[1])):])
 		self.items = [train, valid, test]
-		# Init Seed here
 
 	def __iter__(self):
 		self.used = copy.deepcopy(self.items[self.index])
@@ -99,27 +110,25 @@ class Dataset(object):
 	def create_tree(self, items_list):
 
 		items = {'M':{}, 'F':{}}
-		tot_M = 0
-		tot_F = 0
+		tot = {'M':0, 'F':0}
+
+		# Putting Men items in 'M' dictionnary and Female items in the 'F' one
 		for item in tqdm(items_list, desc='Creating Dataset'):
 			splits = item.split('/')
-			key = splits[0]
-			if 'M' in self.sex and key in self.M:
-				if key in items['M']:
-					items['M'][key].append(item)
-				else:
-					items['M'][key] = [item]
-				tot_M += 1
-			if 'F' in self.sex and key in self.F:
-				if key in items['F']:
-					items['F'][key].append(item)
-				else:
-					items['F'][key] = [item]
-				tot_F += 1
+			key = splits[0] # Retrieve key
+			for s in self.sex:
+				if key in self.sex_to_keys[s]:
+					if key in items[s]:
+						items[s][key].append(item)
+					else:
+						items[s][key] = [item]
+					tot[s] += 1
+					break
 
+		# Balancing Women and Men items
 		if len(self.sex) > 1:
-			if tot_M < tot_F:
-				D = tot_F - tot_M
+			if tot['M'] < tot['F']:
+				D = tot['F'] - tot['M']
 				K = items['F'].keys()
 				L = len(K)
 				for i in range(D):
@@ -127,9 +136,9 @@ class Dataset(object):
 					l.remove(np.random.choice(l))
 					if len(l) == 0:
 						del items['F'][K[i%L]]
-					tot_F -= 1
+					tot['F'] -= 1
 			else:
-				D = tot_M - tot_F
+				D = tot['M'] - tot['F']
 				K = items['M'].keys()
 				L = len(K)
 				for i in range(D):
@@ -137,10 +146,18 @@ class Dataset(object):
 					l.remove(np.random.choice(l))
 					if len(l) == 0:
 						del items['M'][K[i%L]]
-					tot_M -= 1
-		items['tot'] = tot_F + tot_M
+					tot['M'] -= 1
+
+		items['tot'] = tot['F'] + tot['M']
 		return items
 
+	"""
+	Getting a batch from the selected set
+	Inputs:
+		- index: index of the set self.TRAIN / self.TEST / self.VALID 
+		- batch_size
+		- fake: True -> Do not return anything (used to count the nb of total batches in an epoch) 
+	"""
 	def get_batch(self, index, batch_size, fake=False):
 		with ConsistentRandom(config.seed):
 			used = copy.deepcopy(self.items[index])
@@ -158,6 +175,7 @@ class Dataset(object):
 
 	def next_item(self, used, fake=False):
 
+		# Random picking or regular picking or the speaker sex
 		if not self.no_random_picking or len(self.sex) == 1:
 			genre = np.random.choice(self.sex, self.nb_speakers)
 		else:
@@ -165,14 +183,18 @@ class Dataset(object):
 
 		mix = []
 		for s in self.sex:
-			nb = sum(map(int,genre == s))
+			nb = sum(map(int,genre == s)) # Get the occurence # of 's' in the mix
 
-			if nb > len(used[s].keys()) or len(used[s].keys()) == 0:
+			# If there is not enough items left, we cannot create new mixtures
+			# It's the end of the current epoch
+			if nb > len(used[s].keys()):
 				raise StopIteration()
 
+			# Select random keys in each sex
 			keys = np.random.choice(used[s].keys(), nb, replace=False)
 
 			for key in keys:
+				# Select a random chunk and remove it from the list
 				choice = np.random.choice(used[s][key])	
 				mix.append(choice)
 				used[s][key].remove(choice)
@@ -182,11 +204,10 @@ class Dataset(object):
 		if not fake:
 			# TODO MIXING TYPE !
 			mix_array = np.zeros((self.chunk_size))
-			# non_mix_array = np.zeros((self.nb_speakers, self.chunk_size))
-			# indices = np.zeros((self.nb_speakers), dtype=int)
-			# mix_array = np.zeros()
 			non_mix_array = []
 			indices = []
+
+			# Mixing all the items
 			for i, m in enumerate(mix):
 				splits = m.split('/')
 				key_index = self.key_to_index[splits[0]]
@@ -194,71 +215,21 @@ class Dataset(object):
 				item_path = '/'.join(splits[:-1])
 
 				item = self.file[item_path][chunk*self.chunk_size:(chunk+1)*self.chunk_size]
-				mix_array +=item
+				mix_array += item
 
 				non_mix_array.append(item)
 				indices.append(key_index)
 
 			return mix_array, non_mix_array, indices
 
+	"""
+	Counts the number of batches in the Training Set
+	"""
 	def nb_batch(self, batch_size):
 		i = 0 
 		for _ in tqdm(self.get_batch(self.TRAIN, batch_size, fake=True), desc='Counting batches'):
 			i+=1
 		return i
-
-	@staticmethod
-	def create_h5_dataset(self, output_fn, subset=config.data_subset, data_root=config.data_root):
-		"""
-		Create a H5 file from the LibriSpeech dataset and the subset given:
-
-		Inputs:
-			output_fn: filename for the created file
-			subset: LibriSpeech subset : 'dev-clean' , ...
-			data_root: LibriSpeech folder path
-
-		"""
-
-		# Extract the information about this subset (speakers, chapters)
-		# Dictionary with the following shape: 
-		# {speaker_key: {chapters: [...], sex:'M/F', ... } }
-		speakers_info = data_tools.read_metadata(subset)
-
-		with h5py.File(output_fn,'w') as data_file:
-
-			for (key, elements) in speakers_info.items():
-				if key not in data_file:
-					# Create an H5 Group for each key/speaker
-					data_file.create_group(key)
-
-				# Current speaker folder path
-				folder = data_root+'/'+subset+'/'+key
-
-				print_progress(0, len(elements['chapters']), prefix = 'Speaker '+key+' :', suffix = 'Complete')
-
-				# For all the chapters read by this speaker
-				for i, chapter in enumerate(elements['chapters']): 
-					# Find all .flac audio
-					for root, dirs, files in os.walk(folder+'/'+chapter): 
-						for file in files:
-							if file.endswith(".flac"):
-
-								path = os.path.join(root,file)
-								raw_audio, samplerate = sf.read(path)
-
-								# Generate the spectrogram for the current audio file
-								_, _, spec = create_spectrogram(raw_audio, samplerate)
-
-								data_file[key].create_dataset(file,
-									data=spec.T.astype(np.complex64),
-									compression="gzip",
-									dtype=np.complex64,
-									compression_opts=0)
-
-					print_progress(i + 1, len(elements['chapters']), prefix = 'Speaker '+key+' :', suffix = 'Complete')
-
-
-		print 'Dataset for the subset: ' + subset + ' has been built'
 
 	@staticmethod
 	def create_raw_audio_dataset(output_fn, subset=config.data_subset, data_root=config.data_root):
@@ -311,7 +282,7 @@ if __name__ == "__main__":
 	### TEST
 	##
 	d = Dataset(dataset="h5py_files/train-clean-100-8-s.h5", chunk_size=20480, batch_size=100, nb_speakers=2)
-	print 'NB BATCHE', d.nb_batch(batch_size=1)
+	print 'NB BATCH', d.nb_batch(batch_size=1)
 	for i ,(x_mix, x_non_mix, I) in enumerate(d.get_batch(d.TRAIN, 1)):
 		print I
 		if i%10 == 0:
