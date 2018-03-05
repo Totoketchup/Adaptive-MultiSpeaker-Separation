@@ -162,16 +162,21 @@ class Dataset(object):
 		with ConsistentRandom(config.seed):
 			used = copy.deepcopy(self.items[index])
 			while True:
-				batch = ([], [], [])
+				mix = []
+				non_mix = []
+				I = []
 				for i in range(batch_size):
 					if fake: 
 						self.next_item(used, fake)
 					else: 
-						mix, non_mix, I = self.next_item(used, fake)
-						batch[0].append(mix)
-						batch[1].append(non_mix)
-						batch[2].append(I)
-				yield batch
+						m, n_m, ind = self.next_item(used, fake)
+						mix.append(m)
+						non_mix.append(n_m)
+						I.append(ind)
+				mix = np.array(mix)
+				non_mix = np.array(non_mix)
+				I = np.array(I)
+				yield (mix, non_mix, I)
 
 	def next_item(self, used, fake=False):
 

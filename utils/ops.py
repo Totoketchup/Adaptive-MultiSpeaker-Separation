@@ -1,10 +1,23 @@
 import numpy as np
 import tensorflow as tf
 import functools
-from itertools import compress
-
 
 rng = np.random.RandomState(42)
+
+
+def normalize_mix(X_mix, X_non_mix, type='min-max'):
+    if type == 'min-max':
+        a = 0.0
+        b = 1.0
+        max_val = np.amax(X_mix, axis=-1, keepdims=True)
+        min_val = np.amin(X_mix, axis=-1, keepdims=True)
+        S = float(X_non_mix.shape[1])
+        A = (b - a)/(max_val - min_val)
+        B = b - A * max_val
+        X_mix = A*X_mix + B
+        X_non_mix = A[:,:,np.newaxis]*X_non_mix + B[:,:,np.newaxis] / S
+
+    return X_mix, X_non_mix, min_val, max_val
 
 def scope(function):
     name = function.__name__
@@ -22,7 +35,6 @@ def logfunc(x, x2):
     cx = tf.clip_by_value(x, 1e-10, 1.0)
     cx2 = tf.clip_by_value(x2, 1e-10, 1.0)
     return tf.multiply(x, tf.log(tf.div(cx,cx2)))
-
 
 def kl_div(p, p_hat):
     inv_p = 1 - p
