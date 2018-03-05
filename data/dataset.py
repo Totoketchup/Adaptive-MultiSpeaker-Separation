@@ -62,15 +62,15 @@ class Dataset(object):
 		j = 0
 
 		if 'M' in self.sex:
-			self.M = data_tools.males_keys(metadata)
-			self.sex_to_keys['M'] = self.M
-			for k in self.M:
+			M = data_tools.males_keys(metadata)
+			self.sex_to_keys['M'] = M
+			for k in M:
 				self.key_to_index[k] = j
 				j += 1 
 		if 'F' in self.sex:
-			self.F = data_tools.females_keys(metadata)
-			self.sex_to_keys['F'] = self.F
-			for k in self.F:
+			F = data_tools.females_keys(metadata)
+			self.sex_to_keys['F'] = F
+			for k in F:
 				self.key_to_index[k] = j
 				j += 1
 
