@@ -12,5 +12,6 @@ docs/
 gif/
 .ipynb*
 test\.py
+raiden
 
 *.flac

@@ -278,8 +278,6 @@ class Adapt(Network):
 			else:
 				loss = 1e-3*l2 + sdr
 
-			
-
 		
 		# shape = [B]
 		# Compute mean over batches
