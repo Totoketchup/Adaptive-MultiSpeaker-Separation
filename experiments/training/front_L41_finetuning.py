@@ -14,6 +14,6 @@ if __name__ == '__main__':
 
 	args = p.get_args()
 
-	trainer = Front_Separator_Finetuning_Trainer(L41Model, 'front_L41_enhance_finetuning', pretraining=False, **vars(args))
+	trainer = Front_Separator_Finetuning_Trainer(L41Model, 'front_L41_finetuning', pretraining=False, **vars(args))
 	trainer.build_model()
 	trainer.train()
