@@ -292,7 +292,7 @@ class Separator(Network):
 		self.X_non_mix = tf.transpose(self.X_non_mix, [0, 2, 3, 1])
 
 		argmax = tf.argmax(tf.abs(self.X_non_mix), axis=3)
-		self.y = tf.one_hot(argmax, 2, self.a, self.b)
+		self.y = tf.one_hot(argmax, self.S, self.a, self.b)
 
 	@scope
 	def normalization01(self):
@@ -318,7 +318,7 @@ class Separator(Network):
 		
 		# Extract labels of each bins TF_i - labels [B, TF, 1]
 		_ , labels = kmeans.network
-		self.masks = tf.one_hot(labels, 2, 1.0, 0.0) # Create masks [B, TF, S]
+		self.masks = tf.one_hot(labels, self.S, 1.0, 0.0) # Create masks [B, TF, S]
 
 		separated = tf.reshape(self.X, [self.B, -1, 1])* self.masks # [B ,TF, S] 
 		separated = tf.reshape(separated, [self.B, -1, self.F, self.S])
