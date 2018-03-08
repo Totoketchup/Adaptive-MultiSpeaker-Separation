@@ -92,7 +92,7 @@ class Dataset(object):
 				self.total_items += ['/'.join([key,val,str(i)]) for i in range(chunks)]
 
 		np.random.shuffle(self.total_items)
-		self.total_items = self.total_items[0:1000] 	
+		self.total_items = self.total_items
 
 		L = len(self.total_items)
 		# Shuffle all the items
