@@ -7,6 +7,7 @@ import haikunator
 from itertools import compress, permutations
 import numpy as np
 import json
+from tensorflow.python.framework import ops
 
 class Network(object):
 
@@ -66,7 +67,25 @@ class Network(object):
 	def tensorboard_init(self):
 		with self.graph.as_default():
 			self.saver = tf.train.Saver()
-			self.merged = tf.summary.merge_all()
+
+			sums = ops.get_collection(ops.GraphKeys.SUMMARIES)
+			train_keys_summaries = []
+			valid_keys_summaries = []
+
+			for s in sums:
+				if not ('input' in s.name or 'output' in s.name):
+					train_keys_summaries.append(s)
+				else:
+					valid_keys_summaries.append(s)
+				if 'SDR_improvement' in s.name:
+					valid_keys_summaries.append(s)
+
+
+			self.merged_train = tf.summary.merge(train_keys_summaries)
+			if len(valid_keys_summaries) != 0:
+ 				self.merged_valid = tf.summary.merge(valid_keys_summaries)
+ 			else:
+ 				self.merged_valid = None
 			self.train_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID,'train'), self.graph)
 			self.valid_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID,'valid'))
 
@@ -128,13 +147,18 @@ class Network(object):
 		return path
 
 	def train(self, X_mix, X_non_mix, I, step):
-		summary, _, cost = self.sess.run([self.merged, self.optimize, self.cost_model], {self.x_mix: X_mix, self.x_non_mix:X_non_mix, self.training:True, self.I:I})
+		summary, _, cost = self.sess.run([self.merged_train, self.optimize, self.cost_model], {self.x_mix: X_mix, self.x_non_mix:X_non_mix, self.training:True, self.I:I})
 		self.train_writer.add_summary(summary, step)
 		return cost
 
-	def valid_batch(self, X_mix_valid, X_non_mix_valid, I):
-		return self.sess.run(self.cost_model, {self.x_non_mix:X_non_mix_valid, self.x_mix:X_mix_valid, self.training:False, self.I:I})
-	
+	def valid_batch(self, X_mix_valid, X_non_mix_valid, I, step):
+		if self.merged_valid is None:
+			cost = self.sess.run(self.cost_model, {self.x_non_mix:X_non_mix_valid, self.x_mix:X_mix_valid, self.training:False, self.I:I})
+		else:
+			cost, summary =  self.sess.run([self.cost_model, self.merged_valid], {self.x_non_mix:X_non_mix_valid, self.x_mix:X_mix_valid, self.training:False, self.I:I})
+			self.valid_writer.add_summary(summary, step)
+		return cost
+
 	def test(self, X_mix_valid, X_non_mix_valid, I):
 		return self.sess.run(self.sepNet.y, {self.x_non_mix:X_non_mix_valid, self.x_mix:X_mix_valid, self.training:False, self.I:I})
 

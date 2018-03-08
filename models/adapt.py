@@ -296,6 +296,7 @@ class Adapt(Network):
 		tf.summary.audio(name= "input/mixed", tensor = self.x[:self.B], sample_rate = config.fs, max_outputs=1)
 
 		tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
+		
 		with tf.name_scope('loss_values'):
 			tf.summary.scalar('l2_loss', l2)
 			tf.summary.scalar('SDR', sdr)

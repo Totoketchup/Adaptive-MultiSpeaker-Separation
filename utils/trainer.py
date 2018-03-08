@@ -149,7 +149,7 @@ class Trainer(object):
 
 						x_mix_v, x_non_mix_v, _, _ = normalize_mix(x_mix_v, x_non_mix_v)
 
-						cost = self.model.valid_batch(x_mix_v, x_non_mix_v, I_v)
+						cost = self.model.valid_batch(x_mix_v, x_non_mix_v, I_v, step)
 						costs.append(cost)
 
 					valid_cost = np.mean(costs)
