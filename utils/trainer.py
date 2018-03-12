@@ -175,7 +175,7 @@ class Trainer(object):
 		
 		for x_mix_t, x_non_mix_t, I_t in self.dataset.get_batch(self.dataset.TEST, batch_size):
 			x_mix_t, x_non_mix_t, _, _ = normalize_mix(x_mix_t, x_non_mix_t)
-			cost = self.model.valid_batch(x_mix_t, x_non_mix_t, I_t)
+			cost = self.model.test_batch(x_mix_t, x_non_mix_t, I_t)
 			costs.append(cost)
 		print 'Test cost = ', np.mean(costs)
 

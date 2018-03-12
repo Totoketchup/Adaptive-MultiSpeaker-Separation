@@ -159,6 +159,10 @@ class Network(object):
 			self.valid_writer.add_summary(summary, step)
 		return cost
 
+	def test_batch(self, X_mix_valid, X_non_mix_valid, I):
+		return self.sess.run(self.cost_model, {self.x_non_mix:X_non_mix_valid, self.x_mix:X_mix_valid, self.training:False, self.I:I})
+
+
 	def test(self, X_mix_valid, X_non_mix_valid, I):
 		return self.sess.run(self.sepNet.y, {self.x_non_mix:X_non_mix_valid, self.x_mix:X_mix_valid, self.training:False, self.I:I})
 
