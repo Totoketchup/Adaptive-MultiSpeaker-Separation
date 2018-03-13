@@ -5,8 +5,8 @@ import functools
 rng = np.random.RandomState(42)
 
 
-def normalize_mix(X_mix, X_non_mix, type='min-max'):
-    if type == 'min-max':
+def normalize_mix(X_mix, X_non_mix, type_='min-max'):
+    if type_ == 'min-max':
         a = 0.0
         b = 1.0
         max_val = np.amax(X_mix, axis=-1, keepdims=True)
@@ -16,8 +16,18 @@ def normalize_mix(X_mix, X_non_mix, type='min-max'):
         B = b - A * max_val
         X_mix = A*X_mix + B
         X_non_mix = A[:,:,np.newaxis]*X_non_mix + B[:,:,np.newaxis] / S
+        val1 = min_val
+        val2 = max_val
+    elif type_ == 'mean-std':
+        mean = np.mean(X_mix, axis=-1, keepdims=True)
+        std = np.std(X_mix, axis=-1, keepdims=True)
+        S = float(X_non_mix.shape[1])
+        X_mix = (X_mix - mean)
+        X_non_mix = X_non_mix - mean/(S)
+        val1 = mean
+        val2 = std
 
-    return X_mix, X_non_mix, min_val, max_val
+    return X_mix, X_non_mix, val1, val2
 
 def scope(function):
     name = function.__name__
