@@ -225,7 +225,7 @@ class Separator(Network):
 			self.graph = graph
 			with self.graph.as_default():
 
-				front = self.graph.get_tensor_by_name('front/output:0')
+				front = self.graph.get_tensor_by_name('front/Reshape_1:0')
 
 				self.B = tf.shape(self.graph.get_tensor_by_name('inputs/non_mix_input:0'))[0]
 
