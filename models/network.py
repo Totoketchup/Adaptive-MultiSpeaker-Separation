@@ -255,11 +255,13 @@ class Separator(Network):
 	def init_separator(self):
 		with self.graph.as_default():
 			if self.plugged:
-					self.normalization01
+					if self.args['normalize_separator']:
+						self.normalization01
 					self.prediction
 			else:
 					self.preprocessing
-					self.normalization01
+					if self.args['normalize_separator']:
+						self.normalization01
 					self.prediction
 					#TODO TO IMPROVE ! 
 					if 'enhance' not in self.folder:
@@ -335,9 +337,10 @@ class Separator(Network):
 	def enhance(self):
 		# [B, S, T, F]
 		separated = tf.reshape(self.separate, [self.B, self.S, -1, self.F])
-		min_ = tf.reduce_min(separated, axis=[1,2], keep_dims=True)
-		max_ = tf.reduce_max(separated, axis=[1,2], keep_dims=True)
-		separated = (separated - min_) / (max_ - min_)
+		if self.args['normalize_enhance']:
+			min_ = tf.reduce_min(separated, axis=[1,2], keep_dims=True)
+			max_ = tf.reduce_max(separated, axis=[1,2], keep_dims=True)
+			separated = (separated - min_) / (max_ - min_)
 
 		# X [B, T, F]
 		# Tiling the input S time - like [ a, b, c] -> [ a, a, b, b, c, c], not [a, b, c, a, b, c]
