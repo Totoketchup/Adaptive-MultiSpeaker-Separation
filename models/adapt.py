@@ -102,41 +102,27 @@ class Adapt(Network):
 		# self.window_filter = get_scope_variable('window', 'w', shape=[self.window], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 		# self.bases = get_scope_variable('bases', 'bases', shape=[self.window, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 		# self.conv_filter = tf.reshape(tf.expand_dims(self.window_filter,1)*self.bases , [1, self.window, 1, self.N])
-		self.conv_filter = get_scope_variable('filters_front','filters_front', shape=[1, self.window, 1, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
+		self.conv_filter = get_scope_variable('filters_front','filters_front', shape=[1, self.window, 1, self.N])
 
 		# 1 Dimensional convolution along T axis with a window length = self.window
 		# And N = 256 filters -> Create a [Btot, 1, T, N]
-		self.X = tf.nn.conv2d(input_front, self.conv_filter, strides=[1, 1, 1, 1], padding="SAME", name='Conv_STFT')
+		self.X = tf.nn.conv2d(input_front, self.conv_filter, strides=[1, 1, self.max_pool_value, 1], padding="SAME", name='Conv_STFT')
 		
 		# Reshape to Btot batches of T x N images with 1 channel
-		self.X = tf.reshape(self.X, [self.B_tot, -1, self.N, 1])
-
-		self.T = tf.shape(self.X)[1]
-
-		# Max Pooling with argmax for unpooling later in the back-end layer
-		# Along the T axis (time)
-		self.y, argmax = tf.nn.max_pool_with_argmax(self.X, (1, self.max_pool_value, 1, 1),
-													strides=[1, self.max_pool_value, 1, 1], padding="SAME", name='output')
+		self.y = tf.reshape(self.X, [self.B_tot, -1, self.N, 1])
+		self.T = tf.shape(self.y)[1]
 
 		y_shape = tf.shape(self.y)
 		y = tf.reshape(self.y, [self.B_tot, y_shape[1]*y_shape[2]])
 		self.p_hat = tf.reduce_mean(tf.abs(y), 0)
 		self.sparse_constraint = tf.reduce_sum(kl_div(self.p, self.p_hat))
 
-		return self.y, argmax
+		return self.y
 
 	@scope
 	def separator(self):
 		# shape = [B_tot, T_, N, 1], shape = [B(1+S), T , N, 1], [B(1+S), T_ , N, 1]
-		separator_in, argmax_in = self.front
-
-		argmax_in = argmax_in[:self.B]
-
-		repeats = [self.S, 1, 1 ,1]
-		shape = tf.shape(argmax_in)
-		argmax_in = tf.expand_dims(argmax_in, 1)
-		argmax_in = tf.tile(argmax_in, [1, self.S, 1, 1 ,1])
-		argmax_in = tf.reshape(argmax_in, shape*repeats)
+		separator_in = self.front
 
 		# Compute the overlapping rate:
 		nb = 2
@@ -185,33 +171,30 @@ class Adapt(Network):
 				tiled_sum = tf.tile(tf.reduce_sum(input_non_mix, 1, keep_dims=True), [1, self.S, 1, 1])
 				# From [a+b+c+d, a+b+c+d, a+b+c+d, a+b+c+d] ->  [b+c+d, a+c+d, a+b+d, a+b+c]
 				X_add = tiled_sum - input_non_mix
-				output = tf.reshape(input_mix - X_add, [self.B*self.S, self.T_max_pooled, self.N, 1])
+				output = input_mix - X_add
 
-			return output, argmax_in
+				# with tf.control_dependencies([tf.assert_equal(output,input_non_mix)]):
+				output = tf.reshape(output, [self.B*self.S, self.T_max_pooled, self.N, 1])
 
-		return self.sepNet.output, argmax_in
+			return output
+
+		return self.sepNet.output
 
 	@scope
 	def back(self):
 		# Back-End
-		input_tensor, argmax = self.separator
+		input_tensor = self.separator
 
-		# Unpooling (the previous max pooling)
-		output_shape = [self.B*self.S, self.T, self.N, 1]
-		self.unpooled = unpool(input_tensor, argmax, ksize=[1, self.max_pool_value, 1, 1], output_shape= output_shape, scope='unpool')
-
-		output = tf.reshape(self.unpooled, [self.B*self.S, 1, self.T, self.N])
-
-		self.unpool_board = tf.reshape(self.unpooled, [self.B*self.S, self.T, self.N, 1])
+		output = tf.reshape(input_tensor, [self.B*self.S, 1, self.T, self.N])
 
 		# self.window_filter_2 = get_scope_variable('window_2', 'w_2', shape=[self.window], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 		# self.bases_2 = get_scope_variable('bases_2', 'bases_2', shape=[self.window, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
-		# self.conv_filter_2 = tf.reshape(tf.expand_dims(self.window_filter_2,1)*self.bases_2 , [1, self.window, 1, self.N])
+		# self.conv_filter_2 = tf.reshape(tf.expand_dims(self.window_filter_2,1)*self.bases_2 , [1, self.window, 1, self.N], name="filters_back")
 		self.conv_filter_2 = tf.Variable(self.conv_filter.initialized_value(), name="filters_back")
 
 		output = tf.nn.conv2d_transpose(output , filter=self.conv_filter_2,
 									 output_shape=[self.B*self.S, 1, self.L, 1],
-									 strides=[1, 1, 1, 1], padding='SAME')
+									 strides=[1, 1, self.max_pool_value, 1], padding='SAME')
 
 		output = tf.reshape(output, [self.B, self.S, self.L], name='back_output')
 
@@ -239,11 +222,11 @@ class Adapt(Network):
 			sdr = tf.reduce_mean(sdr) # Mean over batches
 
 			if self.loss == 'l2':
-				loss = l2
+				loss = l2 + sdr
 			elif self.loss == 'sdr':
 				loss = sdr
 			else:
-				loss = 1e-3*l2 + sdr
+				loss = 1e-1*l2 + sdr
 		else:
 			# Compute loss over all possible permutations
 			
