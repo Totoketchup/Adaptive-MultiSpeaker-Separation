@@ -121,10 +121,12 @@ class Trainer(object):
 
 		nb_epochs = self.args['epochs']
 		batch_size = self.args['batch_size']
-		time_spent = [0 for _ in range(5)]
+		time_spent = [0 for _ in range(10)]
 		nb_batches = self.dataset.nb_batch(batch_size)
 
 		best_validation_cost = 1e100
+
+		t1 = time.clock()
 
 		step = 0
 		for epoch in range(nb_epochs):
@@ -132,17 +134,13 @@ class Trainer(object):
 
 				x_mix, x_non_mix, _, _ = normalize_mix(x_mix, x_non_mix, type_='min-max')
 
-				t = time.time()
+				t = time.clock()
 				c = self.model.train(x_mix, x_non_mix, I, step)
-				t_f = time.time()
-				time_spent = time_spent[1:] +[t_f-t]
+				
 
-				print 'Epoch #', epoch+1,'Step #', step+1,' loss=', c \
-					, ' ETA = ', getETA(sum(time_spent)/float(np.count_nonzero(time_spent)) \
-					, nb_batches, b, nb_epochs, epoch)
-
+				
 				if step%self.args['validation_step'] == 0:
-					t = time.time()
+					t = time.clock()
 					# Compute validation mean cost with batches to avoid memory problems
 					costs = []
 					for x_mix_v, x_non_mix_v, I_v in self.dataset.get_batch(self.dataset.VALID, batch_size):
@@ -161,10 +159,17 @@ class Trainer(object):
 						best_path = self.model.save(step)
 						print 'Save best model with :', best_validation_cost
 
-					t_f = time.time()
+					t_f = time.clock()
 					print 'Validation set tested in ', t_f - t, ' seconds'
 					print 'Validation set: ', valid_cost
 				
+				time_spent = time_spent[1:] +[time.clock()-t1]
+				avg =  sum(time_spent)/len(time_spent)
+				print 'Epoch #', epoch+1,'/', nb_epochs,' Batch #', b+1,'/',nb_batches,'in', avg,'sec loss=', c \
+					, ' ETA = ', getETA(avg, nb_batches, b+1, nb_epochs, epoch+1)
+
+				t1 = time.clock()
+
 				step += 1
 
 		print 'Best model with Validation:  ', best_validation_cost
