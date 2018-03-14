@@ -7,15 +7,17 @@ rng = np.random.RandomState(42)
 
 def normalize_mix(X_mix, X_non_mix, type_='min-max'):
     if type_ == 'min-max':
-        a = 0.0
+        a = -1.0
         b = 1.0
         max_val = np.amax(X_mix, axis=-1, keepdims=True)
         min_val = np.amin(X_mix, axis=-1, keepdims=True)
+
         S = float(X_non_mix.shape[1])
         A = (b - a)/(max_val - min_val)
         B = b - A * max_val
         X_mix = A*X_mix + B
-        X_non_mix = A[:,:,np.newaxis]*X_non_mix + B[:,:,np.newaxis] / S
+
+        X_non_mix = A[:,:,np.newaxis]*X_non_mix + B[:,:,np.newaxis]/S
         val1 = min_val
         val2 = max_val
     elif type_ == 'mean-std':
