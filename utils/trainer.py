@@ -140,10 +140,8 @@ class Trainer(object):
 
 				t = time.clock()
 				c = self.model.train(x_mix, x_non_mix, I, step)
-				
-
-				
-				if step%self.args['validation_step'] == 0:
+								
+				if (step+1)%self.args['validation_step'] == 0:
 					t = time.clock()
 					# Compute validation mean cost with batches to avoid memory problems
 					costs = []
@@ -242,7 +240,6 @@ class Front_Separator_Finetuning_Trainer(Trainer):
 
 	def build_model(self):
 		self.model = Adapt.load(self.args['model_folder'], self.args)
-		
 		# Expanding the graph with enhance layer
 		with self.model.graph.as_default() : 
 			self.model.connect_front(self.separator)

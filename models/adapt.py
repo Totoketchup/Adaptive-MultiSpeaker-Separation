@@ -320,8 +320,6 @@ class Adapt(Network):
 
 		return val, loss
 
-
-
 	def test_prediction(self, X_mix_test, X_non_mix_test, step):
 		pred, y = self.sess.run([self.sepNet.prediction, self.sepNet.y_test_export], {self.x_mix: X_mix_test, self.x_non_mix:X_non_mix_test, self.training:True})
 		pred = np.reshape(pred, [X_mix_test.shape[0], -1, 40])

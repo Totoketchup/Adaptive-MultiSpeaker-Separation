@@ -194,10 +194,10 @@ class Network(object):
 			args = json.load(f)
 			keys_to_update = ['learning_rate','epochs','batch_size','regularization','overlap_coef','loss','beta','model_folder']
 			to_modify = { key: modified_args[key] for key in keys_to_update if key in modified_args.keys() }
+			to_modify.update({key: val for key, val in modified_args.items() if key not in args.keys()})
 
 		# Update with new args such as 'pretraining' or 'type'
 		args.update(to_modify)
-
 		# Create a new Adapt model with these parameters
 		return cls(**args)
 
