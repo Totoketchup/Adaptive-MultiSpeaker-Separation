@@ -192,7 +192,7 @@ class Network(object):
 		params_path = os.path.join(path, 'params')
 		with open(params_path) as f:
 			args = json.load(f)
-			keys_to_update = ['learning_rate', 'epochs','batch_size','regularization','overlap_coef','loss','beta']
+			keys_to_update = ['learning_rate','epochs','batch_size','regularization','overlap_coef','loss','beta','model_folder']
 			to_modify = { key: modified_args[key] for key in keys_to_update if key in modified_args.keys() }
 
 		# Update with new args such as 'pretraining' or 'type'
