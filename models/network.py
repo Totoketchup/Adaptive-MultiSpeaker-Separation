@@ -341,9 +341,8 @@ class Separator(Network):
 		# [B, S, T, F]
 		separated = tf.reshape(self.separate, [self.B, self.S, -1, self.F])
 		if self.args['normalize_enhance']:
-			min_ = tf.reduce_min(separated, axis=[1,2], keep_dims=True)
-			max_ = tf.reduce_max(separated, axis=[1,2], keep_dims=True)
-			separated = (separated - min_) / (max_ - min_)
+			mean, std = tf.nn.moments(separated, axes=[1,2], keep_dims=True)
+			separated = (separated - mean) / std
 
 		# X [B, T, F]
 		# Tiling the input S time - like [ a, b, c] -> [ a, a, b, b, c, c], not [a, b, c, a, b, c]
@@ -356,7 +355,8 @@ class Separator(Network):
 		sep_and_in = tf.reshape(sep_and_in, [self.B*self.S, -1, 2*self.F])
 		
 		layers = [
-			BLSTM(self.args['layer_size_enhance'], 'BLSTM_'+str(i)) for i in range(self.args['nb_layers_enhance'])
+			BLSTM(self.args['layer_size_enhance'], 
+				'BLSTM_'+str(i)) for i in range(self.args['nb_layers_enhance'])
 		]
 
 		y = f_props(layers, sep_and_in)
