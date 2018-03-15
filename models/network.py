@@ -341,7 +341,8 @@ class Separator(Network):
 		# [B, S, T, F]
 		separated = tf.reshape(self.separate, [self.B, self.S, -1, self.F])
 		if self.args['normalize_enhance']:
-			mean, std = tf.nn.moments(separated, axes=[1,2], keep_dims=True)
+			mean, std = tf.nn.moments(separated, axes=[2,3], keep_dims=True)
+			print mean
 			separated = (separated - mean) / std
 
 		# X [B, T, F]
