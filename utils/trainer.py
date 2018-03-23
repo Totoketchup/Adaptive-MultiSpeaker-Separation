@@ -213,6 +213,19 @@ class STFT_Separator_enhance_Trainer(Trainer):
 		# Initialize only non restored values
 		self.model.initialize_non_init()
 
+class STFT_Separator_FineTune_Trainer(Trainer):
+	def __init__(self, separator, name, **kwargs):
+		self.separator = separator
+		super(STFT_Separator_FineTune_Trainer, self).__init__(trainer_type=name, **kwargs)
+
+	def build_model(self):
+		self.model = self.separator.load(self.args['model_folder'], self.args)
+		self.model.restore_model(self.args['model_folder'])
+		self.model.add_finetuning()
+		self.model.tensorboard_init()
+		# Initialize only non restored values
+		self.model.initialize_non_init()
+
 
 class Adapt_Pretrainer(Trainer):
 	def __init__(self, **kwargs):
