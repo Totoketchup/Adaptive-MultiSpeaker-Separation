@@ -136,9 +136,11 @@ class Trainer(object):
 		for epoch in range(nb_epochs):
 			for b ,(x_mix, x_non_mix, I) in enumerate(self.dataset.get_batch(self.dataset.TRAIN, batch_size)):
 
-				x_mix, x_non_mix, _, _ = normalize_mix(x_mix, x_non_mix, type_='min-max')
+				# x_mix, x_non_mix, _, _ = normalize_mix(x_mix, x_non_mix, type_='min-max')
 
 				t = time.clock()
+				# m =  self.model.test(x_mix, x_non_mix, I)
+				# print np.amax(m), np.amin(m), np.mean(m), np.median(m)
 				c = self.model.train(x_mix, x_non_mix, I, step)
 								
 				if (step+1)%self.args['validation_step'] == 0:
@@ -147,7 +149,7 @@ class Trainer(object):
 					costs = []
 					for x_mix_v, x_non_mix_v, I_v in self.dataset.get_batch(self.dataset.VALID, batch_size):
 
-						x_mix_v, x_non_mix_v, _, _ = normalize_mix(x_mix_v, x_non_mix_v, type_='min-max')
+						# x_mix_v, x_non_mix_v, _, _ = normalize_mix(x_mix_v, x_non_mix_v, type_='min-max')
 
 						cost = self.model.valid_batch(x_mix_v, x_non_mix_v, I_v, step)
 						costs.append(cost)
@@ -181,7 +183,7 @@ class Trainer(object):
 		self.model.restore_last_checkpoint()
 		
 		for x_mix_t, x_non_mix_t, I_t in self.dataset.get_batch(self.dataset.TEST, batch_size):
-			x_mix_t, x_non_mix_t, _, _ = normalize_mix(x_mix_t, x_non_mix_t)
+			# x_mix_t, x_non_mix_t, _, _ = normalize_mix(x_mix_t, x_non_mix_t)
 			cost = self.model.test_batch(x_mix_t, x_non_mix_t, I_t)
 			costs.append(cost)
 		print 'Test cost = ', np.mean(costs)
