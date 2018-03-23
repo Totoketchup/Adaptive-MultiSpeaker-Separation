@@ -83,9 +83,10 @@ class Network(object):
 
 			self.merged_train = tf.summary.merge(train_keys_summaries)
 			if len(valid_keys_summaries) != 0:
- 				self.merged_valid = tf.summary.merge(valid_keys_summaries)
- 			else:
- 				self.merged_valid = None
+				self.merged_valid = tf.summary.merge(valid_keys_summaries)
+			else:
+				self.merged_valid = None
+
 			self.train_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID,'train'), self.graph)
 			self.valid_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID,'valid'))
 
@@ -129,15 +130,18 @@ class Network(object):
 
 	def initialize_non_init(self):
 		with self.graph.as_default():
-			self.sess.run(self.non_initialized_variables())
+			non_init = self.non_initialized_variables()
+			if non_init is not None:
+				self.sess.run()
 
 	@scope
 	def optimize(self):
 		print 'Train the following variables :'
-		print self.trainable_variables
+		print map(lambda x: x.name, self.trainable_variables)
 
 		optimizer = AMSGrad(self.learning_rate, epsilon=0.001)
 		gradients, variables = zip(*optimizer.compute_gradients(self.cost_model, var_list=self.trainable_variables))
+		print variables
 		optimize = optimizer.apply_gradients(zip(gradients, variables))
 		return optimize
 
@@ -164,7 +168,7 @@ class Network(object):
 
 
 	def test(self, X_mix_valid, X_non_mix_valid, I):
-		return self.sess.run(self.sepNet.y, {self.x_non_mix:X_non_mix_valid, self.x_mix:X_mix_valid, self.training:False, self.I:I})
+		return self.sess.run(self.f, {self.x_non_mix:X_non_mix_valid, self.x_mix:X_mix_valid, self.training:True, self.I:I})
 
 	def add_valid_summary(self, val, step):
 		summary = tf.Summary()
@@ -192,7 +196,7 @@ class Network(object):
 		params_path = os.path.join(path, 'params')
 		with open(params_path) as f:
 			args = json.load(f)
-			keys_to_update = ['learning_rate','epochs','batch_size','regularization','overlap_coef','loss','beta','model_folder']
+			keys_to_update = ['learning_rate','epochs','batch_size','regularization','overlap_coef','loss','beta','model_folder', 'type']
 			to_modify = { key: modified_args[key] for key in keys_to_update if key in modified_args.keys() }
 			to_modify.update({key: val for key, val in modified_args.items() if key not in args.keys()})
 
@@ -266,8 +270,8 @@ class Separator(Network):
 					if self.args['normalize_separator']:
 						self.normalization01
 					self.prediction
-					#TODO TO IMPROVE ! 
-					if 'enhance' not in self.folder:
+					#TODO TO IMPROVE !
+					if 'enhance' not in self.folder and 'finetuning' not in self.folder:
 						self.cost_model = self.cost
 						self.finish_construction()
 						self.optimize
@@ -279,6 +283,19 @@ class Separator(Network):
 			self.cost_model = self.enhance_cost
 			self.finish_construction()
 			self.freeze_all_except('enhance')
+			self.optimize
+
+	def add_finetuning(self):
+		with self.graph.as_default():
+			print 'sep'
+			self.separate
+			print 'post'
+			self.postprocessing
+			print 'cost'
+			self.cost_model = self.cost_finetuning
+			self.finish_construction()
+			self.freeze_all_except('prediction')
+			# self.tensorboard_init()
 			self.optimize
 
 	@scope
@@ -295,6 +312,8 @@ class Separator(Network):
 			frame_step=self.window_size-self.hop_size,
 			fft_length=self.window_size)
 
+		self.angle = tf.atan(tf.imag(self.stfts)/tf.real(self.stfts))
+
 		self.X = tf.sqrt(tf.abs(self.stfts))
 		self.X_non_mix = tf.sqrt(tf.abs(self.stfts_non_mix))
 		self.X_non_mix = tf.reshape(self.X_non_mix, [self.B, self.S, -1, self.F])
@@ -305,9 +324,9 @@ class Separator(Network):
 
 	@scope
 	def normalization01(self):
-		min_ = tf.reduce_min(self.X, axis=[1,2], keep_dims=True)
-		max_ = tf.reduce_max(self.X, axis=[1,2], keep_dims=True)
-		self.X = (self.X - min_) / (max_ - min_)
+		self.min_ = tf.reduce_min(self.X, axis=[1,2], keep_dims=True)
+		self.max_ = tf.reduce_max(self.X, axis=[1,2], keep_dims=True)
+		self.X = (self.X - self.min_) / (self.max_ - self.min_)
 
 	@scope
 	def normalization_mean_std(self):
@@ -335,6 +354,50 @@ class Separator(Network):
 		separated = tf.reshape(separated, [self.B*self.S, -1, self.F, 1]) # [BS, T, F, 1]
 
 		return separated
+
+	@scope
+	def postprocessing(self):
+		stft = tf.reshape(self.separate, [self.B*self.S, -1, self.F])
+		# denorm
+		stft = (self.max_ - self.min_)*stft + self.min_
+
+		print stft
+		#stft = tf.complex(0.0*stft,stft) #* tf.complex(0.0*self.angle, self.angle)
+		stft = tf.cast(stft, tf.complex64)
+		inverse_stft = tf.contrib.signal.inverse_stft(
+			stft, 
+			frame_length=self.window_size, 
+			frame_step=self.window_size-self.hop_size,
+			window_fn=tf.contrib.signal.inverse_stft_window_fn(self.window_size-self.hop_size))
+
+		output = tf.reshape(inverse_stft, [self.B, self.S, -1])
+		return output
+
+	@scope
+	def cost_finetuning(self):
+
+		perms = list(permutations(range(self.S))) # ex with 3: [0, 1, 2], [0, 2 ,1], [1, 0, 2], [1, 2, 0], [2, 1, 0], [2, 0, 1]
+		length_perm = len(perms)
+		perms = tf.reshape(tf.constant(perms), [1, length_perm, self.S, 1])
+		perms = tf.tile(perms, [self.B, 1, 1, 1])
+
+		batch_range = tf.tile(tf.reshape(tf.range(self.B, dtype=tf.int32), shape=[self.B, 1, 1, 1]), [1, length_perm, self.S, 1])
+		perm_range = tf.tile(tf.reshape(tf.range(length_perm, dtype=tf.int32), shape=[1, length_perm, 1, 1]), [self.B, 1, self.S, 1])
+		indicies = tf.concat([batch_range, perm_range, perms], axis=3)
+
+		# [B, P, S, L]
+		permuted_back = tf.gather_nd(tf.tile(tf.reshape(self.postprocessing, [self.B, 1, self.S, self.L]), [1, length_perm, 1, 1]), indicies) # 
+
+		X_nmr = tf.reshape(self.x_non_mix, [self.B, 1, self.S, self.L])
+
+		l2 = tf.reduce_sum(tf.square(X_nmr - permuted_back), axis=-1) # L2^2 norm
+		l2 = tf.reduce_min(l2, axis=1) # Get the minimum over all possible permutations : B S
+		l2 = tf.reduce_sum(l2, -1)
+		l2 = tf.reduce_mean(l2, -1)
+
+
+		return l2
+
  
 	@scope
 	def enhance(self):
