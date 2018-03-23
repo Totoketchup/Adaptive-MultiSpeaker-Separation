@@ -4,6 +4,7 @@ import config
 from utils.postprocessing.representation import *
 import matplotlib.pyplot as plt
 import numpy as np
+import argparse
 # from models import Adapt
 
 ## Here we plot the windows and bases of the Adapt model
@@ -18,42 +19,41 @@ import numpy as np
 ####
 #### MODEL CONFIG
 ####
+def main(args):
 
-full_id = "AdaptiveNet-aged-firefly-5068-N=16--alpha=0.01--batch_size=16--beta=0.05--chunk_size=20480--maxpool=4--optimizer=Adam--reg=0.0001--rho=0.01--same_filter=True--smooth_size=10--type=pretraining--window=1024-"
-model_meta_path = os.path.join(config.log_dir, "pretraining", full_id, 'model.ckpt.meta')
-model_path = os.path.join(config.log_dir, "pretraining", full_id, 'model.ckpt')
+	sess = tf.Session()
 
-sess = tf.Session()
+	checkpoint =  tf.train.latest_checkpoint(args.path)
 
-importer = tf.train.import_meta_graph(model_meta_path)
-importer.restore(sess, model_path)
+	importer = tf.train.import_meta_graph(checkpoint+'.meta')
+	importer.restore(sess, checkpoint)
 
-graph = tf.get_default_graph()
+	graph = tf.get_default_graph()
 
-window_front = graph.get_tensor_by_name('front/window/w:0')
-bases_front = graph.get_tensor_by_name('front/bases/bases:0')
+	front_window = graph.get_tensor_by_name('front/window/w:0')
+	front_bases = graph.get_tensor_by_name('front/bases/bases:0')
 
-window_back = graph.get_tensor_by_name('back/window_2/w_2:0')
-bases_back = graph.get_tensor_by_name('back/bases_2/bases_2:0')
+	with sess.as_default():
+		front_window = front_window.eval()
+		front_bases = front_bases.eval()
+		front_bases = np.transpose(front_bases)
 
+	sub = 256 / 16
 
-with sess.as_default():
-	window_front = window_front.eval()
-	bases_front = np.transpose(bases_front.eval())
-	window_back = window_back.eval()
-	bases_back = np.transpose(bases_back.eval())
+	for j in range(sub):
+	    fig, plots = plt.subplots(4, 4, figsize=(18, 16))
+	    
+	    for x in range(4):
+	        for y in range(4):
+	            plots[x, y].plot(front_window*front_bases[j*16+(4*y+x)])
+	            plots[x, y].axis([0,1024,-0.01,0.01])
+	    plt.show()
 
-plt.plot(np.abs(window_front), label='front window')
-plt.show()
+if __name__ == '__main__':
+	parser = argparse.ArgumentParser(description="Argument Parser")
 
-print bases_front.shape
+	parser.add_argument(
+		'--path', help='Path to Adapt model', required=True)
 
-tot = 100
-
-for i in range(10):
-	plt.plot(bases_front[i])
-	plt.show()
-	# plt.subplot(10,10,i+1)
-
-plt.show()
-
+	main(parser.parse_args())
+			
