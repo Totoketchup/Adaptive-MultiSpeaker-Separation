@@ -38,7 +38,10 @@ def main(args):
 		front_bases = front_bases.eval()
 		front_bases = np.transpose(front_bases)
 
-	sub = 256 / 16
+	win_size = front_window.shape[0]
+	filters_nb, _ = front_bases.shape
+
+	sub = filters_nb // 16
 
 	for j in range(sub):
 	    fig, plots = plt.subplots(4, 4, figsize=(18, 16))
@@ -46,7 +49,7 @@ def main(args):
 	    for x in range(4):
 	        for y in range(4):
 	            plots[x, y].plot(front_window*front_bases[j*16+(4*y+x)])
-	            plots[x, y].axis([0,1024,-0.01,0.01])
+	            plots[x, y].axis([0,win_size,-0.01,0.01])
 	    plt.show()
 
 if __name__ == '__main__':
