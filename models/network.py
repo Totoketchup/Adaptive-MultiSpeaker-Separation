@@ -132,7 +132,7 @@ class Network(object):
 		with self.graph.as_default():
 			non_init = self.non_initialized_variables()
 			if non_init is not None:
-				self.sess.run()
+				self.sess.run(non_init)
 
 	@scope
 	def optimize(self):
@@ -140,10 +140,11 @@ class Network(object):
 		print map(lambda x: x.name, self.trainable_variables)
 
 		optimizer = AMSGrad(self.learning_rate, epsilon=0.001)
-		gradients, variables = zip(*optimizer.compute_gradients(self.cost_model, var_list=self.trainable_variables))
-		print variables
-		optimize = optimizer.apply_gradients(zip(gradients, variables))
-		return optimize
+		update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+		with tf.control_dependencies(update_ops):
+			gradients, variables = zip(*optimizer.compute_gradients(self.cost_model, var_list=self.trainable_variables))
+			optimize = optimizer.apply_gradients(zip(gradients, variables))
+			return optimize
 
 	def save(self, step):
 		path = os.path.join(config.log_dir, self.folder ,self.runID, "model")
@@ -196,7 +197,8 @@ class Network(object):
 		params_path = os.path.join(path, 'params')
 		with open(params_path) as f:
 			args = json.load(f)
-			keys_to_update = ['learning_rate','epochs','batch_size','regularization','overlap_coef','loss','beta','model_folder', 'type']
+			keys_to_update = ['learning_rate','epochs','batch_size',
+			'regularization','overlap_coef','loss','beta','model_folder', 'type','pretraining']
 			to_modify = { key: modified_args[key] for key in keys_to_update if key in modified_args.keys() }
 			to_modify.update({key: val for key, val in modified_args.items() if key not in args.keys()})
 
@@ -224,6 +226,7 @@ class Separator(Network):
 		self.a = kwargs['mask_a']
 		self.b = kwargs['mask_b']
 
+
 		self.plugged = graph is not None
 		# If the Separator is not independant but using a front layer
 		if self.plugged:
@@ -232,8 +235,10 @@ class Separator(Network):
 			self.graph = graph
 			with self.graph.as_default():
 
-				front = self.graph.get_tensor_by_name('front/Reshape_1:0')
+				self.training = self.graph.get_tensor_by_name('inputs/is_training:0')
 
+				front = self.graph.get_tensor_by_name('front/Reshape_2:0')
+				print 'FRONT', front
 				self.B = tf.shape(self.graph.get_tensor_by_name('inputs/non_mix_input:0'))[0]
 
 				with tf.name_scope('split_front'):
