@@ -162,20 +162,19 @@ class Dataset(object):
 		with ConsistentRandom(config.seed):
 			used = copy.deepcopy(self.items[index])
 			while True:
-				mix = []
-				non_mix = []
-				I = []
+				mix = [[] for _ in range(batch_size)]
+				non_mix = [[] for _ in range(batch_size)]
+				I = [[] for _ in range(batch_size)]
 				for i in range(batch_size):
 					if fake: 
 						self.next_item(used, fake)
 					else: 
 						m, n_m, ind = self.next_item(used, fake)
-						mix.append(m)
-						non_mix.append(n_m)
-						I.append(ind)
+						mix[i] = m
+						non_mix[i] = n_m
+						I[i] = ind
 				mix = np.array(mix)
 				non_mix = np.array(non_mix)
-				I = np.array(I)
 				yield (mix, non_mix, I)
 
 	def next_item(self, used, fake=False):
@@ -207,10 +206,9 @@ class Dataset(object):
 					del used[s][key]
 
 		if not fake:
-			# TODO MIXING TYPE !
 			mix_array = np.zeros((self.chunk_size))
-			non_mix_array = []
-			indices = []
+			non_mix_array = [[] for _ in range(len(mix))]
+			indices = [[] for _ in range(len(mix))]
 
 			# Mixing all the items
 			for i, m in enumerate(mix):
@@ -222,8 +220,8 @@ class Dataset(object):
 				item = self.file[item_path][chunk*self.chunk_size:(chunk+1)*self.chunk_size]
 				mix_array += item
 
-				non_mix_array.append(item)
-				indices.append(key_index)
+				non_mix_array[i] = item 
+				indices[i] = key_index
 
 			return mix_array, non_mix_array, indices
 
