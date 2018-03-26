@@ -1,10 +1,12 @@
 # coding: utf-8
-from data.dataset import Dataset
+from data.dataset import Dataset, TFDataset
 import time
 import numpy as np
 import argparse
 from utils.tools import getETA
 from utils.ops import normalize_mix
+import tensorflow as tf
+from models.adapt import Adapt
 
 class MyArgs(object):
 
@@ -105,133 +107,164 @@ class MyArgs(object):
 class Trainer(object):
 	def __init__(self, trainer_type, **kwargs):
 
-		self.dataset = Dataset(**kwargs)
+		# self.dataset = Dataset(**kwargs)
 
+		self.batch_size = kwargs['batch_size']
+		
 		additional_args = {
-			"tot_speakers" : self.dataset.tot_speakers,
 			"type" : trainer_type
 		}
 
 		kwargs.update(additional_args)
 		self.args = kwargs
 
-	def build_model(self):
-		pass
-
 	def train(self):
 
 		print 'Total name :' 
-		print self.model.runID
 
 		nb_epochs = self.args['epochs']
-		batch_size = self.args['batch_size']
 		time_spent = [0 for _ in range(10)]
-		nb_batches = self.dataset.nb_batch(batch_size)
+		
+		with tf.Graph().as_default() as graph:
+			tfds = TFDataset(batch_size=self.batch_size)
 
-		best_validation_cost = 1e100
+			additional_args = {
+				"mix": tfds.next_mix,
+				"non_mix": tfds.next_non_mix,
+				"ind": tfds.next_ind,
+				"pipeline": True,
+				"tot_speakers" : 251
+			}
 
-		t1 = time.clock()
+			self.args.update(additional_args)
 
-		step = 0
-		for epoch in range(nb_epochs):
-			for b ,(x_mix, x_non_mix, I) in enumerate(self.dataset.get_batch(self.dataset.TRAIN, batch_size)):
+			config_ = tf.ConfigProto()
+			config_.gpu_options.allow_growth = True
+			config_.allow_soft_placement = True
 
-				# x_mix, x_non_mix, _, _ = normalize_mix(x_mix, x_non_mix, type_='min-max')
+			with tf.Session(graph=graph, config=config_).as_default() as sess:
 
-				t = time.clock()
-				# m =  self.model.test(x_mix, x_non_mix, I)
-				# print np.amax(m), np.amin(m), np.mean(m), np.median(m)
-				c = self.model.train(x_mix, x_non_mix, I, step)
-								
-				if (step+1)%self.args['validation_step'] == 0:
-					t = time.clock()
-					# Compute validation mean cost with batches to avoid memory problems
-					costs = []
-					for x_mix_v, x_non_mix_v, I_v in self.dataset.get_batch(self.dataset.VALID, batch_size):
+				self.build()
 
-						# x_mix_v, x_non_mix_v, _, _ = normalize_mix(x_mix_v, x_non_mix_v, type_='min-max')
+				tfds.init_handle()
 
-						cost = self.model.valid_batch(x_mix_v, x_non_mix_v, I_v, step)
-						costs.append(cost)
+				nb_batches_train = tfds.length('train')
+				nb_batches_test = tfds.length('test')
+				nb_batches_valid = tfds.length('valid')
 
-					valid_cost = np.mean(costs)
-					self.model.add_valid_summary(valid_cost, step)
+				print 'BATCHES'
+				print nb_batches_train, nb_batches_test, nb_batches_valid
 
-					# Save the model if it is better:
-					if valid_cost < best_validation_cost:
-						best_validation_cost = valid_cost # Save as new lowest cost
-						best_path = self.model.save(step)
-						print 'Save best model with :', best_validation_cost
+				feed_dict_train = {tfds.handle: tfds.get_handle('train')}
+				feed_dict_valid = {tfds.handle: tfds.get_handle('valid')}
+				feed_dict_test = {tfds.handle: tfds.get_handle('test')}
 
-					t_f = time.clock()
-					print 'Validation set tested in ', t_f - t, ' seconds'
-					print 'Validation set: ', valid_cost
-				
-				time_spent = time_spent[1:] +[time.clock()-t1]
-				avg =  sum(time_spent)/len(time_spent)
-				print 'Epoch #', epoch+1,'/', nb_epochs,' Batch #', b+1,'/',nb_batches,'in', avg,'sec loss=', c \
-					, ' ETA = ', getETA(avg, nb_batches, b+1, nb_epochs, epoch+1)
+				best_validation_cost = 1e100
 
 				t1 = time.clock()
 
-				step += 1
+				step = 0
 
-		print 'Best model with Validation:  ', best_validation_cost
-		print 'Path = ', best_path
+				for epoch in range(nb_epochs):
+					sess.run(tfds.training_initializer)
 
-		# Load the best model on validation set and test it
-		self.model.restore_last_checkpoint()
-		
-		for x_mix_t, x_non_mix_t, I_t in self.dataset.get_batch(self.dataset.TEST, batch_size):
-			# x_mix_t, x_non_mix_t, _, _ = normalize_mix(x_mix_t, x_non_mix_t)
-			cost = self.model.test_batch(x_mix_t, x_non_mix_t, I_t)
-			costs.append(cost)
-		print 'Test cost = ', np.mean(costs)
+					for b in range(nb_batches_train):
 
-from models.adapt import Adapt
+						t = time.clock()
+
+						c = self.model.train(feed_dict_train, step)
+										
+						if (step+1)%self.args['validation_step'] == 0:
+							t = time.clock()
+
+							sess.run(tfds.validation_initializer)
+
+							# Compute validation mean cost with batches to avoid memory problems
+							costs = []
+
+							for b_v in range(nb_batches_valid):
+								cost = self.model.valid_batch(feed_dict_valid,step)
+								costs.append(cost)
+
+							valid_cost = np.mean(costs)
+							self.model.add_valid_summary(valid_cost, step)
+
+							# Save the model if it is better:
+							if valid_cost < best_validation_cost:
+								best_validation_cost = valid_cost # Save as new lowest cost
+								best_path = self.model.save(step)
+								print 'Save best model with :', best_validation_cost
+
+							t_f = time.clock()
+							print 'Validation set tested in ', t_f - t, ' seconds'
+							print 'Validation set: ', valid_cost
+
+						time_spent = time_spent[1:] +[time.clock()-t1]
+						avg =  sum(time_spent)/len(time_spent)
+						print 'Epoch #', epoch+1,'/', nb_epochs,' Batch #', b+1,'/',nb_batches_train,'in', avg,'sec loss=', c \
+							, ' ETA = ', getETA(avg, nb_batches_train, b+1, nb_epochs, epoch+1)
+
+						t1 = time.clock()
+
+						step += 1
+
+				print 'Best model with Validation:  ', best_validation_cost
+				print 'Path = ', best_path
+
+				# Load the best model on validation set and test it
+				self.model.restore_last_checkpoint(sess)
+				
+				sess.run(tfds.test_initializer)
+
+				for b_t in range(nb_batches_test):
+					cost = self.model.test_batch(feed_dict_test)
+					costs.append(cost)
+				print 'Test cost = ', np.mean(costs)
+
 
 class STFT_Separator_Trainer(Trainer):
 	def __init__(self, separator, name, **kwargs):
 		self.separator = separator
 		super(STFT_Separator_Trainer, self).__init__(trainer_type=name, **kwargs)
 
-	def build_model(self):
+	def build(self):
 		self.model = self.separator(**self.args)
+		self.create_session(self.model.graph)
 		self.model.tensorboard_init()
-		self.model.init_all()
+		self.model.init_all()		
 
 class STFT_Separator_enhance_Trainer(Trainer):
 	def __init__(self, separator, name, **kwargs):
 		self.separator = separator
 		super(STFT_Separator_enhance_Trainer, self).__init__(trainer_type=name, **kwargs)
-
-	def build_model(self):
+		
+	def build(self):
 		self.model = self.separator.load(self.args['model_folder'], self.args)
 		self.model.restore_model(self.args['model_folder'])
 		self.model.add_enhance_layer()
 		self.model.tensorboard_init()
 		# Initialize only non restored values
-		self.model.initialize_non_init()
-
+		self.model.initialize_non_init()		
 class STFT_Separator_FineTune_Trainer(Trainer):
 	def __init__(self, separator, name, **kwargs):
 		self.separator = separator
 		super(STFT_Separator_FineTune_Trainer, self).__init__(trainer_type=name, **kwargs)
-
-	def build_model(self):
+		
+	def build(self):
 		self.model = self.separator.load(self.args['model_folder'], self.args)
 		self.model.restore_model(self.args['model_folder'])
 		self.model.add_finetuning()
 		self.model.tensorboard_init()
 		# Initialize only non restored values
-		self.model.initialize_non_init()
+		self.model.initialize_non_init()		
 
 
 class Adapt_Pretrainer(Trainer):
+
 	def __init__(self, **kwargs):
 		super(Adapt_Pretrainer, self).__init__(trainer_type='pretraining', **kwargs)
 
-	def build_model(self):
+	def build(self):
 		self.model = Adapt(**self.args)
 		self.model.tensorboard_init()
 		self.model.init_all()
@@ -241,8 +274,9 @@ class Front_Separator_Trainer(Trainer):
 		super(Front_Separator_Trainer, self).__init__(trainer_type=name, **kwargs)
 		self.separator = separator
 
-	def build_model(self):
+	def build(self):
 		self.model = Adapt.load(self.args['model_folder'], self.args)
+		self.create_session(self.model.graph)
 		self.model.restore_model(self.args['model_folder'])
 		self.model.connect_only_front_to_separator(self.separator)
 		# Initialize only non restored values
@@ -253,8 +287,9 @@ class Front_Separator_Finetuning_Trainer(Trainer):
 		super(Front_Separator_Finetuning_Trainer, self).__init__(trainer_type=name, **kwargs)
 		self.separator = separator
 
-	def build_model(self):
+	def build(self):
 		self.model = Adapt.load(self.args['model_folder'], self.args)
+		self.create_session(self.model.graph)
 		# Expanding the graph with enhance layer
 		with self.model.graph.as_default() : 
 			self.model.connect_front(self.separator)
@@ -273,8 +308,9 @@ class Front_Separator_Enhance_Trainer(Trainer):
 		super(Front_Separator_Enhance_Trainer, self).__init__(trainer_type=name, **kwargs)
 		self.separator = separator
 
-	def build_model(self):
+	def build(self):
 		self.model = Adapt.load(self.args['model_folder'], self.args)
+		self.create_session(self.model.graph)
 		# Restoring previous Model:
 		self.model.restore_front_separator(self.args['model_folder'], self.separator)
 		# Expanding the graph with enhance layer
@@ -293,10 +329,10 @@ class Front_Separator_Enhance_Finetuning_Trainer(Trainer):
 		super(Front_Separator_Enhance_Finetuning_Trainer, self).__init__(trainer_type=name, **kwargs)
 		self.separator = separator
 
-	def build_model(self):
+	def build(self):
 		self.model = Adapt.load(self.args['model_folder'], self.args)
 		# Restoring the front layer:
-
+		self.create_session(self.model.graph)
 		# Expanding the graph with enhance layer
 		with self.model.graph.as_default() : 
 			self.model.connect_front(self.separator)

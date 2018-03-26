@@ -32,7 +32,7 @@ class Adapt(Network):
 			self.loss = kwargs['loss']
 			self.separation = kwargs['separation']
 
-		with self.graph.as_default():
+		with tf.get_default_graph().as_default():
 
 			with tf.name_scope('preprocessing'):
 				if self.pretraining:
@@ -55,37 +55,35 @@ class Adapt(Network):
 				self.front
 
 	def create_centroids_saver(self):
-		with self.graph.as_default():
-			self.centroids_saver = tf.train.Saver([self.sepNet.speaker_vectors], max_to_keep=10000000)
+		self.centroids_saver = tf.train.Saver([self.sepNet.speaker_vectors], max_to_keep=10000000)
 
 	def savedModel(self):
-		with self.graph.as_default():
-			path = os.path.join(config.log_dir,self.folder ,self.runID, 'SavedModel')
-			builder = saved_model_builder.SavedModelBuilder(path)
+		path = os.path.join(config.log_dir,self.folder ,self.runID, 'SavedModel')
+		builder = saved_model_builder.SavedModelBuilder(path)
 
-			# Build signatures
-			input_tensor_info = tf.saved_model.utils.build_tensor_info(self.x_mix)
-			output_tensor_info = tf.saved_model.utils.build_tensor_info(self.back)
+		# Build signatures
+		input_tensor_info = tf.saved_model.utils.build_tensor_info(self.x_mix)
+		output_tensor_info = tf.saved_model.utils.build_tensor_info(self.back)
 
-			signature = tf.saved_model.signature_def_utils.build_signature_def(
-				inputs={
-					'mixed_audio':
-					input_tensor_info
-				},
-				outputs={
-					'unmixed_audio':
-					output_tensor_info
-				}
-				)
+		signature = tf.saved_model.signature_def_utils.build_signature_def(
+			inputs={
+				'mixed_audio':
+				input_tensor_info
+			},
+			outputs={
+				'unmixed_audio':
+				output_tensor_info
+			}
+			)
 
 
-			builder.add_meta_graph_and_variables(
-				self.sess, ['validating'],
-				signature_def_map={'separate_audio':signature}
-				)
+		builder.add_meta_graph_and_variables(
+			self.sess, ['validating'],
+			signature_def_map={'separate_audio':signature}
+			)
 
-			builder.save()
-			print 'Successfully exported model to %s' % path
+		builder.save()
+		print 'Successfully exported model to %s' % path
 
 	##
 	## Front End creating STFT like data
@@ -106,10 +104,10 @@ class Adapt(Network):
 
 		# 1 Dimensional convolution along T axis with a window length = self.window
 		# And N = 256 filters -> Create a [Btot, 1, T, N]
-		self.X = tf.nn.conv2d(input_front, self.conv_filter, strides=[1, 1, self.max_pool_value, 1], padding="SAME", name='Conv_STFT')
+		self.X = tf.nn.conv2d(input_front, self.conv_filter, strides=[1, 1, self.max_pool_value, 1], padding="VALID", name='Conv_STFT')
 		
 		# Reshape to Btot batches of T x N images with 1 channel
-		self.y = tf.reshape(self.X, [self.B_tot, -1, self.N, 1])
+		self.y = tf.reshape(self.X, [self.B_tot, -1, self.N, 1], name='output')
 		self.T = tf.shape(self.y)[1]
 
 		y_shape = tf.shape(self.y)
@@ -212,7 +210,7 @@ class Adapt(Network):
 
 		output = tf.nn.conv2d_transpose(output , filter=self.conv_filter_2,
 									 output_shape=[self.B*self.S, 1, self.L, 1],
-									 strides=[1, 1, self.max_pool_value, 1], padding='SAME')
+									 strides=[1, 1, self.max_pool_value, 1], padding='VALID')
 
 		output = tf.reshape(output, [self.B, self.S, self.L], name='back_output')
 
@@ -372,9 +370,9 @@ class Adapt(Network):
 			self.optimize
 			self.tensorboard_init()
 
-	def restore_front_separator(self, path, separator):
+	def restore_front_separator(self, sess, path, separator):
 		with self.graph.as_default():
 			self.connect_front(separator)
 			self.sepNet.output = self.sepNet.prediction
 			self.back
-			self.restore_model(path)
+			self.restore_model(sess, path)

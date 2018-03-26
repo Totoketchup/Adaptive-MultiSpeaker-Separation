@@ -32,67 +32,87 @@ class Network(object):
 			self.runID = haikunator.Haikunator().haikunate()
 			print 'ID : {}'.format(self.runID)
 
-			#Create a graph for this model
-			self.graph = tf.Graph()
+			if not kwargs['pipeline']:
+				#Create a graph for this model
+				self.graph = tf.Graph()
 
-			with self.graph.as_default():
+				with self.graph.as_default():
 
-				with tf.name_scope('inputs'):
+					with tf.name_scope('inputs'):
 
-					# Boolean placeholder signaling if the model is in learning/training mode
-					self.training = tf.placeholder(tf.bool, name='is_training')
+						# Boolean placeholder signaling if the model is in learning/training mode
+						self.training = tf.placeholder(tf.bool, name='is_training')
 
-					# Batch of raw non-mixed audio
-					# shape = [ batch size , number of speakers, samples ] = [ B, S, L]
-					self.x_non_mix = tf.placeholder("float", [None, None, None], name='non_mix_input')
+						# Batch of raw non-mixed audio
+						# shape = [ batch size , number of speakers, samples ] = [ B, S, L]
+						self.x_non_mix = tf.placeholder("float", [None, None, None], name='non_mix_input')
 
-					# Batch of raw mixed audio - Input data
-					# shape = [ batch size , samples ] = [ B , L ]
-					self.x_mix = tf.placeholder("float", [None, None], name='mix_input')
+						# Batch of raw mixed audio - Input data
+						# shape = [ batch size , samples ] = [ B , L ]
+						self.x_mix = tf.placeholder("float", [None, None], name='mix_input')
 
-					# Speakers indicies used in the mixtures
-					# shape = [ batch size, #speakers]
-					self.I = tf.placeholder(tf.int32, [None, None], name='indicies')
+						# Speakers indicies used in the mixtures
+						# shape = [ batch size, #speakers]
+						self.I = tf.placeholder(tf.int32, [None, None], name='indicies')
 
-					shape_in = tf.shape(self.x_mix)
-					self.B = shape_in[0]
-					self.L = shape_in[1]
+						shape_in = tf.shape(self.x_mix)
+						self.B = shape_in[0]
+						self.L = shape_in[1]
+			else:
+				with tf.get_default_graph().as_default():
+					with tf.name_scope('inputs'):
 
-			# Create a session for this model based on the constructed graph
-			config_ = tf.ConfigProto()
-			config_.gpu_options.allow_growth = True
-			config_.allow_soft_placement = True
-			self.sess = tf.Session(graph=self.graph, config=config_)
+						# Boolean placeholder signaling if the model is in learning/training mode
+						self.training = tf.placeholder(tf.bool, name='is_training')
+
+						# Batch of raw non-mixed audio
+						# shape = [ batch size , number of speakers, samples ] = [ B, S, L]
+						self.x_non_mix = tf.identity(kwargs['non_mix'], name='non_mix_input')
+
+						# Batch of raw mixed audio - Input data
+						# shape = [ batch size , samples ] = [ B , L ]
+						self.x_mix =  tf.identity(kwargs['mix'], name='mix_input')
+
+						# Speakers indicies used in the mixtures
+						# shape = [ batch size, #speakers]
+						self.I =  tf.identity(kwargs['ind'], name='indicies')
+
+						shape_in = tf.shape(self.x_mix)
+						self.B = shape_in[0]
+						self.L = shape_in[1]
+
 
 	def tensorboard_init(self):
-		with self.graph.as_default():
-			self.saver = tf.train.Saver()
+		self.saver = tf.train.Saver()
 
-			sums = ops.get_collection(ops.GraphKeys.SUMMARIES)
-			train_keys_summaries = []
-			valid_keys_summaries = []
+		sums = ops.get_collection(ops.GraphKeys.SUMMARIES)
+		train_keys_summaries = []
+		valid_keys_summaries = []
 
-			for s in sums:
-				if not ('input' in s.name or 'output' in s.name):
-					train_keys_summaries.append(s)
-				else:
-					valid_keys_summaries.append(s)
-				if 'SDR_improvement' in s.name:
-					valid_keys_summaries.append(s)
-
-
-			self.merged_train = tf.summary.merge(train_keys_summaries)
-			if len(valid_keys_summaries) != 0:
-				self.merged_valid = tf.summary.merge(valid_keys_summaries)
+		for s in sums:
+			if not ('input' in s.name or 'output' in s.name):
+				train_keys_summaries.append(s)
 			else:
-				self.merged_valid = None
+				valid_keys_summaries.append(s)
+			if 'SDR_improvement' in s.name:
+				valid_keys_summaries.append(s)
 
-			self.train_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID,'train'), self.graph)
-			self.valid_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID,'valid'))
 
-			# Save arguments
-			with open(os.path.join(config.log_dir,self.folder,self.runID,'params'), 'w') as f:
-				json.dump(self.args, f)
+		self.merged_train = tf.summary.merge(train_keys_summaries)
+		if len(valid_keys_summaries) != 0:
+			self.merged_valid = tf.summary.merge(valid_keys_summaries)
+		else:
+			self.merged_valid = None
+
+		self.train_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID,'train'), tf.get_default_graph())
+		self.valid_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID,'valid'))
+
+		# Save arguments
+		with open(os.path.join(config.log_dir,self.folder,self.runID,'params'), 'w') as f:
+			del self.args['mix']
+			del self.args['non_mix']
+			del self.args['ind']
+			json.dump(self.args, f)
 
 	def create_saver(self, subset=None):
 		with self.graph.as_default():
@@ -104,35 +124,32 @@ class Network(object):
 	# Restore last checkpoint of the current graph using the total path
 	# This method is used when we plug a new layer
 	def restore_model(self, path):
-		with self.graph.as_default():
-			tf.train.Saver().restore(self.sess, tf.train.latest_checkpoint(path))
+		tf.train.Saver().restore(tf.get_default_session(), tf.train.latest_checkpoint(path))
 	
 	# Restore the last checkpoint of the current trained model
 	# This function is maintly used during the test phase
 	def restore_last_checkpoint(self):
-		self.saver.restore(self.sess, tf.train.latest_checkpoint(os.path.join(config.log_dir, self.folder ,self.runID)))
+		self.saver.restore(tf.get_default_session(), tf.train.latest_checkpoint(os.path.join(config.log_dir, self.folder ,self.runID)))
 
 	def init_all(self):
-		with self.graph.as_default():
-			self.sess.run(tf.global_variables_initializer())
+		tf.get_default_session().run(tf.global_variables_initializer())
  
 	def non_initialized_variables(self):
-		with self.graph.as_default():
-			global_vars = tf.global_variables()
-			is_not_initialized = self.sess.run([~(tf.is_variable_initialized(var)) \
-										   for var in global_vars])
-			not_initialized_vars = list(compress(global_vars, is_not_initialized))
-			print 'not init: '
-			print [v.name for v in not_initialized_vars]
-			if len(not_initialized_vars):
-				init = tf.variables_initializer(not_initialized_vars)
-				return init
+		global_vars = tf.global_variables()
+		is_not_initialized = tf.get_default_session().run([~(tf.is_variable_initialized(var)) \
+									   for var in global_vars])
+		not_initialized_vars = list(compress(global_vars, is_not_initialized))
+		print 'not init: '
+		print [v.name for v in not_initialized_vars]
+		if len(not_initialized_vars):
+			init = tf.variables_initializer(not_initialized_vars)
+			return init
 
 	def initialize_non_init(self):
 		with self.graph.as_default():
 			non_init = self.non_initialized_variables()
 			if non_init is not None:
-				self.sess.run(non_init)
+				tf.get_default_session().run(non_init)
 
 	@scope
 	def optimize(self):
@@ -148,28 +165,34 @@ class Network(object):
 
 	def save(self, step):
 		path = os.path.join(config.log_dir, self.folder ,self.runID, "model")
-		self.saver.save(self.sess, path, step)
+		self.saver.save(tf.get_default_session(), path, step)
 		return path
 
-	def train(self, X_mix, X_non_mix, I, step):
-		summary, _, cost = self.sess.run([self.merged_train, self.optimize, self.cost_model], {self.x_mix: X_mix, self.x_non_mix:X_non_mix, self.training:True, self.I:I})
+	def train(self, feed_dict, step):
+		feed_dict.update({self.training:True})
+		summary, _, cost = tf.get_default_session().run([self.merged_train, self.optimize, self.cost_model], feed_dict)
 		self.train_writer.add_summary(summary, step)
 		return cost
 
-	def valid_batch(self, X_mix_valid, X_non_mix_valid, I, step):
+	def valid_batch(self, feed_dict, step):
+		sess = tf.get_default_session()
+		feed_dict.update({self.training:False})
 		if self.merged_valid is None:
-			cost = self.sess.run(self.cost_model, {self.x_non_mix:X_non_mix_valid, self.x_mix:X_mix_valid, self.training:False, self.I:I})
+			cost = sess.run(self.cost_model, feed_dict)
 		else:
-			cost, summary =  self.sess.run([self.cost_model, self.merged_valid], {self.x_non_mix:X_non_mix_valid, self.x_mix:X_mix_valid, self.training:False, self.I:I})
+			cost, summary =  sess.run([self.cost_model, self.merged_valid], feed_dict)
 			self.valid_writer.add_summary(summary, step)
 		return cost
 
-	def test_batch(self, X_mix_valid, X_non_mix_valid, I):
-		return self.sess.run(self.cost_model, {self.x_non_mix:X_non_mix_valid, self.x_mix:X_mix_valid, self.training:False, self.I:I})
+	def test_batch(self, feed_dict):
+		sess = tf.get_default_session()
+		feed_dict.update({self.training:False})
+		return sess.run(self.cost_model, feed_dict)
 
-
-	def test(self, X_mix_valid, X_non_mix_valid, I):
-		return self.sess.run(self.f, {self.x_non_mix:X_non_mix_valid, self.x_mix:X_mix_valid, self.training:True, self.I:I})
+	def test(self, feed_dict):
+		sess = tf.get_default_session()
+		feed_dict.update({self.training:True})
+		return sess.run(self.f, feed_dict)
 
 	def add_valid_summary(self, val, step):
 		summary = tf.Summary()
@@ -237,8 +260,8 @@ class Separator(Network):
 
 				self.training = self.graph.get_tensor_by_name('inputs/is_training:0')
 
-				front = self.graph.get_tensor_by_name('front/Reshape_2:0')
-				print 'FRONT', front
+				front = self.graph.get_tensor_by_name('front/output:0')
+
 				self.B = tf.shape(self.graph.get_tensor_by_name('inputs/non_mix_input:0'))[0]
 
 				with tf.name_scope('split_front'):
@@ -292,11 +315,8 @@ class Separator(Network):
 
 	def add_finetuning(self):
 		with self.graph.as_default():
-			print 'sep'
 			self.separate
-			print 'post'
 			self.postprocessing
-			print 'cost'
 			self.cost_model = self.cost_finetuning
 			self.finish_construction()
 			self.freeze_all_except('prediction')

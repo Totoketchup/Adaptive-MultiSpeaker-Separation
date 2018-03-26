@@ -9,7 +9,6 @@ if __name__ == '__main__':
 	args = p.get_args()
 
 	trainer = Adapt_Pretrainer(pretraining=True, **vars(args))
-	trainer.build_model()
 	trainer.train()
 
 #Network arguments
