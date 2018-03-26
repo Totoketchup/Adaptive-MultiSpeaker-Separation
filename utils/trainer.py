@@ -212,7 +212,7 @@ class Trainer(object):
 				print 'Path = ', best_path
 
 				# Load the best model on validation set and test it
-				self.model.restore_last_checkpoint(sess)
+				self.model.restore_last_checkpoint()
 				
 				sess.run(tfds.test_initializer)
 
