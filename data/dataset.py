@@ -6,7 +6,7 @@ import os
 import config
 from tqdm import tqdm 
 import copy
-
+import time
 """
 Class used to have a consistent Randomness between Training/Validation/Test for
 different batch size
@@ -279,17 +279,198 @@ class Dataset(object):
 
 		print 'Dataset for the subset: ' + subset + ' has been built'
 
+def create_mix(output_fn, chunk_size, batch_size, nb_speakers, sex, no_random_picking):
+	# Extract the information about this subset (speakers, chapters)
+	# Dictionary with the following shape: 
+	# {speaker_key: {chapters: [...], sex:'M/F', ... } }
+	data = Dataset(dataset="h5py_files/train-clean-100-8-s.h5", 
+		chunk_size=chunk_size, 
+		batch_size=batch_size, 
+		nb_speakers=nb_speakers,
+		sex=sex,
+		no_random_picking=no_random_picking)
+
+	with h5py.File(output_fn,'w') as data_file:
+
+		f = [("train", data.TRAIN),("test",data.TEST), ("valid",data.VALID)]
+
+		for group_name, data_split in f:
+			print group_name
+			data_file.create_group(group_name)
+			train_mix = data_file[group_name].create_dataset("mix",
+							shape=(batch_size, chunk_size),
+							maxshape=(None, chunk_size),
+							compression="gzip",
+							chunks=(64, chunk_size),
+							dtype='float32')
+			train_non_mix = data_file[group_name].create_dataset("non_mix",
+							shape=(batch_size, nb_speakers, chunk_size),
+							maxshape=(None, nb_speakers, chunk_size),
+							compression="gzip",
+							chunks=(64, nb_speakers, chunk_size),
+							dtype='float32')
+			train_index = data_file[group_name].create_dataset("ind",
+							shape=(batch_size, nb_speakers),
+							maxshape=(None, nb_speakers),
+							compression="gzip",
+							chunks=(64, nb_speakers),
+							dtype='int32')
+			size = batch_size
+			for i ,(mix, non_mix, index) in enumerate(data.get_batch(data_split, batch_size)):
+				train_mix[i*batch_size:(i+1)*batch_size] = mix
+				train_non_mix[i*batch_size:(i+1)*batch_size] = non_mix
+				train_index[i*batch_size:(i+1)*batch_size] = index
+				
+				size = size + batch_size
+				train_mix.resize((size, chunk_size))
+				train_non_mix.resize((size, nb_speakers, chunk_size))
+				train_index.resize((size, nb_speakers))
+
+import tensorflow as tf
+
+def create_tfrecord_file(output_fn, chunk_size, batch_size, nb_speakers, sex, no_random_picking):
+	# Extract the information about this subset (speakers, chapters)
+	# Dictionary with the following shape: 
+	# {speaker_key: {chapters: [...], sex:'M/F', ... } }
+	data = Dataset(dataset="h5py_files/train-clean-100-8-s.h5", 
+		chunk_size=chunk_size, 
+		batch_size=batch_size, 
+		nb_speakers=nb_speakers,
+		sex=sex,
+		no_random_picking=no_random_picking)
+
+	f = [("train", data.TRAIN),("test",data.TEST), ("valid",data.VALID)]
+
+	for group_name, data_split in f:
+		
+		writer = tf.python_io.TFRecordWriter(group_name +'.tfrecords')
+		print group_name
+		for i ,(mix, non_mix, index) in enumerate(data.get_batch(data_split, batch_size)):
+			mix_raw = mix[0].astype(np.float32).tostring()
+			non_mix_raw = non_mix[0].astype(np.float32).tostring()
+			index = np.array(index[0]).tostring()
+
+			feature = tf.train.Example(features=tf.train.Features(
+							feature = { 'chunk_size':tf.train.Feature(int64_list=tf.train.Int64List(value=[chunk_size])),
+										'nb_speakers':tf.train.Feature(int64_list=tf.train.Int64List(value=[nb_speakers])),
+										'mix':tf.train.Feature(bytes_list=tf.train.BytesList(value=[mix_raw])),
+										'non_mix':tf.train.Feature(bytes_list=tf.train.BytesList(value=[non_mix_raw])),
+										'ind':tf.train.Feature(bytes_list=tf.train.BytesList(value=[index]))
+									}))
+
+			writer.write(feature.SerializeToString())
+
+		writer.close()
+
+
+def decode(serialized_example):
+	features = tf.parse_single_example(
+		serialized_example,
+		features={
+			'chunk_size': tf.FixedLenFeature([], tf.int64),
+			'nb_speakers': tf.FixedLenFeature([], tf.int64),
+			'mix':tf.FixedLenFeature([], tf.string),
+			'non_mix':tf.FixedLenFeature([], tf.string),
+			'ind': tf.FixedLenFeature([], tf.string),
+		})
+
+	chunk_size = tf.cast(features['chunk_size'], tf.int32)
+	nb_speakers = tf.cast(features['nb_speakers'], tf.int32)
+
+	ind = tf.decode_raw(features['ind'], tf.int64)
+	ind = tf.cast(ind, tf.int32)
+	ind = tf.reshape(ind, [nb_speakers])
+
+	mix = tf.decode_raw(features['mix'], tf.float32)
+	mix = tf.reshape(mix,[chunk_size])
+
+	non_mix = tf.decode_raw(features['non_mix'], tf.float32)
+	non_mix = tf.reshape(non_mix, [nb_speakers, chunk_size])
+
+	return mix, non_mix, ind
+
+def mapping(dataset, batch_size):
+	dataset = dataset.map(decode)
+	dataset = dataset.batch(batch_size)
+	return dataset.prefetch(1)
+
+class TFDataset(object):
+
+	def __init__(self, **kwargs):
+		batch_size = kwargs['batch_size']
+
+		training_dataset = tf.data.TFRecordDataset('train.tfrecords')
+		training_dataset = mapping(training_dataset, batch_size)
+
+		validation_dataset = tf.data.TFRecordDataset('valid.tfrecords')
+		validation_dataset = mapping(validation_dataset, batch_size)
+
+		test_dataset = tf.data.TFRecordDataset('test.tfrecords')
+		test_dataset = mapping(test_dataset, batch_size)
+
+		self.handle = tf.placeholder(tf.string, shape=[])
+		iterator = tf.data.Iterator.from_string_handle(
+			self.handle, training_dataset.output_types, training_dataset.output_shapes)
+		self.next_element = iterator.get_next()
+
+		self.training_iterator = training_dataset.make_initializable_iterator()
+		self.validation_iterator = validation_dataset.make_initializable_iterator()
+		self.test_iterator = test_dataset.make_initializable_iterator()
+
+		self.training_initializer = self.training_iterator.initializer
+		self.validation_initializer = self.validation_iterator.initializer
+		self.test_initializer = self.test_iterator.initializer
+
+		self.next_mix, self.next_non_mix, self.next_ind = self.next_element
+
+	def init_handle(self):
+		sess = tf.get_default_session()
+		self.training_handle = sess.run(self.training_iterator.string_handle())
+		self.validation_handle = sess.run(self.validation_iterator.string_handle())
+		self.test_handle = sess.run(self.test_iterator.string_handle())
+
+	def get_handle(self, split):
+		if split == 'train':
+			return self.training_handle
+		elif split == 'valid':
+			return self.validation_handle
+		elif split == 'test':
+			return self.test_handle
+
+	def get_initializer(self, split):
+		if split == 'train':
+			return self.training_initializer
+		elif split == 'valid':
+			return self.validation_initializer
+		elif split == 'test':
+			return self.test_initializer
+
+	def length(self, split):
+		count = 0
+		sess = tf.get_default_session()
+		sess.run(self.get_initializer(split))
+		try:
+			while True:
+				sess.run(self.next_element, feed_dict={self.handle: self.get_handle(split)})
+				count += 1
+		except Exception:
+			return count
+
+	def initialize(self, sess, split):
+		sess.run(self.initializer,feed_dict={self.split: split})
 
 if __name__ == "__main__":
 	###
 	### TEST
 	##
-	d = Dataset(dataset="h5py_files/train-clean-100-8-s.h5", chunk_size=20480, batch_size=100, nb_speakers=2)
-	print 'NB BATCH', d.nb_batch(batch_size=1)
-	for i ,(x_mix, x_non_mix, I) in enumerate(d.get_batch(d.TRAIN, 1)):
-		print I
-		if i%10 == 0:
-			for i ,(x_mix, x_non_mix, I) in enumerate(d.get_batch(d.VALID, 1)):
-				print I
-	for i ,(x_mix, x_non_mix, I) in enumerate(d.get_batch(d.TRAIN, 1)):
-		print I
+	create_tfrecord_file("testou.h5", 20480, 1, 2, ['M','F'], True)
+	# ds = TFDataset(batch_size=3)
+
+	# with tf.Session().as_default() as sess:
+	# 	ds.init_handle()
+	# 	L = ds.length('train')
+	# 	print L, ds.length('test'), ds.length('valid')
+	# 	sess.run(ds.training_initializer)
+	# 	for i in range(L):
+	# 		value = sess.run(ds.next_element, feed_dict={ds.handle: ds.get_handle('train')})
+	# 		print value[0].shape
