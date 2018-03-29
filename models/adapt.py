@@ -120,6 +120,7 @@ class Adapt(Network):
 			self.y = tf.nn.conv2d(input_front, self.conv_filter, strides=[1, 1, self.max_pool_value, 1], padding="SAME", name='Conv_STFT')
 
 		# Reshape to Btot batches of T x N images with 1 channel
+		# [Btot, 1, T_pool, N] -> [Btot, T-pool, N, 1]
 		self.y = tf.transpose(self.y,[0, 2, 3, 1], name='output')
 
 		y_shape = tf.shape(self.y)
@@ -163,12 +164,7 @@ class Adapt(Network):
 			input = tf.reshape(separator_in, [self.B_tot, self.T_max_pooled, self.N])
 
 			input_mix = tf.reshape(input[:self.B, : , :], [self.B, 1, self.T_max_pooled, self.N]) # B first batches correspond to mix input
-
 			input_non_mix = tf.reshape(input[self.B:, : , :], [self.B, self.S, self.T_max_pooled, self.N]) # B*S others non mix
-			
-			#For Tensorboard
-			self.inmix = tf.reshape(input_mix, [self.B, self.T_max_pooled, self.N, 1])
-			self.innonmix = tf.reshape(input_non_mix, [self.B*self.S, self.T_max_pooled, self.N, 1])
 
 			input_mix = tf.tile(input_mix, [1, self.S, 1, 1])
 
