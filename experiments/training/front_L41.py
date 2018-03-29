@@ -13,5 +13,4 @@ if __name__ == '__main__':
 	args = p.get_args()
 
 	trainer = Front_Separator_Trainer(L41Model, 'front_L41', pretraining=False, **vars(args))
-	trainer.build_model()
 	trainer.train()

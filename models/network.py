@@ -146,10 +146,9 @@ class Network(object):
 			return init
 
 	def initialize_non_init(self):
-		with self.graph.as_default():
-			non_init = self.non_initialized_variables()
-			if non_init is not None:
-				tf.get_default_session().run(non_init)
+		non_init = self.non_initialized_variables()
+		if non_init is not None:
+			tf.get_default_session().run(non_init)
 
 	@scope
 	def optimize(self):
@@ -192,7 +191,7 @@ class Network(object):
 	def test(self, feed_dict):
 		sess = tf.get_default_session()
 		feed_dict.update({self.training:True})
-		return sess.run(self.f, feed_dict)
+		return sess.run(self.y, feed_dict)
 
 	def add_valid_summary(self, val, step):
 		summary = tf.Summary()
@@ -238,8 +237,8 @@ from models.Kmeans_2 import KMeans
 
 class Separator(Network):
 
-	def __init__(self, graph=None, *args, **kwargs):
-		super(Separator, self).__init__(graph, *args, **kwargs)
+	def __init__(self, plugged=False, *args, **kwargs):
+		super(Separator, self).__init__(plugged, *args, **kwargs)
 
 		self.num_speakers = kwargs['tot_speakers']
 		self.layer_size = kwargs['layer_size']
@@ -250,12 +249,12 @@ class Separator(Network):
 		self.b = kwargs['mask_b']
 
 
-		self.plugged = graph is not None
+		self.plugged = plugged
 		# If the Separator is not independant but using a front layer
 		if self.plugged:
 			self.F = kwargs['filters']
 
-			self.graph = graph
+			self.graph = tf.get_default_graph()
 			with self.graph.as_default():
 
 				self.training = self.graph.get_tensor_by_name('inputs/is_training:0')
@@ -288,40 +287,37 @@ class Separator(Network):
 			self.F = kwargs['window_size']//2 +1
 
 	def init_separator(self):
-		with self.graph.as_default():
-			if self.plugged:
-					if self.args['normalize_separator']:
-						self.normalization01
-					self.prediction
-			else:
-					self.preprocessing
-					if self.args['normalize_separator']:
-						self.normalization01
-					self.prediction
-					#TODO TO IMPROVE !
-					if 'enhance' not in self.folder and 'finetuning' not in self.folder:
-						self.cost_model = self.cost
-						self.finish_construction()
-						self.optimize
+		if self.plugged:
+				if self.args['normalize_separator']:
+					self.normalization01
+				self.prediction
+		else:
+				self.preprocessing
+				if self.args['normalize_separator']:
+					self.normalization01
+				self.prediction
+				#TODO TO IMPROVE !
+				if 'enhance' not in self.folder and 'finetuning' not in self.folder:
+					self.cost_model = self.cost
+					self.finish_construction()
+					self.optimize
 
 	def add_enhance_layer(self):
-		with self.graph.as_default():
-			self.separate
-			self.enhance
-			self.cost_model = self.enhance_cost
-			self.finish_construction()
-			self.freeze_all_except('enhance')
-			self.optimize
+		self.separate
+		self.enhance
+		self.cost_model = self.enhance_cost
+		self.finish_construction()
+		self.freeze_all_except('enhance')
+		self.optimize
 
 	def add_finetuning(self):
-		with self.graph.as_default():
-			self.separate
-			self.postprocessing
-			self.cost_model = self.cost_finetuning
-			self.finish_construction()
-			self.freeze_all_except('prediction')
-			# self.tensorboard_init()
-			self.optimize
+		self.separate
+		self.postprocessing
+		self.cost_model = self.cost_finetuning
+		self.finish_construction()
+		self.freeze_all_except('prediction')
+		# self.tensorboard_init()
+		self.optimize
 
 	@scope
 	def preprocessing(self):

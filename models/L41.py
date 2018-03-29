@@ -22,8 +22,17 @@ class L41Model(Separator):
 	@scope
 	def prediction(self):
 		# L41 network
-
 		shape = tf.shape(self.X)
+
+		# # Normalization !
+		# min_ = tf.reduce_min(self.X, axis=[1,2], keep_dims=True)
+		# max_ = tf.reduce_max(self.X, axis=[1,2], keep_dims=True)
+		# self.X = (self.X - min_)/(max_-min_)
+
+		mean, var = tf.nn.moments(self.X, axes=[1,2], keep_dims=True)
+		self.X = tf.divide(self.X - mean, var)
+
+		# self.X = tf.layers.batch_normalization(self.X, training=self.training)
 
 		layers = [BLSTM(self.layer_size, 'BLSTM_'+str(i)) for i in range(self.nb_layers)]
 

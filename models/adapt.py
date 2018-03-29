@@ -177,7 +177,7 @@ class Adapt(Network):
 				# input_non_mix = tf.nn.softplus(input_non_mix)
 
 				filters = tf.divide(input_non_mix, input_mix)
-				tf.summary.histogram("filters", filters)
+				# tf.summary.histogram("filters", filters)
 				# output = input_mix * filters
 				output = tf.reshape(input_mix * filters, [self.B*self.S, self.T_max_pooled, self.N, 1])
 				output = tf.transpose(output, [0, 3, 1, 2])
@@ -390,22 +390,20 @@ class Adapt(Network):
 		np.save(os.path.join(config.log_dir, self.folder ,self.runID, "labels-{}".format(step)), labels)
 
 	def connect_front(self, separator_class):
-		self.sepNet = separator_class(self.graph, **self.args)
+		self.sepNet = separator_class(True, **self.args)
 
 	def connect_only_front_to_separator(self, separator, freeze_front=True):
-		with self.graph.as_default():
-			self.connect_front(separator)
-			self.sepNet.output = self.sepNet.prediction
-			self.cost_model = self.sepNet.cost
-			self.back # To save the back values !
-			self.finish_construction()
-			self.freeze_all_with('front')
-			self.optimize
-			self.tensorboard_init()
+		self.connect_front(separator)
+		self.sepNet.output = self.sepNet.prediction
+		self.cost_model = self.sepNet.cost
+		self.back # To save the back values !
+		self.finish_construction()
+		self.freeze_all_with('front')
+		self.optimize
+		self.tensorboard_init()
 
 	def restore_front_separator(self, sess, path, separator):
-		with self.graph.as_default():
-			self.connect_front(separator)
-			self.sepNet.output = self.sepNet.prediction
-			self.back
-			self.restore_model(sess, path)
+		self.connect_front(separator)
+		self.sepNet.output = self.sepNet.prediction
+		self.back
+		self.restore_model(sess, path)

@@ -281,7 +281,6 @@ class Front_Separator_Trainer(Trainer):
 
 	def build(self):
 		self.model = Adapt.load(self.args['model_folder'], self.args)
-		self.create_session(self.model.graph)
 		self.model.restore_model(self.args['model_folder'])
 		self.model.connect_only_front_to_separator(self.separator)
 		# Initialize only non restored values
@@ -294,7 +293,6 @@ class Front_Separator_Finetuning_Trainer(Trainer):
 
 	def build(self):
 		self.model = Adapt.load(self.args['model_folder'], self.args)
-		self.create_session(self.model.graph)
 		# Expanding the graph with enhance layer
 		with self.model.graph.as_default() : 
 			self.model.connect_front(self.separator)
@@ -315,7 +313,6 @@ class Front_Separator_Enhance_Trainer(Trainer):
 
 	def build(self):
 		self.model = Adapt.load(self.args['model_folder'], self.args)
-		self.create_session(self.model.graph)
 		# Restoring previous Model:
 		self.model.restore_front_separator(self.args['model_folder'], self.separator)
 		# Expanding the graph with enhance layer
@@ -337,7 +334,6 @@ class Front_Separator_Enhance_Finetuning_Trainer(Trainer):
 	def build(self):
 		self.model = Adapt.load(self.args['model_folder'], self.args)
 		# Restoring the front layer:
-		self.create_session(self.model.graph)
 		# Expanding the graph with enhance layer
 		with self.model.graph.as_default() : 
 			self.model.connect_front(self.separator)
