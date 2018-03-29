@@ -31,6 +31,8 @@ class Adapt(Network):
 			self.overlap_value = kwargs['overlap_value']
 			self.loss = kwargs['loss']
 			self.separation = kwargs['separation']
+			self.with_max_pool = kwargs['with_max_pool']
+			self.with_average_pool = kwargs['with_average_pool']
 
 		with tf.get_default_graph().as_default():
 
@@ -99,20 +101,30 @@ class Adapt(Network):
 		# Filter [filter_height, filter_width, input_channels, output_channels] = [1, W, 1, N]
 		self.window_filter = get_scope_variable('window', 'w', shape=[self.window], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 		self.bases = get_scope_variable('bases', 'bases', shape=[self.window, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
-		self.conv_filter = tf.reshape(tf.expand_dims(self.window_filter,1)*self.bases , [1, self.window, 1, self.N])
+		self.conv_filter = tf.reshape(tf.abs(tf.expand_dims(self.window_filter,1))*self.bases , [1, self.window, 1, self.N])
 		# self.conv_filter = get_scope_variable('filters_front','filters_front', shape=[1, self.window, 1, self.N])
 
 		# 1 Dimensional convolution along T axis with a window length = self.window
 		# And N = 256 filters -> Create a [Btot, 1, T, N]
-		self.X = tf.nn.conv2d(input_front, self.conv_filter, strides=[1, 1, self.max_pool_value, 1], padding="VALID", name='Conv_STFT')
-		
+		self.T = tf.shape(input_front)[2]
+
+		if self.with_max_pool:
+			self.X = tf.nn.conv2d(input_front, self.conv_filter, strides=[1, 1, 1, 1], padding="SAME", name='Conv_STFT')
+			self.y, self.argmax = tf.nn.max_pool_with_argmax(self.X, [1, 1, self.max_pool_value, 1], strides=[1, 1, self.max_pool_value, 1], padding="SAME", name='output')
+			print self.argmax
+		elif self.with_average_pool:
+			self.X = tf.nn.conv2d(input_front, self.conv_filter, strides=[1, 1, 1, 1], padding="SAME", name='Conv_STFT')
+			# self.y = tf.nn.avg_pool(self.X, [1, 1, self.max_pool_value, 1], [1, 1, self.max_pool_value, 1], padding="SAME")
+			self.y = tf.layers.average_pooling2d(self.X, (1, self.max_pool_value), strides=(1, self.max_pool_value), name='output')		
+		else:
+			self.y = tf.nn.conv2d(input_front, self.conv_filter, strides=[1, 1, self.max_pool_value, 1], padding="SAME", name='Conv_STFT')
+
 		# Reshape to Btot batches of T x N images with 1 channel
-		self.y = tf.reshape(self.X, [self.B_tot, -1, self.N, 1], name='output')
-		self.T = tf.shape(self.y)[1]
+		self.y = tf.transpose(self.y,[0, 2, 3, 1], name='output')
 
 		y_shape = tf.shape(self.y)
 		y = tf.reshape(self.y, [self.B_tot, y_shape[1]*y_shape[2]])
-		self.p_hat = tf.reduce_mean(tf.abs(y), 0)
+		self.p_hat = tf.reduce_sum(tf.abs(y), 0)
 		self.sparse_constraint = tf.reduce_sum(kl_div(self.p, self.p_hat))
 
 		return self.y
@@ -164,22 +176,17 @@ class Adapt(Network):
 
 				# sign = input_mix / tf.abs(input_mix)
 
-				# filters = sign*tf.square(input_non_mix) / tf.clip_by_value(tf.reduce_sum(tf.square(input_non_mix), 1, keep_dims=True), 1e-4, 1e10) 
+				# filters = tf.square(input_non_mix) / tf.clip_by_value(tf.reduce_sum(tf.square(input_non_mix), 1, keep_dims=True), 1e-4, 1e10) 
 				# input_mix = tf.nn.softplus(input_mix)
 				# input_non_mix = tf.nn.softplus(input_non_mix)
 
 				filters = tf.divide(input_non_mix, input_mix)
+				tf.summary.histogram("filters", filters)
+				# output = input_mix * filters
 				output = tf.reshape(input_mix * filters, [self.B*self.S, self.T_max_pooled, self.N, 1])
+				output = tf.transpose(output, [0, 3, 1, 2])
 
-
-				# a = tf.transpose(input_non_mix, [0,2,3,1])
-				# argmax = tf.argmax(tf.nn.softplus(a), axis=3)
-				# y = tf.one_hot(argmax, self.S, 0, 1) # [B, T, F, S]
-				# y = tf.transpose(y, [0,3,1,2])
-				# y = tf.cast(y, tf.float32)
-			 # 	self.f = y
-				# output = tf.reshape(input_mix * y, [self.B*self.S, self.T_max_pooled, self.N, 1])
-
+				self.filters = filters
 
 			elif self.separation == 'perfect':
 				# From [a, b, c ,d] -> [a+b+c+d, a+b+c+d, a+b+c+d, a+b+c+d]
@@ -197,20 +204,51 @@ class Adapt(Network):
 
 	@scope
 	def back(self):
-		# Back-End
+
 		input_tensor = self.separator
 
-		output = tf.reshape(input_tensor, [self.B*self.S, 1, self.T, self.N])
+		if self.with_max_pool:
 
-		self.window_filter_2 = tf.Variable(self.window_filter.initialized_value(), name="window_back")
-		self.bases_2 = tf.Variable(self.bases.initialized_value(), name="bases_back")
-		self.conv_filter_2 = tf.reshape(tf.expand_dims(self.window_filter_2,1)*self.bases_2 , [1, self.window, 1, self.N], name="filters_back")
-		# self.conv_filter_2 = tf.Variable(self.conv_filter.initialized_value(), name="filters_back")
-		# self.conv_filter_2 = get_scope_variable('filters_back','filters_back', shape=[1, self.window, 1, self.N])
+			argmax_mix = self.argmax[:self.B]
+	 
+			repeats = [self.S, 1, 1 ,1]
+			shape = tf.shape(argmax_mix)
+			argmax_mix = tf.expand_dims(argmax_mix, 1)
+			argmax_mix = tf.tile(argmax_mix, [1, self.S, 1, 1 ,1])
+			argmax_mix = tf.reshape(argmax_mix, shape*repeats)
+
+			output_shape = [self.B*self.S, 1, self.T, self.N]
+
+			print argmax_mix
+			print input_tensor
+
+			output = unpool(input_tensor, argmax_mix, ksize=[1, 1, self.max_pool_value, 1], output_shape= output_shape, scope='unpool')
+			output = tf.reshape(output, [self.B*self.S, 1, self.T, self.N])
+
+		elif self.with_average_pool:
+			input_tensor = tf.reshape(input_tensor, [self.B*self.S, 1, self.T_max_pooled,self.N])
+			output = tf.keras.layers.UpSampling2D((1, self.max_pool_value))(input_tensor)
+			output = tf.reshape(output, [self.B*self.S, 1, self.T, self.N])
+		else:
+			output = tf.reshape(input_tensor, [self.B*self.S, 1, self.T_max_pooled, self.N])
+
+
+
+		self.window_filter_2 = get_scope_variable('window', 'value', shape=[self.window], initializer=tf.contrib.layers.xavier_initializer_conv2d())
+		self.bases_2 = get_scope_variable('bases', 'value', shape=[self.window, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
+		self.conv_filter_2 = tf.reshape(tf.abs(tf.expand_dims(self.window_filter_2,1))*self.bases_2 , [1, self.window, 1, self.N], name='filters')# self.conv_filter_2 = tf.Variable(self.conv_filter.initialized_value(), name="filters_back")
+
+		if not (self.with_max_pool or self.with_average_pool):
+			strides = [1, 1, self.max_pool_value, 1]
+		else:
+			strides = [1, 1, 1, 1]
+
+		print 'strides', strides
 
 		output = tf.nn.conv2d_transpose(output , filter=self.conv_filter_2,
 									 output_shape=[self.B*self.S, 1, self.L, 1],
-									 strides=[1, 1, self.max_pool_value, 1], padding='VALID')
+									 strides=strides, padding='SAME')
+		print output
 
 		output = tf.reshape(output, [self.B, self.S, self.L], name='back_output')
 
@@ -229,7 +267,9 @@ class Adapt(Network):
 		neg = tf.square(tf.where(self.front < 0, self.front, tf.zeros_like(self.front)))
 		nn = 10*tf.reduce_mean(tf.reduce_sum(neg, [1,2,3]))
 
-		print 'nn', nn
+		regularization = self.l * (tf.nn.l2_loss(self.conv_filter_2)+ tf.nn.l2_loss(self.conv_filter))
+
+
 		# input_shape = [B, S, L]
 		# Doing l2 norm on L axis : 
 		if self.pretraining:
@@ -244,15 +284,12 @@ class Adapt(Network):
 
 			if self.loss == 'l2':
 				loss = l2
-				print 'L2 LOSS'
 			elif self.loss == 'sdr':
 				loss = sdr
-				print 'SDR LOSS'
 			else:
-				print 'SDR L2 LOSS'
-				loss = 1e-1*l2 + sdr
+				loss = l2 + sdr
 
-			loss = loss + nn
+			# loss = loss + nn
 
 		else:
 			# Compute loss over all possible permutations
@@ -295,8 +332,8 @@ class Adapt(Network):
 		cost_value = loss
 		if self.beta != 0.0:
 			cost_value += self.beta * self.sparse_constraint
-		# if self.l != 0.0:
-		# 	cost_value += self.l * regularization 
+		if self.l != 0.0:
+			cost_value += self.l * regularization 
 		if self.overlap_coef != 0.0:
 			cost_value += self.overlap_coef * self.overlapping_constraint
 
@@ -315,7 +352,7 @@ class Adapt(Network):
 			tf.summary.scalar('Non negativity loss', nn)			
 			tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
 			tf.summary.scalar('sparsity_loss', self.beta * self.sparse_constraint)
-			# tf.summary.scalar('L2_reg', self.l * regularization)
+			tf.summary.scalar('L2_reg', self.l * regularization)
 			tf.summary.scalar('loss', cost_value)
 			tf.summary.scalar('overlapping', self.overlapping)
 			tf.summary.scalar('overlapping_loss', self.overlap_coef * self.overlapping_constraint)

@@ -77,6 +77,11 @@ class MyArgs(object):
 			'--filters', type=int, help='Number of filters/bases for the 1D Conv', required=False, default=512)
 		self.parser.add_argument(
 			'--max_pool', type=int, help='Max Pooling size', required=False, default=512)
+		self.parser.add_argument(
+			'--with_max_pool', help='Use Max pooling and not hop', action="store_true")
+		self.parser.add_argument(
+			'--with_average_pool', help='Use Average pooling and not hop', action="store_true")
+
 
 		#Loss arguments
 		self.parser.add_argument(
