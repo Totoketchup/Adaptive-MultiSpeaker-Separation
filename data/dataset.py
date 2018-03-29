@@ -390,10 +390,8 @@ def decode(serialized_example):
 	return mix, non_mix, ind
 
 def mapping(dataset, batch_size):
-	dataset = dataset.apply(tf.contrib.data.map_and_batch(
-    	map_func=decode, 
-    	batch_size=tf.placeholder_with_default(tf.constant(batch_size, dtype=tf.int64), ()),
-		num_parallel_batches=8))
+	dataset = dataset.map(decode)
+	dataset = dataset.batch(batch_size)
 	return dataset.prefetch(1)
 
 class TFDataset(object):
