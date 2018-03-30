@@ -29,8 +29,9 @@ class L41Model(Separator):
 		# max_ = tf.reduce_max(self.X, axis=[1,2], keep_dims=True)
 		# self.X = (self.X - min_)/(max_-min_)
 
-		mean, var = tf.nn.moments(self.X, axes=[1,2], keep_dims=True)
-		self.X = tf.divide(self.X - mean, var)
+		if self.normalize_input:
+			mean, var = tf.nn.moments(self.X, axes=[1,2], keep_dims=True)
+			self.X = tf.divide(self.X - mean, var)
 
 		# self.X = tf.layers.batch_normalization(self.X, training=self.training)
 
