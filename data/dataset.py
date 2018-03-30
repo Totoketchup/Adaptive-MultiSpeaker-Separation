@@ -510,7 +510,7 @@ if __name__ == "__main__":
 	###
 	### TEST
 	##
-	create_tfrecord_file("testou.h5", 20480, 1, 2, ['M','F'], True)
+	create_tfrecord_file_2("testou.h5", 20480, 1, 2, ['M','F'], True)
 	# ds = TFDataset(batch_size=3)
 
 	# with tf.Session().as_default() as sess:
