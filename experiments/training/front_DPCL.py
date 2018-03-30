@@ -14,5 +14,4 @@ if __name__ == '__main__':
 	args = p.get_args()
 
 	trainer = Front_Separator_Trainer(DPCL, 'front_DPCL', pretraining=False, **vars(args))
-	trainer.build_model()
 	trainer.train()

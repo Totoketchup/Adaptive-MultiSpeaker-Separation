@@ -215,9 +215,6 @@ class Adapt(Network):
 
 			output_shape = [self.B*self.S, 1, self.T, self.N]
 
-			print argmax_mix
-			print input_tensor
-
 			output = unpool(input_tensor, argmax_mix, ksize=[1, 1, self.max_pool_value, 1], output_shape= output_shape, scope='unpool')
 			output = tf.reshape(output, [self.B*self.S, 1, self.T, self.N])
 
@@ -238,8 +235,6 @@ class Adapt(Network):
 			strides = [1, 1, self.max_pool_value, 1]
 		else:
 			strides = [1, 1, 1, 1]
-
-		print 'strides', strides
 
 		output = tf.nn.conv2d_transpose(output , filter=self.conv_filter_2,
 									 output_shape=[self.B*self.S, 1, self.L, 1],

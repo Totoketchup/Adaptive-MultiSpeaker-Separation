@@ -15,5 +15,4 @@ if __name__ == '__main__':
 	args = p.get_args()
 
 	trainer = STFT_Separator_enhance_Trainer(DPCL, 'STFT_DPCL_enhance', **vars(args))
-	trainer.build_model()
 	trainer.train()

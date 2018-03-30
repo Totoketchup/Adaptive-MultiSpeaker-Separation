@@ -11,5 +11,4 @@ if __name__ == '__main__':
 	args = p.get_args()
 
 	trainer = STFT_Separator_FineTune_Trainer(L41Model, 'STFT_L41_finetuning', **vars(args))
-	trainer.build_model()
 	trainer.train()

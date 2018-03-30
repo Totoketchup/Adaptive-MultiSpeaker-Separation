@@ -294,14 +294,13 @@ class Front_Separator_Finetuning_Trainer(Trainer):
 	def build(self):
 		self.model = Adapt.load(self.args['model_folder'], self.args)
 		# Expanding the graph with enhance layer
-		with self.model.graph.as_default() : 
-			self.model.connect_front(self.separator)
-			self.model.sepNet.output = self.model.sepNet.separate
-			self.model.back
-			self.model.restore_model(self.args['model_folder'])
-			self.model.cost_model = self.model.cost
-			self.model.finish_construction()
-			self.model.optimize
+		self.model.connect_front(self.separator)
+		self.model.sepNet.output = self.model.sepNet.separate
+		self.model.back
+		self.model.restore_model(self.args['model_folder'])
+		self.model.cost_model = self.model.cost
+		self.model.finish_construction()
+		self.model.optimize
 		self.model.tensorboard_init()
 		# Initialize only non restored values
 		self.model.initialize_non_init()
@@ -316,12 +315,11 @@ class Front_Separator_Enhance_Trainer(Trainer):
 		# Restoring previous Model:
 		self.model.restore_front_separator(self.args['model_folder'], self.separator)
 		# Expanding the graph with enhance layer
-		with self.model.graph.as_default() : 
-			self.model.sepNet.output = self.model.sepNet.enhance
-			self.model.cost_model = self.model.sepNet.enhance_cost
-			self.model.finish_construction()
-			self.model.freeze_all_except('enhance')
-			self.model.optimize
+		self.model.sepNet.output = self.model.sepNet.enhance
+		self.model.cost_model = self.model.sepNet.enhance_cost
+		self.model.finish_construction()
+		self.model.freeze_all_except('enhance')
+		self.model.optimize
 		self.model.tensorboard_init()
 		# Initialize only non restored values
 		self.model.initialize_non_init()
@@ -335,14 +333,13 @@ class Front_Separator_Enhance_Finetuning_Trainer(Trainer):
 		self.model = Adapt.load(self.args['model_folder'], self.args)
 		# Restoring the front layer:
 		# Expanding the graph with enhance layer
-		with self.model.graph.as_default() : 
-			self.model.connect_front(self.separator)
-			self.model.sepNet.output = self.model.sepNet.enhance
-			self.model.back
-			self.model.restore_model(self.args['model_folder'])
-			self.model.cost_model = self.model.cost
-			self.model.finish_construction()
-			self.model.optimize
+		self.model.connect_front(self.separator)
+		self.model.sepNet.output = self.model.sepNet.enhance
+		self.model.back
+		self.model.restore_model(self.args['model_folder'])
+		self.model.cost_model = self.model.cost
+		self.model.finish_construction()
+		self.model.optimize
 		self.model.tensorboard_init()
 		# Initialize only non restored values
 		self.model.initialize_non_init()

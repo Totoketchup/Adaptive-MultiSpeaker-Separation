@@ -16,5 +16,4 @@ if __name__ == '__main__':
 	args = p.get_args()
 
 	trainer = Front_Separator_Enhance_Finetuning_Trainer(DPCL, 'front_DPCL_enhance_finetuning', pretraining=False, **vars(args))
-	trainer.build_model()
 	trainer.train()

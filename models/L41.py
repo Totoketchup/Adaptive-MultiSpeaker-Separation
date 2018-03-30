@@ -24,24 +24,19 @@ class L41Model(Separator):
 		# L41 network
 		shape = tf.shape(self.X)
 
-		# # Normalization !
-		# min_ = tf.reduce_min(self.X, axis=[1,2], keep_dims=True)
-		# max_ = tf.reduce_max(self.X, axis=[1,2], keep_dims=True)
-		# self.X = (self.X - min_)/(max_-min_)
-
 		if self.normalize_input:
 			mean, var = tf.nn.moments(self.X, axes=[1,2], keep_dims=True)
 			self.X = tf.divide(self.X - mean, var)
-
-		# self.X = tf.layers.batch_normalization(self.X, training=self.training)
 
 		layers = [BLSTM(self.layer_size, 'BLSTM_'+str(i)) for i in range(self.nb_layers)]
 
 		layers_sp = [
 			Conv1D([1, self.layer_size, self.embedding_size*self.F]),
-			Reshape([self.B, shape[1], self.F, self.embedding_size]),
-			Normalize(3)
+			Reshape([self.B, shape[1], self.F, self.embedding_size])
 		]
+
+		if self.normalize:
+			layers_sp += [Normalize(3)]
 
 		layers += layers_sp
 
@@ -67,6 +62,7 @@ class L41Model(Separator):
 			speaker_vectors = tf.nn.l2_normalize(self.speaker_vectors, 1)
 		else:
 			speaker_vectors = self.speaker_vectors
+
 		Vspeakers = tf.gather_nd(speaker_vectors, I)
 
 		# Expand the dimensions in preparation for broadcasting

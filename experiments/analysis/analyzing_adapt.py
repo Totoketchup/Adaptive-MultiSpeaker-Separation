@@ -33,10 +33,18 @@ def main(args):
 	front_window = graph.get_tensor_by_name('front/window/w:0')
 	front_bases = graph.get_tensor_by_name('front/bases/bases:0')
 
+	back_window = graph.get_tensor_by_name('back/window/value:0')
+	back_bases = graph.get_tensor_by_name('back/bases/value:0')
+
 	with sess.as_default():
 		front_window = front_window.eval()
 		front_bases = front_bases.eval()
 		front_bases = np.transpose(front_bases)
+
+		back_window = back_window.eval()
+		back_bases = back_bases.eval()
+		back_bases = np.transpose(back_bases)
+
 
 	win_size = front_window.shape[0]
 	filters_nb, _ = front_bases.shape
@@ -49,7 +57,7 @@ def main(args):
 	    for x in range(4):
 	        for y in range(4):
 	            plots[x, y].plot(front_window*front_bases[j*16+(4*y+x)])
-	            plots[x, y].axis([0,win_size,-0.01,0.01])
+	            plots[x, y].axis([0,win_size,-0.005,0.005])
 	    plt.show()
 
 if __name__ == '__main__':
