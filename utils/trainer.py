@@ -18,6 +18,8 @@ class MyArgs(object):
 		parser.add_argument(
 			'--dataset', help='Path to H5 dataset from workspace', required=False, default='h5py_files/train-clean-100-8-s.h5')
 		parser.add_argument(
+			'--dataset_normalize', help='Mean/Std normalization for each input', action="store_true")
+		parser.add_argument(
 			'--chunk_size', type=int, help='Chunk size for inputs', required=False, default=20480)
 		parser.add_argument(
 			'--nb_speakers', type=int, help='Number of mixed speakers', required=False, default=2)
@@ -131,7 +133,7 @@ class Trainer(object):
 		time_spent = [0 for _ in range(10)]
 		
 		with tf.Graph().as_default() as graph:
-			tfds = TFDataset(batch_size=self.batch_size)
+			tfds = TFDataset(**self.args)
 
 			additional_args = {
 				"mix": tfds.next_mix,

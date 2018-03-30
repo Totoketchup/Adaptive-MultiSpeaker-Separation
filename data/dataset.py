@@ -362,6 +362,38 @@ def create_tfrecord_file(output_fn, chunk_size, batch_size, nb_speakers, sex, no
 
 		writer.close()
 
+def create_tfrecord_file_2(output_fn, chunk_size, batch_size, nb_speakers, sex, no_random_picking):
+	# Extract the information about this subset (speakers, chapters)
+	# Dictionary with the following shape: 
+	# {speaker_key: {chapters: [...], sex:'M/F', ... } }
+	data = Dataset(dataset="h5py_files/train-clean-100-8-s.h5", 
+		chunk_size=chunk_size, 
+		batch_size=batch_size, 
+		nb_speakers=nb_speakers,
+		sex=sex,
+		no_random_picking=no_random_picking)
+
+	f = [("train", data.TRAIN),("test", data.TEST), ("valid", data.VALID)]
+
+	for group_name, data_split in f:
+		
+		writer = tf.python_io.TFRecordWriter(group_name +'.tfrecords')
+		print group_name
+		for i ,(_, non_mix, index) in enumerate(data.get_batch(data_split, batch_size)):
+			non_mix_raw = non_mix[0].astype(np.float32).tostring()
+			index = np.array(index[0]).tostring()
+
+			feature = tf.train.Example(features=tf.train.Features(
+							feature = { 'chunk_size':tf.train.Feature(int64_list=tf.train.Int64List(value=[chunk_size])),
+										'nb_speakers':tf.train.Feature(int64_list=tf.train.Int64List(value=[nb_speakers])),
+										'non_mix':tf.train.Feature(bytes_list=tf.train.BytesList(value=[non_mix_raw])),
+										'ind':tf.train.Feature(bytes_list=tf.train.BytesList(value=[index]))
+									}))
+
+			writer.write(feature.SerializeToString())
+
+		writer.close()
+
 
 def decode(serialized_example):
 	features = tf.parse_single_example(
@@ -389,24 +421,31 @@ def decode(serialized_example):
 
 	return mix, non_mix, ind
 
-def mapping(dataset, batch_size):
-	dataset = dataset.map(decode)
-	dataset = dataset.batch(batch_size)
-	return dataset.prefetch(1)
+def normalize(mix, non_mix, ind):
+	mean, var = tf.nn.moments(non_mix, -1, keep_dims=True)
+	non_mix = (non_mix - mean)/tf.sqrt(var)
+
+	return mix, non_mix, ind
+
+def mix(mix, non_mix, ind):
+	mix = tf.reduce_sum(non_mix, 0)
+	return mix, non_mix, ind
+
 
 class TFDataset(object):
 
 	def __init__(self, **kwargs):
 		batch_size = kwargs['batch_size']
+		self.normalize = kwargs['dataset_normalize']
 
 		training_dataset = tf.data.TFRecordDataset('train.tfrecords')
-		training_dataset = mapping(training_dataset, batch_size)
+		training_dataset = self.mapping(training_dataset, batch_size)
 
 		validation_dataset = tf.data.TFRecordDataset('valid.tfrecords')
-		validation_dataset = mapping(validation_dataset, batch_size)
+		validation_dataset = self.mapping(validation_dataset, batch_size)
 
 		test_dataset = tf.data.TFRecordDataset('test.tfrecords')
-		test_dataset = mapping(test_dataset, batch_size)
+		test_dataset = self.mapping(test_dataset, batch_size)
 
 		self.handle = tf.placeholder(tf.string, shape=[])
 		iterator = tf.data.Iterator.from_string_handle(
@@ -422,6 +461,14 @@ class TFDataset(object):
 		self.test_initializer = self.test_iterator.initializer
 
 		self.next_mix, self.next_non_mix, self.next_ind = self.next_element
+
+	def mapping(self, dataset, batch_size):
+		dataset = dataset.map(decode)
+		if self.normalize:
+			dataset = dataset.map(normalize)
+			dataset = dataset.map(mix)
+		dataset = dataset.batch(batch_size)
+		return dataset.prefetch(1)
 
 	def init_handle(self):
 		sess = tf.get_default_session()

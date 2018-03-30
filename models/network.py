@@ -289,8 +289,6 @@ class Separator(Network):
 
 	def init_separator(self):
 		if self.plugged:
-				if self.args['normalize_separator']:
-					self.normalization01
 				self.prediction
 		else:
 				self.preprocessing
