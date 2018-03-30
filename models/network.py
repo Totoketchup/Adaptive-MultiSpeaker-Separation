@@ -247,6 +247,7 @@ class Separator(Network):
 		self.nb_layers = kwargs['nb_layers']
 		self.a = kwargs['mask_a']
 		self.b = kwargs['mask_b']
+		self.normalize_input = kwargs['normalize_separator']
 
 
 		self.plugged = plugged
