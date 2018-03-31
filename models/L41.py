@@ -26,7 +26,8 @@ class L41Model(Separator):
 
 		if self.normalize_input:
 			mean, var = tf.nn.moments(self.X, axes=[1,2], keep_dims=True)
-			self.X = tf.divide(self.X - mean, var)
+			self.X = tf.realdiv(tf.subtract(self.X, mean), tf.sqrt(var))
+			self.var = var
 
 		layers = [BLSTM(self.layer_size, 'BLSTM_'+str(i)) for i in range(self.nb_layers)]
 
@@ -75,6 +76,7 @@ class L41Model(Separator):
 		dot = tf.reduce_sum(Vspeakers_broad * embedding_broad, 4)
 
 		# Compute the cost for every element
+
 		cost = -tf.log(tf.nn.sigmoid(self.y * dot))
 
 		# Average the cost over all speakers in the input
@@ -91,6 +93,7 @@ class L41Model(Separator):
 		# Average the cost over all T-F elements.  Here is where weighting to
 		# account for gradient confidence can occur
 		cost = tf.reduce_mean(cost) 
+
 
 		tf.summary.scalar('cost', cost)
 
