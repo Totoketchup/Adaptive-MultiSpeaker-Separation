@@ -431,32 +431,35 @@ def mix(non_mix, ind):
 class TFDataset(object):
 
 	def __init__(self, **kwargs):
+
 		batch_size = kwargs['batch_size']
 		self.normalize = kwargs['dataset_normalize']
 
-		training_dataset = tf.data.TFRecordDataset('train.tfrecords')
-		training_dataset = self.mapping(training_dataset, batch_size)
+		with tf.name_scope('dataset'):
 
-		validation_dataset = tf.data.TFRecordDataset('valid.tfrecords')
-		validation_dataset = self.mapping(validation_dataset, batch_size)
+			training_dataset = tf.data.TFRecordDataset('train.tfrecords')
+			training_dataset = self.mapping(training_dataset, batch_size)
 
-		test_dataset = tf.data.TFRecordDataset('test.tfrecords')
-		test_dataset = self.mapping(test_dataset, batch_size)
+			validation_dataset = tf.data.TFRecordDataset('valid.tfrecords')
+			validation_dataset = self.mapping(validation_dataset, batch_size)
 
-		self.handle = tf.placeholder(tf.string, shape=[])
-		iterator = tf.data.Iterator.from_string_handle(
-			self.handle, training_dataset.output_types, training_dataset.output_shapes)
-		self.next_element = iterator.get_next()
+			test_dataset = tf.data.TFRecordDataset('test.tfrecords')
+			test_dataset = self.mapping(test_dataset, batch_size)
 
-		self.training_iterator = training_dataset.make_initializable_iterator()
-		self.validation_iterator = validation_dataset.make_initializable_iterator()
-		self.test_iterator = test_dataset.make_initializable_iterator()
+			self.handle = tf.placeholder(tf.string, shape=[])
+			iterator = tf.data.Iterator.from_string_handle(
+				self.handle, training_dataset.output_types, training_dataset.output_shapes)
+			self.next_element = iterator.get_next()
 
-		self.training_initializer = self.training_iterator.initializer
-		self.validation_initializer = self.validation_iterator.initializer
-		self.test_initializer = self.test_iterator.initializer
+			self.training_iterator = training_dataset.make_initializable_iterator()
+			self.validation_iterator = validation_dataset.make_initializable_iterator()
+			self.test_iterator = test_dataset.make_initializable_iterator()
 
-		self.next_mix, self.next_non_mix, self.next_ind = self.next_element
+			self.training_initializer = self.training_iterator.initializer
+			self.validation_initializer = self.validation_iterator.initializer
+			self.test_initializer = self.test_iterator.initializer
+
+			self.next_mix, self.next_non_mix, self.next_ind = self.next_element
 
 	def mapping(self, dataset, batch_size):
 		dataset = dataset.map(decode)

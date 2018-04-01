@@ -249,13 +249,13 @@ class Separator(Network):
 		self.b = kwargs['mask_b']
 		self.normalize_input = kwargs['normalize_separator']
 
+		self.graph = tf.get_default_graph()
 
 		self.plugged = plugged
 		# If the Separator is not independant but using a front layer
 		if self.plugged:
 			self.F = kwargs['filters']
 
-			self.graph = tf.get_default_graph()
 			with self.graph.as_default():
 
 				self.training = self.graph.get_tensor_by_name('inputs/is_training:0')

@@ -236,7 +236,6 @@ class STFT_Separator_Trainer(Trainer):
 
 	def build(self):
 		self.model = self.separator(**self.args)
-		self.create_session(self.model.graph)
 		self.model.tensorboard_init()
 		self.model.init_all()		
 
@@ -251,7 +250,8 @@ class STFT_Separator_enhance_Trainer(Trainer):
 		self.model.add_enhance_layer()
 		self.model.tensorboard_init()
 		# Initialize only non restored values
-		self.model.initialize_non_init()		
+		self.model.initialize_non_init()
+
 class STFT_Separator_FineTune_Trainer(Trainer):
 	def __init__(self, separator, name, **kwargs):
 		self.separator = separator
