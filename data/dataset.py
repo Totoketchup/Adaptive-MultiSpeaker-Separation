@@ -424,7 +424,7 @@ def normalize(non_mix, ind):
 	return non_mix, ind
 
 def mix(non_mix, ind):
-	mix = tf.reduce_mean(non_mix, 0)
+	mix = tf.reduce_sum(non_mix, 0)
 	return mix, non_mix, ind
 
 
