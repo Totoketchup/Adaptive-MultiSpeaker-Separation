@@ -292,8 +292,7 @@ class Separator(Network):
 				self.prediction
 		else:
 				self.preprocessing
-				if self.args['normalize_separator']:
-					self.normalization01
+				self.normalization01
 				self.prediction
 				#TODO TO IMPROVE !
 				if 'enhance' not in self.folder and 'finetuning' not in self.folder:
