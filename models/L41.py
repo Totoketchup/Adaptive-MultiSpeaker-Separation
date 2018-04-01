@@ -24,10 +24,13 @@ class L41Model(Separator):
 		# L41 network
 		shape = tf.shape(self.X)
 
-		if self.normalize_input:
-			mean, var = tf.nn.moments(self.X, axes=[1,2], keep_dims=True)
-			self.X = tf.realdiv(tf.subtract(self.X, mean), tf.sqrt(var))
-			self.var = var
+		if self.abs_input:
+			self.X = tf.abs(self.X)
+
+		if self.normalize_input == '01':
+			self.normalization01
+		elif self.normalize_input == 'meanstd':
+			self.normalization_mean_std
 
 		layers = [BLSTM(self.layer_size, 'BLSTM_'+str(i)) for i in range(self.nb_layers)]
 

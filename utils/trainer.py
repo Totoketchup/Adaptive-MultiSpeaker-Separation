@@ -51,7 +51,7 @@ class MyArgs(object):
 
 	def add_separator_args(self):
 		self.parser.add_argument(
-			'--normalize_separator', help='Normalize the input of the separator', action="store_true")
+			'--normalize_separator', help='Normalize the input of the separator', choices=['None','01', 'meanstd'], required=False, default='None')
 		self.parser.add_argument(
 			'--nb_layers', type=int, help='Number of stacked BLSTMs', required=False, default=3)
 		self.parser.add_argument(
@@ -60,6 +60,8 @@ class MyArgs(object):
 			'--embedding_size', type=int, help='Size of the embedding output', required=False, default=40)
 		self.parser.add_argument(
 			'--no_normalize', help='Normalization of the embedded space', action="store_false")
+		self.parser.add_argument(
+			'--abs_input', help='tf.abs on the L41 input', action="store_true")
 
 	def add_enhance_layer_args(self):
 		self.parser.add_argument(

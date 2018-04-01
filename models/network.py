@@ -248,6 +248,7 @@ class Separator(Network):
 		self.a = kwargs['mask_a']
 		self.b = kwargs['mask_b']
 		self.normalize_input = kwargs['normalize_separator']
+		self.abs_input = kwargs['abs_input']
 
 		self.graph = tf.get_default_graph()
 
@@ -348,9 +349,18 @@ class Separator(Network):
 		self.X = (self.X - self.min_) / (self.max_ - self.min_)
 
 	@scope
+	def normalization_m1_1(self):
+		self.min_ = tf.reduce_min(self.X, axis=[1,2], keep_dims=True)
+		self.max_ = tf.reduce_max(self.X, axis=[1,2], keep_dims=True)
+
+		self.c1 = 2./(self.X - self.min_)
+		self.c2 = 1.0 - self.c1 * self.max_
+		self.X = self.c1*self.X + self.c2
+
+	@scope
 	def normalization_mean_std(self):
 		mean, var = tf.nn.moments(self.X, axes=[1,2], keep_dims=True)
-		self.X = (self.X - mean) / var
+		self.X = (self.X - mean) / tf.sqrt(var)
 
 	@scope
 	def prediction(self):
