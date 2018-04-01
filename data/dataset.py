@@ -401,7 +401,6 @@ def decode(serialized_example):
 		features={
 			'chunk_size': tf.FixedLenFeature([], tf.int64),
 			'nb_speakers': tf.FixedLenFeature([], tf.int64),
-			'mix':tf.FixedLenFeature([], tf.string),
 			'non_mix':tf.FixedLenFeature([], tf.string),
 			'ind': tf.FixedLenFeature([], tf.string),
 		})
@@ -413,22 +412,19 @@ def decode(serialized_example):
 	ind = tf.cast(ind, tf.int32)
 	ind = tf.reshape(ind, [nb_speakers])
 
-	mix = tf.decode_raw(features['mix'], tf.float32)
-	mix = tf.reshape(mix,[chunk_size])
-
 	non_mix = tf.decode_raw(features['non_mix'], tf.float32)
 	non_mix = tf.reshape(non_mix, [nb_speakers, chunk_size])
 
-	return mix, non_mix, ind
+	return non_mix, ind
 
-def normalize(mix, non_mix, ind):
+def normalize(non_mix, ind):
 	mean, var = tf.nn.moments(non_mix, -1, keep_dims=True)
 	non_mix = (non_mix - mean)/tf.sqrt(var)
 
-	return mix, non_mix, ind
+	return non_mix, ind
 
-def mix(mix, non_mix, ind):
-	mix = tf.reduce_sum(non_mix, 0)
+def mix(non_mix, ind):
+	mix = tf.reduce_mean(non_mix, 0)
 	return mix, non_mix, ind
 
 
@@ -466,7 +462,7 @@ class TFDataset(object):
 		dataset = dataset.map(decode)
 		if self.normalize:
 			dataset = dataset.map(normalize)
-			dataset = dataset.map(mix)
+		dataset = dataset.map(mix)
 		dataset = dataset.batch(batch_size)
 		return dataset.prefetch(1)
 
