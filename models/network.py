@@ -268,6 +268,7 @@ class Separator(Network):
 				with tf.name_scope('split_front'):
 					self.X = tf.reshape(front[:self.B, :, :, :], [self.B, -1, self.F]) # Mix input [B, T, N]
 					# Non mix input [B, T, N, S]
+					self.X_input = tf.identity(self.X)
 					self.X_non_mix = tf.transpose(tf.reshape(front[self.B:, :, :, :], [self.B, self.S, -1, self.F]), [0,2,3,1])
 
 				with tf.name_scope('create_masks'):
@@ -352,7 +353,6 @@ class Separator(Network):
 	def normalization_m1_1(self):
 		self.min_ = tf.reduce_min(self.X, axis=[1,2], keep_dims=True)
 		self.max_ = tf.reduce_max(self.X, axis=[1,2], keep_dims=True)
-
 		self.c1 = 2./(self.X - self.min_)
 		self.c2 = 1.0 - self.c1 * self.max_
 		self.X = self.c1*self.X + self.c2

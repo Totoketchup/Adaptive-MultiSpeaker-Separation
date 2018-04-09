@@ -24,13 +24,17 @@ class L41Model(Separator):
 		# L41 network
 		shape = tf.shape(self.X)
 
+		X_in = tf.identity(self.X)
 		if self.abs_input:
-			self.X = tf.abs(self.X)
+			X_in = tf.abs(X_in)
 
 		if self.normalize_input == '01':
-			self.normalization01
+			self.min_ = tf.reduce_min(X_in, axis=[1,2], keep_dims=True)
+			self.max_ = tf.reduce_max(X_in, axis=[1,2], keep_dims=True)
+			X_in = (X_in- self.min_) / (self.max_ - self.min_)
 		elif self.normalize_input == 'meanstd':
-			self.normalization_mean_std
+			mean, var = tf.nn.moments(X_in, axes=[1,2], keep_dims=True)
+			X_in = (X_in - mean) / tf.sqrt(var)
 
 		layers = [BLSTM(self.layer_size, 'BLSTM_'+str(i)) for i in range(self.nb_layers)]
 
@@ -44,7 +48,7 @@ class L41Model(Separator):
 
 		layers += layers_sp
 
-		y = f_props(layers, self.X)
+		y = f_props(layers, X_in)
 		
 		return y
 
