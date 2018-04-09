@@ -225,8 +225,6 @@ class Adapt(Network):
 		else:
 			output = tf.reshape(input_tensor, [self.B*self.S, 1, self.T_max_pooled, self.N])
 
-
-
 		self.window_filter_2 = get_scope_variable('window', 'value', shape=[self.window], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 		self.bases_2 = get_scope_variable('bases', 'value', shape=[self.window, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 		self.conv_filter_2 = tf.reshape(tf.abs(tf.expand_dims(self.window_filter_2,1))*self.bases_2 , [1, self.window, 1, self.N], name='filters')# self.conv_filter_2 = tf.Variable(self.conv_filter.initialized_value(), name="filters_back")
@@ -394,6 +392,7 @@ class Adapt(Network):
 		self.back # To save the back values !
 		self.finish_construction()
 		self.freeze_all_with('front')
+		self.freeze_all_with('back')
 		self.optimize
 		self.tensorboard_init()
 

@@ -24,52 +24,53 @@ class KMeans:
 			self.graph = tf.get_default_graph()
 
 		with self.graph.as_default():
-			if input_tensor is None:
-				# Spectrogram, embeddings
-				# shape = [batch, L , E ]
-				self.X_in = tf.placeholder("float", [None, None, None], name='Kmeans_input')
-			else:
-				self.X_in = input_tensor
+			with tf.name_scope('kmeans'):
+				if input_tensor is None:
+					# Spectrogram, embeddings
+					# shape = [batch, L , E ]
+					self.X_in = tf.placeholder("float", [None, None, None], name='Kmeans_input')
+				else:
+					self.X_in = input_tensor
 
-			# mean, _ = tf.nn.moments(self.X_in, axes=-1, keep_dims=True)
+				# mean, _ = tf.nn.moments(self.X_in, axes=-1, keep_dims=True)
 
-			self.X_in = tf.nn.l2_normalize(self.X_in, axis=-1)
+				self.X_in = tf.nn.l2_normalize(self.X_in, axis=-1)
 
-			self.b = tf.shape(self.X_in)[0]
-			self.X = tf.expand_dims(self.X_in, 1)
-			self.X = tf.tile(self.X, [1, self.nb_tries, 1, 1])
+				self.b = tf.shape(self.X_in)[0]
+				self.X = tf.expand_dims(self.X_in, 1)
+				self.X = tf.tile(self.X, [1, self.nb_tries, 1, 1])
 
-			self.L = tf.shape(self.X)[-2]
-			self.E = tf.shape(self.X)[-1]
-			self.X = tf.reshape(self.X, [-1, self.L, self.E])
+				self.L = tf.shape(self.X)[-2]
+				self.E = tf.shape(self.X)[-1]
+				self.X = tf.reshape(self.X, [-1, self.L, self.E])
 
-			self.B = tf.shape(self.X)[0]
+				self.B = tf.shape(self.X)[0]
 
-			self.ones = tf.ones_like(self.X, tf.float32)
+				self.ones = tf.ones_like(self.X, tf.float32)
 
-			self.shifting = tf.tile(tf.expand_dims(tf.range(self.B)*self.nb_clusters, 1), [1, self.L])
+				self.shifting = tf.tile(tf.expand_dims(tf.range(self.B)*self.nb_clusters, 1), [1, self.L])
 
-			if centroids_init is None:
-				def random_without_replace(b, l):
-					a =  np.array([np.random.choice(range(l), size=self.nb_clusters, replace=False) for _ in range(b)])
-					return a.astype(np.int32)
-				
-				y = tf.py_func(random_without_replace, [self.B, self.L], tf.int32)
-				random = tf.reshape(y, [self.B, self.nb_clusters, 1])
+				if centroids_init is None:
+					def random_without_replace(b, l):
+						a =  np.array([np.random.choice(range(l), size=self.nb_clusters, replace=False) for _ in range(b)])
+						return a.astype(np.int32)
+					
+					y = tf.py_func(random_without_replace, [self.B, self.L], tf.int32)
+					random = tf.reshape(y, [self.B, self.nb_clusters, 1])
 
-				# Take randomly 'nb_clusters' vectors from X
-				batch_range = tf.tile(tf.reshape(tf.range(self.B, dtype=tf.int32), shape=[self.B, 1, 1]), [1, self.nb_clusters, 1])
-				indices = tf.concat([batch_range, random], axis = 2)
-				self.centroid_init = tf.gather_nd(self.X, indices)
-			else:
-				self.centroids = tf.identity(centroids_init)
-				self.centroids = tf.tile(self.centroids, [self.nb_tries, 1 , 1])
+					# Take randomly 'nb_clusters' vectors from X
+					batch_range = tf.tile(tf.reshape(tf.range(self.B, dtype=tf.int32), shape=[self.B, 1, 1]), [1, self.nb_clusters, 1])
+					indices = tf.concat([batch_range, random], axis = 2)
+					self.centroid_init = tf.gather_nd(self.X, indices)
+				else:
+					self.centroids = tf.identity(centroids_init)
+					self.centroids = tf.tile(self.centroids, [self.nb_tries, 1 , 1])
 
-			if not self.latent_space_tensor is None:
-				self.W_0_no_try = tf.reshape(tf.cast(self.latent_space_tensor > 1e-3, tf.float32), [self.b, self.L, 1])
-				self.W_0 = tf.tile(self.W_0_no_try, [self.nb_tries, 1 , 1])
+				if not self.latent_space_tensor is None:
+					self.W_0_no_try = tf.reshape(tf.cast(self.latent_space_tensor > 1e-3, tf.float32), [self.b, self.L, 1])
+					self.W_0 = tf.tile(self.W_0_no_try, [self.nb_tries, 1 , 1])
 
-			self.network
+				self.network
 
 	@scope
 	def network(self):
