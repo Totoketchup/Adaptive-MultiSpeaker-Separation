@@ -115,16 +115,15 @@ class Network(object):
 			json.dump(self.args, f)
 
 	def create_saver(self, subset=None):
-		with self.graph.as_default():
-			if subset is None:
-				self.saver = tf.train.Saver()
-			else:
-				self.saver = tf.train.Saver(subset)
+		if subset is None:
+			self.saver = tf.train.Saver()
+		else:
+			self.saver = tf.train.Saver(subset)
 
 	# Restore last checkpoint of the current graph using the total path
 	# This method is used when we plug a new layer
 	def restore_model(self, path):
-		tf.train.Saver().restore(tf.get_default_session(), tf.train.latest_checkpoint(path))
+		self.saver.restore(tf.get_default_session(), tf.train.latest_checkpoint(path))
 	
 	# Restore the last checkpoint of the current trained model
 	# This function is maintly used during the test phase

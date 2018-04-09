@@ -390,6 +390,9 @@ class Adapt(Network):
 		self.sepNet.output = self.sepNet.prediction
 		self.cost_model = self.sepNet.cost
 		self.back # To save the back values !
+		var_list =[v for v in tf.global_variables() if ('back/' in v.name or 'front/' in v.name)]
+		self.create_saver(subset=var_list)
+		self.restore_model(self.args['model_folder'])
 		self.finish_construction()
 		self.freeze_all_with('front/')
 		self.freeze_all_with('back/')

@@ -285,7 +285,6 @@ class Front_Separator_Trainer(Trainer):
 
 	def build(self):
 		self.model = Adapt.load(self.args['model_folder'], self.args)
-		self.model.restore_model(self.args['model_folder'])
 		self.model.connect_only_front_to_separator(self.separator)
 		# Initialize only non restored values
 		self.model.initialize_non_init()
