@@ -391,8 +391,8 @@ class Adapt(Network):
 		self.cost_model = self.sepNet.cost
 		self.back # To save the back values !
 		self.finish_construction()
-		self.freeze_all_with('front')
-		self.freeze_all_with('back')
+		self.freeze_all_with('front/')
+		self.freeze_all_with('back/')
 		self.optimize
 		self.tensorboard_init()
 
