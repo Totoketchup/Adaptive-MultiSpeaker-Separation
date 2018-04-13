@@ -290,16 +290,16 @@ class Separator(Network):
 
 	def init_separator(self):
 		if self.plugged:
-				self.prediction
+			self.prediction
 		else:
-				self.preprocessing
-				self.normalization01
-				self.prediction
-				#TODO TO IMPROVE !
-				if 'enhance' not in self.folder and 'finetuning' not in self.folder:
-					self.cost_model = self.cost
-					self.finish_construction()
-					self.optimize
+			self.preprocessing
+			self.normalization01
+			self.prediction
+			#TODO TO IMPROVE !
+			if 'enhance' not in self.folder and 'finetuning' not in self.folder:
+				self.cost_model = self.cost
+				self.finish_construction()
+				self.optimize
 
 	def add_enhance_layer(self):
 		self.separate

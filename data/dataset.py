@@ -394,28 +394,63 @@ def create_tfrecord_file_2(output_fn, chunk_size, batch_size, nb_speakers, sex, 
 
 		writer.close()
 
+from librosa.core import resample,load
+
+def from_flac_to_tfrecords(train_r=0.8, valid_test_r=0.2):
+	# Extract the information about this subset (speakers, chapters)
+	# Dictionary with the following shape: 
+	# {speaker_key: {chapters: [...], sex:'M/F', ... } }
+	folder = config.data_root+'/'+config.data_subset
+	speakers_info = data_tools.read_metadata(config.data_subset)
+	keys_to_index = {}
+	for i, key in enumerate(speakers_info.keys()):
+		keys_to_index[key] = i
+
+	allfiles = np.array([os.path.join(r,f) for r,dirs,files in os.walk(folder) for f in files if f.endswith(".flac")])
+	L = len(allfiles)
+	train = allfiles[:int(L*train_r)]
+	valid = allfiles[int(L*train_r):int(L*(train_r+valid_test_r/2))]
+	test = allfiles[int(L*(train_r+valid_test_r/2)):]
+
+	for group_name, data_split in [("train", train),("test", test), ("valid", valid)]:
+
+		for s in ['M', 'F']:
+
+			writer = tf.python_io.TFRecordWriter(group_name + '_' + s +'.tfrecords')
+
+			for file in data_split:
+
+				splits = file.split('/')
+				key = splits[-3]
+				sex = speakers_info[key]['sex']
+
+				if sex == s:
+
+					raw_audio, sr = load(file, sr=16000)
+					raw_audio = resample(raw_audio, sr, config.fs)
+					nb_chunks = len(raw_audio)//20480
+					for c in range(nb_chunks):
+						audio = raw_audio[c*20480:(c+1)*20480].astype(np.float32).tostring()
+						feature = tf.train.Example(features=tf.train.Features(
+										feature = { 'audio' : tf.train.Feature(bytes_list=tf.train.BytesList(value=[audio])),
+													'key' : tf.train.Feature(int64_list=tf.train.Int64List(value=[keys_to_index[key]]))
+								}))
+						print group_name, s, key, keys_to_index[key], c
+						writer.write(feature.SerializeToString())
+
+			writer.close()
 
 def decode(serialized_example):
 	features = tf.parse_single_example(
 		serialized_example,
 		features={
-			'chunk_size': tf.FixedLenFeature([], tf.int64),
-			'nb_speakers': tf.FixedLenFeature([], tf.int64),
-			'non_mix':tf.FixedLenFeature([], tf.string),
-			'ind': tf.FixedLenFeature([], tf.string),
+			'key': tf.FixedLenFeature([], tf.int64),
+			'audio':tf.FixedLenFeature([], tf.string),
 		})
 
-	chunk_size = tf.cast(features['chunk_size'], tf.int32)
-	nb_speakers = tf.cast(features['nb_speakers'], tf.int32)
+	audio = tf.decode_raw(features['audio'], tf.float32)
 
-	ind = tf.decode_raw(features['ind'], tf.int64)
-	ind = tf.cast(ind, tf.int32)
-	ind = tf.reshape(ind, [nb_speakers])
-
-	non_mix = tf.decode_raw(features['non_mix'], tf.float32)
-	non_mix = tf.reshape(non_mix, [nb_speakers, chunk_size])
-
-	return non_mix, ind
+	return audio, features['key']
 
 def normalize(non_mix, ind):
 	mean, var = tf.nn.moments(non_mix, -1, keep_dims=True)
@@ -423,9 +458,123 @@ def normalize(non_mix, ind):
 
 	return non_mix, ind
 
-def mix(non_mix, ind):
+def mix(*non_mix):
+	non_mix, keys = zip(*non_mix)
+	non_mix = tf.stack(non_mix)
+	keys = tf.stack(keys)
 	mix = tf.reduce_sum(non_mix, 0)
-	return mix, non_mix, ind
+	return mix, non_mix, keys
+
+class TFDataset2(object):
+
+	def get_data(self, name):
+		return tf.data.TFRecordDataset(name) \
+					.map(decode) \
+					.shuffle(1000)
+
+	def __init__(self, **kwargs):
+
+		batch_size = kwargs['batch_size']
+		self.normalize = kwargs['dataset_normalize']
+		self.chunk_size = kwargs['chunk_size']
+		N = kwargs['nb_speakers']
+
+		print kwargs['sex']
+		with tf.name_scope('dataset'):
+
+			# MALES
+			if 'M' in kwargs['sex']:
+				train_M = self.get_data('train_M.tfrecords')
+				valid_M = self.get_data('valid_M.tfrecords') 
+				test_M = self.get_data('test_M.tfrecords')
+
+			# FEMALES
+			if 'F' in kwargs['sex']:
+				train_F = self.get_data('train_F.tfrecords')
+				valid_F = self.get_data('valid_F.tfrecords')
+				test_F = self.get_data('test_F.tfrecords')
+
+			# MIXING
+			if 'M' in kwargs['sex'] and 'F' in kwargs['sex']:
+				train_list = tuple([train_M if i%2 == 0 else train_F for i in range(N)])
+				valid_list = tuple([valid_M if i%2 == 0 else valid_F for i in range(N)])
+				test_list = tuple([test_M if i%2 == 0 else train_F for i in range(N)])
+			elif 'M' in kwargs['sex']:
+				train_list = (train_M,)*N
+				valid_list = (valid_M,)*N
+				test_list = (test_M,)*N
+			else:
+				train_list = (train_F,)*N
+				valid_list = (valid_F,)*N
+				test_list = (test_F,)*N
+			
+			train_mix = tf.data.TFRecordDataset.zip(train_list)
+			valid_mix = tf.data.TFRecordDataset.zip(valid_list)
+			test_mix = tf.data.TFRecordDataset.zip(test_list)
+			
+			train_mix = train_mix.map(mix)
+			train_mix = train_mix.batch(batch_size)
+			train_mix = train_mix.prefetch(10)	
+
+			valid_mix = valid_mix.map(mix)
+			valid_mix = valid_mix.batch(batch_size)
+			valid_mix = valid_mix.prefetch(10)
+
+			test_mix = test_mix.map(mix)
+			test_mix = test_mix.batch(batch_size)
+			test_mix = test_mix.prefetch(10)
+
+
+			self.handle = tf.placeholder(tf.string, shape=[])
+			iterator = tf.data.Iterator.from_string_handle(
+				self.handle, train_mix.output_types, train_mix.output_shapes)
+			self.next_element = iterator.get_next()
+
+			self.training_iterator = train_mix.make_initializable_iterator()
+			self.validation_iterator = valid_mix.make_initializable_iterator()
+			self.test_iterator = test_mix.make_initializable_iterator()
+
+			self.training_initializer = self.training_iterator.initializer
+			self.validation_initializer = self.validation_iterator.initializer
+			self.test_initializer = self.test_iterator.initializer
+
+			self.next_mix, self.next_non_mix, self.next_ind = self.next_element
+
+	def init_handle(self):
+		sess = tf.get_default_session()
+		self.training_handle = sess.run(self.training_iterator.string_handle())
+		self.validation_handle = sess.run(self.validation_iterator.string_handle())
+		self.test_handle = sess.run(self.test_iterator.string_handle())
+
+	def get_handle(self, split):
+		if split == 'train':
+			return self.training_handle
+		elif split == 'valid':
+			return self.validation_handle
+		elif split == 'test':
+			return self.test_handle
+
+	def get_initializer(self, split):
+		if split == 'train':
+			return self.training_initializer
+		elif split == 'valid':
+			return self.validation_initializer
+		elif split == 'test':
+			return self.test_initializer
+
+	def length(self, split):
+		count = 0
+		sess = tf.get_default_session()
+		sess.run(self.get_initializer(split))
+		try:
+			while True:
+				sess.run(self.next_element, feed_dict={self.handle: self.get_handle(split)})
+				count += 1
+		except Exception:
+			return count
+
+	def initialize(self, sess, split):
+		sess.run(self.initializer,feed_dict={self.split: split})
 
 
 class TFDataset(object):
@@ -505,11 +654,14 @@ class TFDataset(object):
 	def initialize(self, sess, split):
 		sess.run(self.initializer,feed_dict={self.split: split})
 
+import time
+
 if __name__ == "__main__":
 	###
 	### TEST
 	##
-	create_tfrecord_file_2("testou.h5", 20480, 1, 2, ['M','F'], True)
+	# create_tfrecord_file_2("testou.h5", 20480, 1, 2, ['M','F'], True)
+	# from_flac_to_tfrecords()
 	# ds = TFDataset(batch_size=3)
 
 	# with tf.Session().as_default() as sess:
@@ -520,3 +672,13 @@ if __name__ == "__main__":
 	# 	for i in range(L):
 	# 		value = sess.run(ds.next_element, feed_dict={ds.handle: ds.get_handle('train')})
 	# 		print value[0].shape
+	ds = TFDataset2(batch_size=64, dataset_normalize=False, nb_speakers=2, sex=['M','F'], chunk_size=20480)
+	with tf.Session().as_default() as sess:
+		ds.init_handle()
+		# L = ds.length('train')
+		sess.run(ds.training_initializer)
+		for i in range(100):
+			t = time.time()
+			value = sess.run(ds.next_element, feed_dict={ds.handle: ds.get_handle('train')})
+			# time.sleep(0.2)
+			print value[0].shape, time.time() - t

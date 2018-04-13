@@ -1,5 +1,5 @@
 # coding: utf-8
-from data.dataset import Dataset, TFDataset
+from data.dataset import Dataset, TFDataset, TFDataset2
 import time
 import numpy as np
 import argparse
@@ -135,7 +135,7 @@ class Trainer(object):
 		time_spent = [0 for _ in range(10)]
 		
 		with tf.Graph().as_default() as graph:
-			tfds = TFDataset(**self.args)
+			tfds = TFDataset2(**self.args)
 
 			additional_args = {
 				"mix": tfds.next_mix,
@@ -261,6 +261,8 @@ class STFT_Separator_FineTune_Trainer(Trainer):
 		
 	def build(self):
 		self.model = self.separator.load(self.args['model_folder'], self.args)
+		# self.model.init_separator()
+		self.model.create_saver()
 		self.model.restore_model(self.args['model_folder'])
 		self.model.add_finetuning()
 		self.model.tensorboard_init()
@@ -300,6 +302,7 @@ class Front_Separator_Finetuning_Trainer(Trainer):
 		self.model.connect_front(self.separator)
 		self.model.sepNet.output = self.model.sepNet.separate
 		self.model.back
+		self.model.create_saver()
 		self.model.restore_model(self.args['model_folder'])
 		self.model.cost_model = self.model.cost
 		self.model.finish_construction()
