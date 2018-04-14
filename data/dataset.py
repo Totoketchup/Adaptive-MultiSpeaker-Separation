@@ -465,6 +465,14 @@ def mix(*non_mix):
 	mix = tf.reduce_sum(non_mix, 0)
 	return mix, non_mix, keys
 
+def filtering(mix, non_mix, keys):
+	L = tf.shape(keys)[0]
+	tiled = tf.tile(tf.expand_dims(keys, 1), [1, L])
+	sums = tf.reduce_sum(tf.cast(tf.equal(keys, tiled), tf.int32))
+	# sums = tf.map_fn(keys, lambda k: tf.reduce_sum(tf.cast(tf.equal(keys, k), tf.int32)))
+	sums = tf.reduce_sum(sums)
+	return tf.equal(L, sums)
+
 class TFDataset2(object):
 
 	def get_data(self, name):
@@ -512,7 +520,8 @@ class TFDataset2(object):
 			valid_mix = tf.data.TFRecordDataset.zip(valid_list)
 			test_mix = tf.data.TFRecordDataset.zip(test_list)
 			
-			train_mix = train_mix.map(mix)
+			train_mix = train_mix.map(mix, num_parallel_calls=8)
+			train_mix = train_mix.filter(filtering)
 			train_mix = train_mix.batch(batch_size)
 			train_mix = train_mix.prefetch(10)	
 
@@ -653,8 +662,6 @@ class TFDataset(object):
 
 	def initialize(self, sess, split):
 		sess.run(self.initializer,feed_dict={self.split: split})
-
-import time
 
 if __name__ == "__main__":
 	###
