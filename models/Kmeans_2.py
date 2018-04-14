@@ -11,13 +11,13 @@ from  sklearn.datasets import make_blobs
 
 class KMeans:
 
-	def __init__(self, nb_clusters, centroids_init=None, nb_tries=10, nb_iterations=10, input_tensor=None, latent_space_tensor=None, ):
+	def __init__(self, nb_clusters, centroids_init=None, nb_tries=10, nb_iterations=10, input_tensor=None, latent_space_tensor=None, beta=None):
 
 		self.nb_clusters = nb_clusters
 		self.nb_iterations = nb_iterations
 		self.nb_tries = nb_tries
 		self.latent_space_tensor = latent_space_tensor
-
+		self.beta = beta
 		if input_tensor is None:
 			self.graph = tf.Graph()
 		else:
@@ -34,10 +34,10 @@ class KMeans:
 
 				# mean, _ = tf.nn.moments(self.X_in, axes=-1, keep_dims=True)
 
-				self.X_in = tf.nn.l2_normalize(self.X_in, axis=-1)
+				x_norm = tf.nn.l2_normalize(self.X_in, axis=-1)
 
-				self.b = tf.shape(self.X_in)[0]
-				self.X = tf.expand_dims(self.X_in, 1)
+				self.b = tf.shape(x_norm)[0]
+				self.X = tf.expand_dims(x_norm, 1)
 				self.X = tf.tile(self.X, [1, self.nb_tries, 1, 1])
 
 				self.L = tf.shape(self.X)[-2]
@@ -74,14 +74,16 @@ class KMeans:
 
 	@scope
 	def network(self):
-
 		i = tf.constant(0)
 		init = [i, self.centroid_init, self.get_labels(self.centroid_init, self.X)]
-		invariant = [i.get_shape(), tf.TensorShape([None, self.nb_clusters, None]), tf.TensorShape([None, None])]
+		if self.beta is not None:
+			invariant = [i.get_shape(), tf.TensorShape([None, self.nb_clusters, None]), tf.TensorShape([None, None, self.nb_clusters])]
+		else:
+			invariant = [i.get_shape(), tf.TensorShape([None, self.nb_clusters, None]), tf.TensorShape([None, None])]
 
 		cond = lambda i, c, l: tf.less(i, self.nb_iterations)
 		_ , centroids, labels = tf.while_loop(cond, self.body, init, shape_invariants=invariant)
-
+		# self.out = self.get_labels(self.centroid_init, self.X)
 		inertia = self.get_inertia(centroids)
 
 		inertia = tf.reshape(inertia, [self.b, self.nb_tries])
@@ -98,38 +100,54 @@ class KMeans:
 	def get_inertia(self, centroids):
 		with tf.name_scope('inertia'):
 			labels = self.get_labels(centroids, self.X)
+			if self.beta is not None:
 
-			# centroids [b*nb_tries, C, E]
-			centroids_flattened = tf.reshape(centroids, [self.B*self.nb_clusters, self.E])
-			
-			# Add + [0,1,2]
-			idx_flattened = tf.reshape(labels + self.shifting, [self.B*self.L]) # [b*nb_tries*L]
-			X_flattened = tf.reshape(self.X, [self.B*self.L, self.E]) # [b*nb_tries*L, E]
+				X_ = tf.expand_dims(self.X, 2) # B L 1 E
+				centroids_ = tf.expand_dims(centroids, 1) # B 1 C E
+				dist = tf.reduce_sum(tf.square(X_ - centroids_), -1) * labels # B C distance to clusters according to soft assignments
+				dist = tf.reduce_sum(dist, 1) # Sum over points
+				density = tf.reduce_sum(labels, 1) # Compute the soft density of each cluster
+				inertia = tf.divide(dist, density)
+				inertia = tf.reduce_sum(inertia, -1)
+			else:
+				# centroids [b*nb_tries, C, E]
+				centroids_flattened = tf.reshape(centroids, [self.B*self.nb_clusters, self.E])
+				
+				# Add + [0,1,2]
+				idx_flattened = tf.reshape(labels + self.shifting, [self.B*self.L]) # [b*nb_tries*L]
+				X_flattened = tf.reshape(self.X, [self.B*self.L, self.E]) # [b*nb_tries*L, E]
 
-			dist = tf.reduce_sum(tf.square(X_flattened - tf.gather(centroids_flattened, idx_flattened)), -1)
+				dist = tf.reduce_sum(tf.square(X_flattened - tf.gather(centroids_flattened, idx_flattened)), -1)
 
-			total = tf.unsorted_segment_sum(dist, idx_flattened, self.B*self.nb_clusters)
-			count = tf.unsorted_segment_sum(tf.ones_like(dist), idx_flattened, self.B*self.nb_clusters)
+				total = tf.unsorted_segment_sum(dist, idx_flattened, self.B*self.nb_clusters)
+				count = tf.unsorted_segment_sum(tf.ones_like(dist), idx_flattened, self.B*self.nb_clusters)
 
-			# [self.B*self.nb_clusters]
-			inertia = total / count
-			inertia = tf.reshape(inertia, [self.B, self.nb_clusters])
-			inertia = tf.reduce_sum(inertia, -1)
+				# [self.B*self.nb_clusters]
+				inertia = total / count
+				inertia = tf.reshape(inertia, [self.B, self.nb_clusters])
+				inertia = tf.reduce_sum(inertia, -1)
 
 			return inertia
 				
 	def body(self ,i, centroids, labels):
 		with tf.name_scope('iteration'):
 			# Add + [0,1,2]
-			labels_flattened = tf.reshape(labels + self.shifting, [-1])
-			X_flattened = tf.reshape(self.X, [-1, self.E])
+			if self.beta is not None:
+				X_ = tf.expand_dims(self.X, 2) # B L 1 E
+				labels_ = tf.expand_dims(labels, 3) # B L C 1 
+				new_centroids = tf.reduce_sum(X_ * labels_, 1) / tf.expand_dims(tf.reduce_sum(labels, 1),-1)
+				new_centroids = tf.reshape(new_centroids, [self.B, self.nb_clusters, self.E])
 
-			# total : [
-			total = tf.unsorted_segment_sum(X_flattened, labels_flattened, self.B*self.nb_clusters)
-			count = tf.unsorted_segment_sum(tf.ones_like(X_flattened), labels_flattened, self.B*self.nb_clusters)
+			else:
+				labels_flattened = tf.reshape(labels + self.shifting, [-1])
+				X_flattened = tf.reshape(self.X, [-1, self.E])
 
-			new_centroids = total/count
-			new_centroids = tf.reshape(new_centroids, [self.B, self.nb_clusters, self.E])
+				# total : [
+				total = tf.unsorted_segment_sum(X_flattened, labels_flattened, self.B*self.nb_clusters)
+				count = tf.unsorted_segment_sum(tf.ones_like(X_flattened), labels_flattened, self.B*self.nb_clusters)
+
+				new_centroids = total/count
+				new_centroids = tf.reshape(new_centroids, [self.B, self.nb_clusters, self.E])
 
 			return [i+1, new_centroids, self.get_labels(new_centroids, self.X)]
 
@@ -140,11 +158,18 @@ class KMeans:
 			else:
 				X = X*W_0_spe
 
-		X_ = tf.expand_dims(X, 2)
-		centroids_ = tf.expand_dims(centroids, 1)
+		X_ = tf.expand_dims(X, 2) # B L 1 E
+		centroids_ = tf.expand_dims(centroids, 1) # B 1 C E
 
-		distances = tf.sqrt(tf.reduce_sum(tf.square(X_ - centroids_), axis=3))
-		return tf.argmin(distances, axis=2, output_type=tf.int32)
+
+		if self.beta is not None:
+			distances = tf.reduce_sum(tf.square(X_ - centroids_), axis=3)
+			exp = tf.exp(-1.0 *  self.beta * distances)
+			exp =  exp / tf.reduce_sum(exp, -1, keep_dims=True)
+			return exp
+		else:
+			distances = tf.sqrt(tf.reduce_sum(tf.square(X_ - centroids_), axis=3))
+			return tf.argmin(distances, axis=2, output_type=tf.int32)
 
 	def fit(self, X_train):
 		with tf.Session(graph=self.graph) as sess:
@@ -154,25 +179,29 @@ class KMeans:
 # from sklearn.cluster import KMeans as km
 
 if __name__ == "__main__":
-	nb_samples = 100
-	E = 10
-	nb_clusters = 3
+	nb_samples = 1000
+	E = 40
+	nb_clusters = 4
 	error = 0
 	TOTAL = 1
 	nb_err = 0.0
-	kmean = KMeans(nb_clusters, nb_tries=10, nb_iterations=10)
-	
+	kmean = KMeans(nb_clusters, nb_tries=10, nb_iterations=10, beta=0.5)
 
 	for i in range(TOTAL):
-		X, y = make_blobs(n_samples=nb_samples, centers=nb_clusters, n_features=E, cluster_std=0.01)
+		X, y = make_blobs(n_samples=nb_samples, centers=nb_clusters, n_features=E, cluster_std=1.0)
 		X_ = X[np.newaxis,:]
-		X_ = np.concatenate([X_, X_], axis=0)
+		X_ = np.concatenate([X_, X_, X_], axis=0)
 		y = y[np.newaxis,:]
+
+		# with tf.Session(graph=kmean.graph) as sess:
+		# 	sess.run(tf.global_variables_initializer())
+		# 	print sess.run(kmean.network, {kmean.X_in: X_})
 		
 		centroids, labels = kmean.fit(X_)
-
 		print labels
+		print np.argmax(labels, 2)
 		print y
+		# print inertia
 
 	
 		# print labels

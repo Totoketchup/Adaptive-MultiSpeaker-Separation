@@ -178,7 +178,7 @@ class Network(object):
 		if self.merged_valid is None:
 			cost = sess.run(self.cost_model, feed_dict)
 		else:
-			cost, summary =  sess.run([self.cost_model, self.merged_valid], feed_dict)
+			cost, summary = sess.run([self.cost_model, self.merged_valid], feed_dict)
 			self.valid_writer.add_summary(summary, step)
 		return cost
 
@@ -230,7 +230,6 @@ class Network(object):
 
 	def finish_construction(self):
 		self.trainable_variables = tf.global_variables()
-
 
 from models.Kmeans_2 import KMeans
 
@@ -335,6 +334,7 @@ class Separator(Network):
 		self.angle = tf.atan(tf.imag(self.stfts)/tf.real(self.stfts))
 
 		self.X = tf.sqrt(tf.abs(self.stfts))
+		self.X_input = tf.reshape(tf.abs(self.stfts), [self.B, -1])
 		self.X_non_mix = tf.sqrt(tf.abs(self.stfts_non_mix))
 		self.X_non_mix = tf.reshape(self.X_non_mix, [self.B, self.S, -1, self.F])
 		self.X_non_mix = tf.transpose(self.X_non_mix, [0, 2, 3, 1])
@@ -369,14 +369,16 @@ class Separator(Network):
 	def separate(self):
 		# Input for KMeans algorithm [B, TF, E]
 		input_kmeans = tf.reshape(self.prediction, [self.B, -1, self.embedding_size])
+
 		# S speakers to separate, give self.X in input not to consider silent bins
-		kmeans = KMeans(nb_clusters=self.S, nb_iterations=10, input_tensor=input_kmeans, latent_space_tensor=self.X)
+		kmeans = KMeans(nb_clusters=self.S, nb_tries=5, nb_iterations=5, input_tensor=input_kmeans, beta=20.0)#, latent_space_tensor=tf.abs(self.X))
 		
 		# Extract labels of each bins TF_i - labels [B, TF, 1]
 		_ , labels = kmeans.network
-		self.masks = tf.one_hot(labels, self.S, 1.0, 0.0) # Create masks [B, TF, S]
+		# self.out = labels
+		self.masks = labels # tf.one_hot(tf.cast(labels, tf.int32), self.S, 1.0, 0.0) # Create masks [B, TF, S]
 
-		separated = tf.reshape(self.X, [self.B, -1, 1])* self.masks # [B ,TF, S] 
+		separated = tf.reshape(self.X_input, [self.B, -1, 1]) * self.masks # [B ,TF, S] 
 		separated = tf.reshape(separated, [self.B, -1, self.F, self.S])
 		separated = tf.transpose(separated, [0,3,1,2]) # [B, S, T, F]
 		separated = tf.reshape(separated, [self.B*self.S, -1, self.F, 1]) # [BS, T, F, 1]
@@ -387,23 +389,22 @@ class Separator(Network):
 	def postprocessing(self):
 		stft = tf.reshape(self.separate, [self.B*self.S, -1, self.F])
 		# denorm
-		stft = (self.max_ - self.min_)*stft + self.min_
 
-		print stft
-		#stft = tf.complex(0.0*stft,stft) #* tf.complex(0.0*self.angle, self.angle)
-		stft = tf.cast(stft, tf.complex64)
-		inverse_stft = tf.contrib.signal.inverse_stft(
+		stft = tf.complex(stft, 0.0*stft) * tf.exp(tf.complex(0.0*self.angle, self.angle))
+		istft = tf.contrib.signal.inverse_stft(
 			stft, 
 			frame_length=self.window_size, 
 			frame_step=self.window_size-self.hop_size,
 			window_fn=tf.contrib.signal.inverse_stft_window_fn(self.window_size-self.hop_size))
-
-		output = tf.reshape(inverse_stft, [self.B, self.S, -1])
+		output = tf.reshape(istft, [self.B, self.S, -1])
+		tf.summary.audio(name= "input/non-mixed", tensor = tf.reshape(self.x_non_mix, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
+		tf.summary.audio(name= "input/mixed", tensor = self.x_mix[:self.B], sample_rate = config.fs, max_outputs=1)
+		tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(output, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
+		
 		return output
 
 	@scope
 	def cost_finetuning(self):
-
 		perms = list(permutations(range(self.S))) # ex with 3: [0, 1, 2], [0, 2 ,1], [1, 0, 2], [1, 2, 0], [2, 1, 0], [2, 0, 1]
 		length_perm = len(perms)
 		perms = tf.reshape(tf.constant(perms), [1, length_perm, self.S, 1])
@@ -422,10 +423,9 @@ class Separator(Network):
 		l2 = tf.reduce_min(l2, axis=1) # Get the minimum over all possible permutations : B S
 		l2 = tf.reduce_sum(l2, -1)
 		l2 = tf.reduce_mean(l2, -1)
-
+		tf.summary.scalar('cost', l2)
 
 		return l2
-
  
 	@scope
 	def enhance(self):
@@ -433,7 +433,6 @@ class Separator(Network):
 		separated = tf.reshape(self.separate, [self.B, self.S, -1, self.F])
 		if self.args['normalize_enhance']:
 			mean, std = tf.nn.moments(separated, axes=[2,3], keep_dims=True)
-			print mean
 			separated = (separated - mean) / std
 
 		# X [B, T, F]
