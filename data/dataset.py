@@ -7,6 +7,9 @@ import config
 from tqdm import tqdm 
 import copy
 import time
+from librosa.core import resample,load
+import tensorflow as tf
+
 """
 Class used to have a consistent Randomness between Training/Validation/Test for
 different batch size
@@ -101,11 +104,10 @@ class Dataset(object):
 		train = self.create_tree(self.total_items[:int(L*ratio[0])])
 		valid = self.create_tree(self.total_items[int(L*ratio[0]):int(L*(ratio[0]+ratio[1]))])
 		test = self.create_tree(self.total_items[int(L*(ratio[0]+ratio[1])):])
-		self.items = [train, valid, test]
-
-	def __iter__(self):
-		self.used = copy.deepcopy(self.items[self.index])
-		return self
+		
+		self.train = TreeIterator(train, self)
+		self.valid = TreeIterator(valid, self)
+		self.test = TreeIterator(test, self)
 
 	def create_tree(self, items_list):
 
@@ -151,31 +153,16 @@ class Dataset(object):
 		items['tot'] = tot['F'] + tot['M']
 		return items
 
-	"""
-	Getting a batch from the selected set
-	Inputs:
-		- index: index of the set self.TRAIN / self.TEST / self.VALID 
-		- batch_size
-		- fake: True -> Do not return anything (used to count the nb of total batches in an epoch) 
-	"""
-	def get_batch(self, index, batch_size, fake=False):
-		with ConsistentRandom(config.seed):
-			used = copy.deepcopy(self.items[index])
-			while True:
-				mix = [[] for _ in range(batch_size)]
-				non_mix = [[] for _ in range(batch_size)]
-				I = [[] for _ in range(batch_size)]
-				for i in range(batch_size):
-					if fake: 
-						self.next_item(used, fake)
-					else: 
-						m, n_m, ind = self.next_item(used, fake)
-						mix[i] = m
-						non_mix[i] = n_m
-						I[i] = ind
-				mix = np.array(mix)
-				non_mix = np.array(non_mix)
-				yield (mix, non_mix, I)
+class TreeIterator(object):
+
+	def __init__(self, tree, dataset):
+		self.tree = tree
+		self.sex = dataset.sex
+		self.nb_speakers = dataset.nb_speakers
+		self.chunk_size = dataset.chunk_size
+		self.key_to_index = dataset.key_to_index
+		self.file = dataset.file
+		self.no_random_picking = dataset.no_random_picking
 
 	def next_item(self, used, fake=False):
 
@@ -225,17 +212,23 @@ class Dataset(object):
 
 			return mix_array, non_mix_array, indices
 
-	"""
-	Counts the number of batches in the Training Set
-	"""
-	def nb_batch(self, batch_size):
-		i = 0 
-		for _ in tqdm(self.get_batch(self.TRAIN, batch_size, fake=True), desc='Counting batches'):
-			i+=1
-		return i
 
-	@staticmethod
-	def create_raw_audio_dataset(output_fn, subset=config.data_subset, data_root=config.data_root):
+	def __call__(self):
+		used = copy.deepcopy(self.tree)
+		while True:
+			try:
+				yield self.next_item(used) 
+			except Exception:
+				raise
+				used = copy.deepcopy(self.tree)
+			else:
+				pass
+			finally:
+				pass
+
+
+
+def create_raw_audio_dataset(output_fn, subset=config.data_subset, data_root=config.data_root):
 		"""
 		Create a H5 file from the LibriSpeech dataset and the subset given:
 
@@ -278,6 +271,7 @@ class Dataset(object):
 									compression_opts=9)
 
 		print 'Dataset for the subset: ' + subset + ' has been built'
+
 
 def create_mix(output_fn, chunk_size, batch_size, nb_speakers, sex, no_random_picking):
 	# Extract the information about this subset (speakers, chapters)
@@ -325,8 +319,6 @@ def create_mix(output_fn, chunk_size, batch_size, nb_speakers, sex, no_random_pi
 				train_mix.resize((size, chunk_size))
 				train_non_mix.resize((size, nb_speakers, chunk_size))
 				train_index.resize((size, nb_speakers))
-
-import tensorflow as tf
 
 def create_tfrecord_file(output_fn, chunk_size, batch_size, nb_speakers, sex, no_random_picking):
 	# Extract the information about this subset (speakers, chapters)
@@ -394,7 +386,6 @@ def create_tfrecord_file_2(output_fn, chunk_size, batch_size, nb_speakers, sex, 
 
 		writer.close()
 
-from librosa.core import resample,load
 
 def from_flac_to_tfrecords(train_r=0.8, valid_test_r=0.2):
 	# Extract the information about this subset (speakers, chapters)
@@ -411,6 +402,8 @@ def from_flac_to_tfrecords(train_r=0.8, valid_test_r=0.2):
 	train = allfiles[:int(L*train_r)]
 	valid = allfiles[int(L*train_r):int(L*(train_r+valid_test_r/2))]
 	test = allfiles[int(L*(train_r+valid_test_r/2)):]
+	
+	print len(train), len(valid), len(test)
 
 	for group_name, data_split in [("train", train),("test", test), ("valid", valid)]:
 
@@ -428,15 +421,14 @@ def from_flac_to_tfrecords(train_r=0.8, valid_test_r=0.2):
 
 					raw_audio, sr = load(file, sr=16000)
 					raw_audio = resample(raw_audio, sr, config.fs)
-					nb_chunks = len(raw_audio)//20480
-					for c in range(nb_chunks):
-						audio = raw_audio[c*20480:(c+1)*20480].astype(np.float32).tostring()
-						feature = tf.train.Example(features=tf.train.Features(
-										feature = { 'audio' : tf.train.Feature(bytes_list=tf.train.BytesList(value=[audio])),
-													'key' : tf.train.Feature(int64_list=tf.train.Int64List(value=[keys_to_index[key]]))
-								}))
-						print group_name, s, key, keys_to_index[key], c
-						writer.write(feature.SerializeToString())
+					raw_audio = raw_audio.astype(np.float32).tostring()
+
+					feature = tf.train.Example(features=tf.train.Features(
+						feature = { 'audio' : tf.train.Feature(bytes_list=tf.train.BytesList(value=[raw_audio])),
+									'key' : tf.train.Feature(int64_list=tf.train.Int64List(value=[keys_to_index[key]]))
+					}))
+					print group_name, s, key, keys_to_index[key]
+					writer.write(feature.SerializeToString())
 
 			writer.close()
 
@@ -463,22 +455,37 @@ def mix(*non_mix):
 	non_mix = tf.stack(non_mix)
 	keys = tf.stack(keys)
 	mix = tf.reduce_sum(non_mix, 0)
+	print mix, non_mix, keys
 	return mix, non_mix, keys
+
+
+def is_long_enough(audio, key, chunk_size):
+	return tf.less(chunk_size, tf.shape(audio)[0])
 
 def filtering(mix, non_mix, keys):
 	L = tf.shape(keys)[0]
 	tiled = tf.tile(tf.expand_dims(keys, 1), [1, L])
 	sums = tf.reduce_sum(tf.cast(tf.equal(keys, tiled), tf.int32))
-	# sums = tf.map_fn(keys, lambda k: tf.reduce_sum(tf.cast(tf.equal(keys, k), tf.int32)))
 	sums = tf.reduce_sum(sums)
 	return tf.equal(L, sums)
 
-class TFDataset2(object):
+def chunk(audio, key, chunk_size):
+	L = tf.shape(audio)[0]
+	nb = tf.floordiv(L, chunk_size)
+	chunks = tf.map_fn(lambda i : audio[i*chunk_size:(i+1)*chunk_size], tf.range(nb), dtype=tf.float32)
+	return chunks, tf.tile(tf.expand_dims(key, 0), [nb]) 	# [N, chunk_size]
 
-	def get_data(self, name):
+class TFDataset(object):
+
+	def get_data(self, name, seed):
 		return tf.data.TFRecordDataset(name) \
-					.map(decode) \
-					.shuffle(1000)
+				.map(decode) \
+				.shuffle(1000, seed=seed) \
+				.filter(lambda a, k : is_long_enough(a, k, self.chunk_size)) \
+				.map(lambda a, k : chunk(a, k, self.chunk_size)) \
+				.apply(tf.contrib.data.unbatch()) \
+				.shuffle(1000, seed=seed)
+
 
 	def __init__(self, **kwargs):
 
@@ -492,47 +499,48 @@ class TFDataset2(object):
 
 			# MALES
 			if 'M' in kwargs['sex']:
-				train_M = self.get_data('train_M.tfrecords')
-				valid_M = self.get_data('valid_M.tfrecords') 
-				test_M = self.get_data('test_M.tfrecords')
+				train_M = lambda i : self.get_data('train_M.tfrecords', i)
+				valid_M = lambda i : self.get_data('valid_M.tfrecords', i) 
+				test_M = lambda i : self.get_data('test_M.tfrecords', i)
 
 			# FEMALES
 			if 'F' in kwargs['sex']:
-				train_F = self.get_data('train_F.tfrecords')
-				valid_F = self.get_data('valid_F.tfrecords')
-				test_F = self.get_data('test_F.tfrecords')
+				train_F = lambda i : self.get_data('train_F.tfrecords', i)
+				valid_F = lambda i : self.get_data('valid_F.tfrecords', i)
+				test_F = lambda i : self.get_data('test_F.tfrecords', i)
 
 			# MIXING
 			if 'M' in kwargs['sex'] and 'F' in kwargs['sex']:
-				train_list = tuple([train_M if i%2 == 0 else train_F for i in range(N)])
-				valid_list = tuple([valid_M if i%2 == 0 else valid_F for i in range(N)])
-				test_list = tuple([test_M if i%2 == 0 else train_F for i in range(N)])
+				train_list = tuple([train_M(i) if i%2 == 0 else train_F(i) for i in range(N)])
+				valid_list = tuple([valid_M(i) if i%2 == 0 else valid_F(i) for i in range(N)])
+				test_list = tuple([test_M(i) if i%2 == 0 else train_F(i) for i in range(N)])
 			elif 'M' in kwargs['sex']:
-				train_list = (train_M,)*N
-				valid_list = (valid_M,)*N
-				test_list = (test_M,)*N
+				train_list = tuple([train_M(i) for i in range(N)])
+				valid_list = tuple([valid_M(i) for i in range(N)])
+				test_list = tuple([test_M(i) for i in range(N)])
 			else:
-				train_list = (train_F,)*N
-				valid_list = (valid_F,)*N
-				test_list = (test_F,)*N
+				train_list = tuple([train_F(i) for i in range(N)])
+				valid_list = tuple([valid_F(i) for i in range(N)])
+				test_list = tuple([test_F(i) for i in range(N)])
 			
 			train_mix = tf.data.TFRecordDataset.zip(train_list)
 			valid_mix = tf.data.TFRecordDataset.zip(valid_list)
 			test_mix = tf.data.TFRecordDataset.zip(test_list)
 			
-			train_mix = train_mix.map(mix, num_parallel_calls=8)
+			train_mix = train_mix.map(mix)
 			train_mix = train_mix.filter(filtering)
 			train_mix = train_mix.batch(batch_size)
-			train_mix = train_mix.prefetch(10)	
+			train_mix = train_mix.prefetch(10)
 
 			valid_mix = valid_mix.map(mix)
+			valid_mix = valid_mix.filter(filtering)
 			valid_mix = valid_mix.batch(batch_size)
 			valid_mix = valid_mix.prefetch(10)
 
 			test_mix = test_mix.map(mix)
+			test_mix = test_mix.filter(filtering)
 			test_mix = test_mix.batch(batch_size)
 			test_mix = test_mix.prefetch(10)
-
 
 			self.handle = tf.placeholder(tf.string, shape=[])
 			iterator = tf.data.Iterator.from_string_handle(
@@ -585,47 +593,43 @@ class TFDataset2(object):
 	def initialize(self, sess, split):
 		sess.run(self.initializer,feed_dict={self.split: split})
 
-
-class TFDataset(object):
+class MixGenerator(object):
 
 	def __init__(self, **kwargs):
-
 		batch_size = kwargs['batch_size']
 		self.normalize = kwargs['dataset_normalize']
+		self.chunk_size = kwargs['chunk_size']
 
-		with tf.name_scope('dataset'):
+		d = Dataset(**kwargs)
+		
+		train_mix = tf.data.Dataset.from_generator(d.train, (tf.float32, tf.float32, tf.int64))
+		valid_mix = tf.data.Dataset.from_generator(d.valid, (tf.float32, tf.float32, tf.int64))
+		test_mix = tf.data.Dataset.from_generator(d.test, (tf.float32, tf.float32, tf.int64))
 
-			training_dataset = tf.data.TFRecordDataset('train.tfrecords')
-			training_dataset = self.mapping(training_dataset, batch_size)
+		train_mix = train_mix.batch(batch_size)
+		train_mix = train_mix.shuffle(10, seed=config.seed)	
+		train_mix = train_mix.prefetch(1)	
 
-			validation_dataset = tf.data.TFRecordDataset('valid.tfrecords')
-			validation_dataset = self.mapping(validation_dataset, batch_size)
+		valid_mix = valid_mix.batch(batch_size)
+		valid_mix = valid_mix.prefetch(10)
 
-			test_dataset = tf.data.TFRecordDataset('test.tfrecords')
-			test_dataset = self.mapping(test_dataset, batch_size)
+		test_mix = test_mix.batch(batch_size)
+		test_mix = test_mix.prefetch(10)
 
-			self.handle = tf.placeholder(tf.string, shape=[])
-			iterator = tf.data.Iterator.from_string_handle(
-				self.handle, training_dataset.output_types, training_dataset.output_shapes)
-			self.next_element = iterator.get_next()
+		self.handle = tf.placeholder(tf.string, shape=[])
+		iterator = tf.data.Iterator.from_string_handle(
+			self.handle, train_mix.output_types, train_mix.output_shapes)
+		self.next_element = iterator.get_next()
 
-			self.training_iterator = training_dataset.make_initializable_iterator()
-			self.validation_iterator = validation_dataset.make_initializable_iterator()
-			self.test_iterator = test_dataset.make_initializable_iterator()
+		self.training_iterator = train_mix.make_initializable_iterator()
+		self.validation_iterator = valid_mix.make_initializable_iterator()
+		self.test_iterator = test_mix.make_initializable_iterator()
 
-			self.training_initializer = self.training_iterator.initializer
-			self.validation_initializer = self.validation_iterator.initializer
-			self.test_initializer = self.test_iterator.initializer
+		self.training_initializer = self.training_iterator.initializer
+		self.validation_initializer = self.validation_iterator.initializer
+		self.test_initializer = self.test_iterator.initializer
 
-			self.next_mix, self.next_non_mix, self.next_ind = self.next_element
-
-	def mapping(self, dataset, batch_size):
-		dataset = dataset.map(decode)
-		if self.normalize:
-			dataset = dataset.map(normalize)
-		dataset = dataset.map(mix)
-		dataset = dataset.batch(batch_size)
-		return dataset.prefetch(1)
+		self.next_mix, self.next_non_mix, self.next_ind = self.next_element
 
 	def init_handle(self):
 		sess = tf.get_default_session()
@@ -667,25 +671,30 @@ if __name__ == "__main__":
 	###
 	### TEST
 	##
-	# create_tfrecord_file_2("testou.h5", 20480, 1, 2, ['M','F'], True)
-	# from_flac_to_tfrecords()
-	# ds = TFDataset(batch_size=3)
 
-	# with tf.Session().as_default() as sess:
-	# 	ds.init_handle()
-	# 	L = ds.length('train')
-	# 	print L, ds.length('test'), ds.length('valid')
-	# 	sess.run(ds.training_initializer)
-	# 	for i in range(L):
-	# 		value = sess.run(ds.next_element, feed_dict={ds.handle: ds.get_handle('train')})
-	# 		print value[0].shape
-	ds = TFDataset2(batch_size=64, dataset_normalize=False, nb_speakers=2, sex=['M','F'], chunk_size=20480)
+	ds = TFDataset(dataset ='h5py_files/train-clean-100-8-s.h5', batch_size=256, dataset_normalize=False, nb_speakers=2, sex=['M', 'F'], chunk_size=20480, no_random_picking=True)
 	with tf.Session().as_default() as sess:
-		ds.init_handle()
+		ds.init_handle() 
 		# L = ds.length('train')
+		# print ds.length('train'), ds.length('test'), ds.length('valid')
 		sess.run(ds.training_initializer)
-		for i in range(100):
+		for i in range(10):
 			t = time.time()
 			value = sess.run(ds.next_element, feed_dict={ds.handle: ds.get_handle('train')})
-			# time.sleep(0.2)
-			print value[0].shape, time.time() - t
+			print value[2]
+			# print time.time() - t
+
+		ds.init_handle() 
+		sess.run(ds.training_initializer)
+		for i in range(10):
+			t = time.time()
+			value = sess.run(ds.next_element, feed_dict={ds.handle: ds.get_handle('train')})
+			print time.time() - t
+
+			sess.run(ds.validation_initializer)
+			for _ in range(10):
+				t = time.time()
+				value = sess.run(ds.next_element, feed_dict={ds.handle: ds.get_handle('valid')})
+				print '--- ', time.time() - t
+			
+
