@@ -1,5 +1,5 @@
 # coding: utf-8
-from data.dataset import Dataset, TFDataset, TFDataset2
+from data.dataset import Dataset, TFDataset, MixGenerator
 import time
 import numpy as np
 import argparse
@@ -135,7 +135,7 @@ class Trainer(object):
 		time_spent = [0 for _ in range(10)]
 		
 		with tf.Graph().as_default() as graph:
-			tfds = TFDataset2(**self.args)
+			tfds = TFDataset(**self.args)
 
 			additional_args = {
 				"mix": tfds.next_mix,
