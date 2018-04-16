@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from utils.ops import scope, AMSGrad, BLSTM, f_props
+from utils.ops import scope, AMSGrad, BLSTM, f_props, log10
 import os
 import config
 import tensorflow as tf
@@ -88,6 +88,7 @@ class Network(object):
 		sums = ops.get_collection(ops.GraphKeys.SUMMARIES)
 		train_keys_summaries = []
 		valid_keys_summaries = []
+		test_keys_summaries = []
 
 		for s in sums:
 			if not ('input' in s.name or 'output' in s.name):
@@ -96,7 +97,9 @@ class Network(object):
 				valid_keys_summaries.append(s)
 			if 'SDR_improvement' in s.name:
 				valid_keys_summaries.append(s)
-
+				test_keys_summaries.append(s)
+			if 'audio' in s.name or 'stft' in s.name or 'mask' in s.name:
+				test_keys_summaries.append(s)
 
 		self.merged_train = tf.summary.merge(train_keys_summaries)
 		if len(valid_keys_summaries) != 0:
@@ -104,8 +107,14 @@ class Network(object):
 		else:
 			self.merged_valid = None
 
+		if len(test_keys_summaries) != 0:
+			self.merged_test = tf.summary.merge(test_keys_summaries)
+		else:
+			self.merged_test = None
+
 		self.train_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID,'train'), tf.get_default_graph())
 		self.valid_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID,'valid'))
+		self.test_writer = tf.summary.FileWriter(os.path.join(config.log_dir,self.folder,self.runID,'test'))
 
 		# Save arguments
 		with open(os.path.join(config.log_dir,self.folder,self.runID,'params'), 'w') as f:
@@ -161,6 +170,33 @@ class Network(object):
 			optimize = optimizer.apply_gradients(zip(gradients, variables))
 			return optimize
 
+	def sdr_improvement(self, s_target, s_approx, with_perm=False):
+		# B S L or B P S L
+		mix = tf.tile(tf.expand_dims(self.x_mix, 1) ,[1, self.S, 1])
+
+		s_target_norm = tf.reduce_sum(tf.square(s_target), axis=-1)
+		s_approx_norm = tf.reduce_sum(tf.square(s_approx), axis=-1)
+		mix_norm = tf.reduce_sum(tf.square(mix), axis=-1)
+
+		s_target_s_2 = tf.square(tf.reduce_sum(s_target*s_approx, axis=-1))
+		s_target_mix_2 = tf.square(tf.reduce_sum(s_target*mix, axis=-1))
+
+		sep = 1.0/((s_target_norm*s_approx_norm)/s_target_s_2 - 1.0)
+		separated = 10. * log10(sep)
+		non_separated = 10. * log10(1.0/((s_target_norm*mix_norm)/s_target_mix_2 - 1.0))
+
+		loss = (s_target_norm*s_approx_norm)/s_target_s_2
+
+		val = separated - non_separated
+		val = tf.reduce_mean(val , -1) # Mean over speakers
+		if not with_perm:
+			val = tf.reduce_mean(val , -1) # Mean over batches
+		else:
+			val = tf.reduce_mean(val , 0) # Mean over batches
+			val = tf.reduce_min(val, -1)
+
+		return val, loss
+
 	def save(self, step):
 		path = os.path.join(config.log_dir, self.folder ,self.runID, "model")
 		self.saver.save(tf.get_default_session(), path, step)
@@ -171,6 +207,12 @@ class Network(object):
 		summary, _, cost = tf.get_default_session().run([self.merged_train, self.optimize, self.cost_model], feed_dict)
 		self.train_writer.add_summary(summary, step)
 		return cost
+
+	def infer(self, feed_dict, step):
+		feed_dict.update({self.training:False})
+		summary, cost, output = tf.get_default_session().run([self.merged_test, self.cost_model, self.output], feed_dict)
+		self.test_writer.add_summary(summary, step)
+		return cost, output
 
 	def valid_batch(self, feed_dict, step):
 		sess = tf.get_default_session()
@@ -247,6 +289,8 @@ class Separator(Network):
 		self.b = kwargs['mask_b']
 		self.normalize_input = kwargs['normalize_separator']
 		self.abs_input = kwargs['abs_input']
+		self.beta = kwargs['beta_kmeans']
+		self.with_silence = kwargs['with_silence']
 
 		self.graph = tf.get_default_graph()
 
@@ -331,16 +375,20 @@ class Separator(Network):
 			frame_step=self.window_size-self.hop_size,
 			fft_length=self.window_size)
 
-		self.angle = tf.atan(tf.imag(self.stfts)/tf.real(self.stfts))
+		tf.summary.image('stft/non_mix', tf.abs(tf.expand_dims(self.stfts_non_mix,3)), max_outputs=3)
+		tf.summary.image('stft/mix', tf.abs(tf.expand_dims(self.stfts,3)), max_outputs=3)
 
 		self.X = tf.sqrt(tf.abs(self.stfts))
-		self.X_input = tf.reshape(tf.abs(self.stfts), [self.B, -1])
-		self.X_non_mix = tf.sqrt(tf.abs(self.stfts_non_mix))
-		self.X_non_mix = tf.reshape(self.X_non_mix, [self.B, self.S, -1, self.F])
+		self.X_input = tf.abs(self.stfts)
+		self.X_non_mix = tf.reshape(self.stfts_non_mix, [self.B, self.S, -1, self.F])
 		self.X_non_mix = tf.transpose(self.X_non_mix, [0, 2, 3, 1])
 
 		argmax = tf.argmax(tf.abs(self.X_non_mix), axis=3)
 		self.y = tf.one_hot(argmax, self.S, self.a, self.b)
+
+		tf.summary.image('mask/true/1', tf.abs(tf.expand_dims(1.0 + self.y[:,:,:,0],3)))
+		tf.summary.image('mask/true/2', tf.abs(tf.expand_dims(1.0 + self.y[:,:,:,1],3)))
+
 
 	@scope
 	def normalization01(self):
@@ -371,13 +419,21 @@ class Separator(Network):
 		input_kmeans = tf.reshape(self.prediction, [self.B, -1, self.embedding_size])
 
 		# S speakers to separate, give self.X in input not to consider silent bins
-		kmeans = KMeans(nb_clusters=self.S, nb_tries=5, nb_iterations=5, input_tensor=input_kmeans, beta=20.0)#, latent_space_tensor=tf.abs(self.X))
-		
+		kmeans = KMeans(nb_clusters=self.S, nb_tries=10, nb_iterations=10, 
+			input_tensor=input_kmeans, beta=self.beta, latent_space_tensor=self.X_input if self.with_silence else None)
+
 		# Extract labels of each bins TF_i - labels [B, TF, 1]
 		_ , labels = kmeans.network
-		# self.out = labels
-		self.masks = labels # tf.one_hot(tf.cast(labels, tf.int32), self.S, 1.0, 0.0) # Create masks [B, TF, S]
 
+		if self.beta is None:
+			# It produces hard assignements [0,1,0, ...]
+			self.masks = tf.one_hot(tf.cast(labels, tf.int32), self.S, 1.0, 0.0) # Create masks [B, TF, S]
+			tf.summary.image('mask/predicted/1', tf.reshape(self.masks[:,:,0],[self.B, -1, self.F, 1]))
+			tf.summary.image('mask/predicted/2', tf.reshape(self.masks[:,:,1],[self.B, -1, self.F, 1]))
+		else:
+			# It produces soft assignements
+			self.masks = labels
+		
 		separated = tf.reshape(self.X_input, [self.B, -1, 1]) * self.masks # [B ,TF, S] 
 		separated = tf.reshape(separated, [self.B, -1, self.F, self.S])
 		separated = tf.transpose(separated, [0,3,1,2]) # [B, S, T, F]
@@ -390,17 +446,21 @@ class Separator(Network):
 		stft = tf.reshape(self.separate, [self.B*self.S, -1, self.F])
 		# denorm
 
-		stft = tf.complex(stft, 0.0*stft) * tf.exp(tf.complex(0.0*self.angle, self.angle))
+		stft = tf.complex(stft, 0.0*stft) * tf.exp(tf.complex(0.0, tf.angle(self.stfts)))
 		istft = tf.contrib.signal.inverse_stft(
 			stft, 
 			frame_length=self.window_size, 
 			frame_step=self.window_size-self.hop_size,
 			window_fn=tf.contrib.signal.inverse_stft_window_fn(self.window_size-self.hop_size))
 		output = tf.reshape(istft, [self.B, self.S, -1])
-		tf.summary.audio(name= "input/non-mixed", tensor = tf.reshape(self.x_non_mix, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
-		tf.summary.audio(name= "input/mixed", tensor = self.x_mix[:self.B], sample_rate = config.fs, max_outputs=1)
-		tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(output, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
-		
+		self.output = output
+		tf.summary.audio(name= "audio/input/non-mixed", tensor = tf.reshape(self.x_non_mix, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
+		tf.summary.audio(name= "audio/input/mixed", tensor = self.x_mix[:self.B], sample_rate = config.fs, max_outputs=1)
+		tf.summary.audio(name= "audio/output/reconstructed", tensor = tf.reshape(output, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
+
+		sdr_improvement, _ = self.sdr_improvement(self.x_non_mix, self.output)
+		tf.summary.scalar('SDR_improvement', sdr_improvement)			
+
 		return output
 
 	@scope

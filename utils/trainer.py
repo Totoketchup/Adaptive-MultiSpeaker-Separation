@@ -48,7 +48,6 @@ class MyArgs(object):
 		self.parser.add_argument(
 			'--hop_size', type=int, help='Hop size for the STFT', required=False, default=256)
 
-
 	def add_separator_args(self):
 		self.parser.add_argument(
 			'--normalize_separator', help='Normalize the input of the separator', choices=['None','01', 'meanstd'], required=False, default='None')
@@ -62,6 +61,10 @@ class MyArgs(object):
 			'--no_normalize', help='Normalization of the embedded space', action="store_false")
 		self.parser.add_argument(
 			'--abs_input', help='tf.abs on the L41 input', action="store_true")
+		self.parser.add_argument(
+			'--beta_kmeans', type=float, help='Beta value for KMEANS - None = Hard KMEANS', required=False, default=None)
+		self.parser.add_argument(
+			'--with_silence', help='Silence weak bins during KMEANS', action="store_true")
 
 	def add_enhance_layer_args(self):
 		self.parser.add_argument(
@@ -85,7 +88,6 @@ class MyArgs(object):
 			'--with_max_pool', help='Use Max pooling and not hop', action="store_true")
 		self.parser.add_argument(
 			'--with_average_pool', help='Use Average pooling and not hop', action="store_true")
-
 
 		#Loss arguments
 		self.parser.add_argument(

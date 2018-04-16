@@ -672,29 +672,31 @@ if __name__ == "__main__":
 	### TEST
 	##
 
-	ds = TFDataset(dataset ='h5py_files/train-clean-100-8-s.h5', batch_size=256, dataset_normalize=False, nb_speakers=2, sex=['M', 'F'], chunk_size=20480, no_random_picking=True)
-	with tf.Session().as_default() as sess:
-		ds.init_handle() 
-		# L = ds.length('train')
-		# print ds.length('train'), ds.length('test'), ds.length('valid')
-		sess.run(ds.training_initializer)
-		for i in range(10):
-			t = time.time()
-			value = sess.run(ds.next_element, feed_dict={ds.handle: ds.get_handle('train')})
-			print value[2]
-			# print time.time() - t
+	from_flac_to_tfrecords()
 
-		ds.init_handle() 
-		sess.run(ds.training_initializer)
-		for i in range(10):
-			t = time.time()
-			value = sess.run(ds.next_element, feed_dict={ds.handle: ds.get_handle('train')})
-			print time.time() - t
+	# ds = TFDataset(dataset ='h5py_files/train-clean-100-8-s.h5', batch_size=256, dataset_normalize=False, nb_speakers=2, sex=['M', 'F'], chunk_size=20480, no_random_picking=True)
+	# with tf.Session().as_default() as sess:
+	# 	ds.init_handle() 
+	# 	# L = ds.length('train')
+	# 	# print ds.length('train'), ds.length('test'), ds.length('valid')
+	# 	sess.run(ds.training_initializer)
+	# 	for i in range(10):
+	# 		t = time.time()
+	# 		value = sess.run(ds.next_element, feed_dict={ds.handle: ds.get_handle('train')})
+	# 		print value[2]
+	# 		# print time.time() - t
 
-			sess.run(ds.validation_initializer)
-			for _ in range(10):
-				t = time.time()
-				value = sess.run(ds.next_element, feed_dict={ds.handle: ds.get_handle('valid')})
-				print '--- ', time.time() - t
+	# 	ds.init_handle() 
+	# 	sess.run(ds.training_initializer)
+	# 	for i in range(10):
+	# 		t = time.time()
+	# 		value = sess.run(ds.next_element, feed_dict={ds.handle: ds.get_handle('train')})
+	# 		print time.time() - t
+
+	# 		sess.run(ds.validation_initializer)
+	# 		for _ in range(10):
+	# 			t = time.time()
+	# 			value = sess.run(ds.next_element, feed_dict={ds.handle: ds.get_handle('valid')})
+	# 			print '--- ', time.time() - t
 			
 

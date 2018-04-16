@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from utils.ops import unpool, variable_summaries, get_scope_variable, scope, log10, kl_div
+from utils.ops import unpool, variable_summaries, get_scope_variable, scope, kl_div
 import os
 import config
 import tensorflow as tf
@@ -169,16 +169,7 @@ class Adapt(Network):
 			input_mix = tf.tile(input_mix, [1, self.S, 1, 1])
 
 			if self.separation == 'mask':
-
-				# sign = input_mix / tf.abs(input_mix)
-
-				# filters = tf.square(input_non_mix) / tf.clip_by_value(tf.reduce_sum(tf.square(input_non_mix), 1, keep_dims=True), 1e-4, 1e10) 
-				# input_mix = tf.nn.softplus(input_mix)
-				# input_non_mix = tf.nn.softplus(input_non_mix)
-
 				filters = tf.divide(input_non_mix, input_mix)
-				# tf.summary.histogram("filters", filters)
-				# output = input_mix * filters
 				output = tf.reshape(input_mix * filters, [self.B*self.S, self.T_max_pooled, self.N, 1])
 				output = tf.transpose(output, [0, 3, 1, 2])
 
@@ -237,10 +228,9 @@ class Adapt(Network):
 		output = tf.nn.conv2d_transpose(output , filter=self.conv_filter_2,
 									 output_shape=[self.B*self.S, 1, self.L, 1],
 									 strides=strides, padding='SAME')
-		print output
 
 		output = tf.reshape(output, [self.B, self.S, self.L], name='back_output')
-
+		self.output = output
 		return output
 
 	@scope
@@ -314,8 +304,6 @@ class Adapt(Network):
 			else:
 				loss = 1e-3*l2 + sdr
 
-
-		
 		# shape = [B]
 		# Compute mean over batches
 		cost_value = loss
@@ -331,7 +319,6 @@ class Adapt(Network):
 
 		tf.summary.audio(name= "input/non-mixed", tensor = tf.reshape(self.x_non_mix, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
 		tf.summary.audio(name= "input/mixed", tensor = self.x[:self.B], sample_rate = config.fs, max_outputs=1)
-
 		tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
 		
 		with tf.name_scope('loss_values'):
@@ -347,33 +334,6 @@ class Adapt(Network):
 			tf.summary.scalar('overlapping_loss', self.overlap_coef * self.overlapping_constraint)
 
 		return cost_value
-
-	def sdr_improvement(self, s_target, s_approx, with_perm=False):
-		# B S L or B P S L
-		mix = tf.tile(tf.expand_dims(self.x_mix, 1) ,[1, self.S, 1])
-
-		s_target_norm = tf.reduce_sum(tf.square(s_target), axis=-1)
-		s_approx_norm = tf.reduce_sum(tf.square(s_approx), axis=-1)
-		mix_norm = tf.reduce_sum(tf.square(mix), axis=-1)
-
-		s_target_s_2 = tf.square(tf.reduce_sum(s_target*s_approx, axis=-1))
-		s_target_mix_2 = tf.square(tf.reduce_sum(s_target*mix, axis=-1))
-
-		sep = 1.0/((s_target_norm*s_approx_norm)/s_target_s_2 - 1.0)
-		separated = 10. * log10(sep)
-		non_separated = 10. * log10(1.0/((s_target_norm*mix_norm)/s_target_mix_2 - 1.0))
-
-		loss = (s_target_norm*s_approx_norm)/s_target_s_2
-
-		val = separated - non_separated
-		val = tf.reduce_mean(val , -1) # Mean over speakers
-		if not with_perm:
-			val = tf.reduce_mean(val , -1) # Mean over batches
-		else:
-			val = tf.reduce_mean(val , 0) # Mean over batches
-			val = tf.reduce_min(val, -1)
-
-		return val, loss
 
 	def test_prediction(self, X_mix_test, X_non_mix_test, step):
 		pred, y = self.sess.run([self.sepNet.prediction, self.sepNet.y_test_export], {self.x_mix: X_mix_test, self.x_non_mix:X_non_mix_test, self.training:True})

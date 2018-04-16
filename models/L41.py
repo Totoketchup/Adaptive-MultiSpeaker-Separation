@@ -62,7 +62,7 @@ class L41Model(Separator):
 		embedding = self.prediction
 
 		# Reshape I so that it is of the correct dimension
-		I = tf.expand_dims(self.I, axis=2 )
+		I = tf.expand_dims(self.I, axis=2)
 
 		# Normalize the speaker vectors and collect the speaker vectors
 		# corresponding to the speakers in batch

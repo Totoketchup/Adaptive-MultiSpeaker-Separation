@@ -67,15 +67,19 @@ class KMeans:
 					self.centroids = tf.tile(self.centroids, [self.nb_tries, 1 , 1])
 
 				if not self.latent_space_tensor is None:
-					self.W_0_no_try = tf.reshape(tf.cast(self.latent_space_tensor > 1e-3, tf.float32), [self.b, self.L, 1])
-					self.W_0 = tf.tile(self.W_0_no_try, [self.nb_tries, 1 , 1])
+					log_lst = tf.log(tf.reduce_max(latent_space_tensor, -1) / latent_space_tensor)
+					self.t = log_lst
+					self.notsilent_notry = tf.reshape(tf.cast(log_lst < 2.0, tf.float32), [self.b, self.L, 1])
+					self.notsilent = tf.tile(self.notsilent_notry, [self.nb_tries, 1 , 1])
+				else:
+					self.notsilent = tf.ones([self.B, self.L, 1])
 
 				self.network
 
 	@scope
 	def network(self):
 		i = tf.constant(0)
-		init = [i, self.centroid_init, self.get_labels(self.centroid_init, self.X)]
+		init = [i, self.centroid_init, self.get_labels(self.centroid_init)]
 		if self.beta is not None:
 			invariant = [i.get_shape(), tf.TensorShape([None, self.nb_clusters, None]), tf.TensorShape([None, None, self.nb_clusters])]
 		else:
@@ -83,7 +87,6 @@ class KMeans:
 
 		cond = lambda i, c, l: tf.less(i, self.nb_iterations)
 		_ , centroids, labels = tf.while_loop(cond, self.body, init, shape_invariants=invariant)
-		# self.out = self.get_labels(self.centroid_init, self.X)
 		inertia = self.get_inertia(centroids)
 
 		inertia = tf.reshape(inertia, [self.b, self.nb_tries])
@@ -99,9 +102,8 @@ class KMeans:
 
 	def get_inertia(self, centroids):
 		with tf.name_scope('inertia'):
-			labels = self.get_labels(centroids, self.X)
+			labels = self.get_labels(centroids)
 			if self.beta is not None:
-
 				X_ = tf.expand_dims(self.X, 2) # B L 1 E
 				centroids_ = tf.expand_dims(centroids, 1) # B 1 C E
 				dist = tf.reduce_sum(tf.square(X_ - centroids_), -1) * labels # B C distance to clusters according to soft assignments
@@ -131,44 +133,42 @@ class KMeans:
 				
 	def body(self ,i, centroids, labels):
 		with tf.name_scope('iteration'):
+
+			X = self.X * self.notsilent
+
 			# Add + [0,1,2]
 			if self.beta is not None:
-				X_ = tf.expand_dims(self.X, 2) # B L 1 E
+				X_ = tf.expand_dims(X, 2) # B L 1 E
 				labels_ = tf.expand_dims(labels, 3) # B L C 1 
 				new_centroids = tf.reduce_sum(X_ * labels_, 1) / tf.expand_dims(tf.reduce_sum(labels, 1),-1)
 				new_centroids = tf.reshape(new_centroids, [self.B, self.nb_clusters, self.E])
 
 			else:
 				labels_flattened = tf.reshape(labels + self.shifting, [-1])
-				X_flattened = tf.reshape(self.X, [-1, self.E])
+				X_flattened = tf.reshape(X, [-1, self.E])
 
-				# total : [
 				total = tf.unsorted_segment_sum(X_flattened, labels_flattened, self.B*self.nb_clusters)
 				count = tf.unsorted_segment_sum(tf.ones_like(X_flattened), labels_flattened, self.B*self.nb_clusters)
 
 				new_centroids = total/count
 				new_centroids = tf.reshape(new_centroids, [self.B, self.nb_clusters, self.E])
 
-			return [i+1, new_centroids, self.get_labels(new_centroids, self.X)]
+			return [i+1, new_centroids, self.get_labels(new_centroids)]
 
-	def get_labels(self, centroids, X, W_0_spe=None):
-		if self.latent_space_tensor is not None:
-			if W_0_spe is None:
-				X = X*self.W_0
-			else:
-				X = X*W_0_spe
+	def get_labels(self, centroids):
+
+		X = self.X
 
 		X_ = tf.expand_dims(X, 2) # B L 1 E
 		centroids_ = tf.expand_dims(centroids, 1) # B 1 C E
 
-
 		if self.beta is not None:
-			distances = tf.reduce_sum(tf.square(X_ - centroids_), axis=3)
+			distances = tf.reduce_sum(tf.square(X_ - centroids_) * tf.expand_dims(self.notsilent, 2), axis=3)
 			exp = tf.exp(-1.0 *  self.beta * distances)
 			exp =  exp / tf.reduce_sum(exp, -1, keep_dims=True)
 			return exp
 		else:
-			distances = tf.sqrt(tf.reduce_sum(tf.square(X_ - centroids_), axis=3))
+			distances = tf.sqrt(tf.reduce_sum(tf.square(X_ - centroids_) * tf.expand_dims(self.notsilent, 2), axis=3))
 			return tf.argmin(distances, axis=2, output_type=tf.int32)
 
 	def fit(self, X_train):
