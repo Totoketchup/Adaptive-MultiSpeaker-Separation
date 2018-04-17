@@ -217,7 +217,7 @@ class TreeIterator(object):
 		used = copy.deepcopy(self.tree)
 		while True:
 			try:
-				yield self.next_item(used) 
+				yield self.next_item(used)
 			except Exception:
 				raise
 				used = copy.deepcopy(self.tree)
@@ -397,8 +397,17 @@ def from_flac_to_tfrecords(train_r=0.8, valid_test_r=0.2):
 	for i, key in enumerate(speakers_info.keys()):
 		keys_to_index[key] = i
 
+	sex = ['M' for i in range(len(speakers_info))]
+	for k, v in speakers_info.items():
+		i = keys_to_index[k]
+		sex[i] = v['sex']
+
+	np.save('genders_index.arr', sex)
+	# exit()
+
 	allfiles = np.array([os.path.join(r,f) for r,dirs,files in os.walk(folder) for f in files if f.endswith(".flac")])
 	L = len(allfiles)
+	np.random.shuffle(allfiles)
 	train = allfiles[:int(L*train_r)]
 	valid = allfiles[int(L*train_r):int(L*(train_r+valid_test_r/2))]
 	test = allfiles[int(L*(train_r+valid_test_r/2)):]
@@ -475,6 +484,12 @@ def chunk(audio, key, chunk_size):
 	chunks = tf.map_fn(lambda i : audio[i*chunk_size:(i+1)*chunk_size], tf.range(nb), dtype=tf.float32)
 	return chunks, tf.tile(tf.expand_dims(key, 0), [nb]) 	# [N, chunk_size]
 
+def setshape(mix, non_mix, keys, chunk, N):
+	mix = tf.reshape(mix, [chunk])
+	non_mix = tf.reshape(non_mix, [N, chunk])
+	keys = tf.reshape(keys, [N])
+	return mix, non_mix, keys
+
 class TFDataset(object):
 
 	def get_data(self, name, seed):
@@ -530,17 +545,17 @@ class TFDataset(object):
 			train_mix = train_mix.map(mix)
 			train_mix = train_mix.filter(filtering)
 			train_mix = train_mix.batch(batch_size)
-			train_mix = train_mix.prefetch(10)
+			train_mix = train_mix.prefetch(1)
 
 			valid_mix = valid_mix.map(mix)
 			valid_mix = valid_mix.filter(filtering)
 			valid_mix = valid_mix.batch(batch_size)
-			valid_mix = valid_mix.prefetch(10)
+			valid_mix = valid_mix.prefetch(1)
 
 			test_mix = test_mix.map(mix)
 			test_mix = test_mix.filter(filtering)
 			test_mix = test_mix.batch(batch_size)
-			test_mix = test_mix.prefetch(10)
+			test_mix = test_mix.prefetch(1)
 
 			self.handle = tf.placeholder(tf.string, shape=[])
 			iterator = tf.data.Iterator.from_string_handle(
@@ -598,7 +613,8 @@ class MixGenerator(object):
 	def __init__(self, **kwargs):
 		batch_size = kwargs['batch_size']
 		self.normalize = kwargs['dataset_normalize']
-		self.chunk_size = kwargs['chunk_size']
+		chunk_size = kwargs['chunk_size']
+		N = kwargs['nb_speakers']
 
 		d = Dataset(**kwargs)
 		
@@ -606,15 +622,19 @@ class MixGenerator(object):
 		valid_mix = tf.data.Dataset.from_generator(d.valid, (tf.float32, tf.float32, tf.int64))
 		test_mix = tf.data.Dataset.from_generator(d.test, (tf.float32, tf.float32, tf.int64))
 
+		train_mix = train_mix.map(lambda x, y, z: setshape(x,y,z,chunk_size, N))
 		train_mix = train_mix.batch(batch_size)
-		train_mix = train_mix.shuffle(10, seed=config.seed)	
 		train_mix = train_mix.prefetch(1)	
-
+		print '---------------------------'
+		print train_mix
+		
+		valid_mix = valid_mix.map(lambda x, y, z: setshape(x,y,z,chunk_size, N))
 		valid_mix = valid_mix.batch(batch_size)
-		valid_mix = valid_mix.prefetch(10)
+		valid_mix = valid_mix.prefetch(1)
 
+		test_mix = test_mix.map(lambda x, y, z: setshape(x,y,z,chunk_size, N))
 		test_mix = test_mix.batch(batch_size)
-		test_mix = test_mix.prefetch(10)
+		test_mix = test_mix.prefetch(1)
 
 		self.handle = tf.placeholder(tf.string, shape=[])
 		iterator = tf.data.Iterator.from_string_handle(
