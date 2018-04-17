@@ -67,7 +67,7 @@ class KMeans:
 					self.centroids = tf.tile(self.centroids, [self.nb_tries, 1 , 1])
 
 				if not self.latent_space_tensor is None:
-					log_lst = tf.log(tf.reduce_max(latent_space_tensor, -1) / latent_space_tensor)
+					log_lst = tf.log(tf.reduce_max(latent_space_tensor, -1, keep_dims=True) / latent_space_tensor)
 					self.t = log_lst
 					self.notsilent_notry = tf.reshape(tf.cast(log_lst < 2.0, tf.float32), [self.b, self.L, 1])
 					self.notsilent = tf.tile(self.notsilent_notry, [self.nb_tries, 1 , 1])

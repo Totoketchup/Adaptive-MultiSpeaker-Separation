@@ -513,7 +513,7 @@ class TFDataset(object):
 			if 'M' in kwargs['sex'] and 'F' in kwargs['sex']:
 				train_list = tuple([train_M(i) if i%2 == 0 else train_F(i) for i in range(N)])
 				valid_list = tuple([valid_M(i) if i%2 == 0 else valid_F(i) for i in range(N)])
-				test_list = tuple([test_M(i) if i%2 == 0 else train_F(i) for i in range(N)])
+				test_list = tuple([test_M(i) if i%2 == 0 else test_F(i) for i in range(N)])
 			elif 'M' in kwargs['sex']:
 				train_list = tuple([train_M(i) for i in range(N)])
 				valid_list = tuple([valid_M(i) for i in range(N)])
