@@ -224,6 +224,11 @@ class Network(object):
 			self.valid_writer.add_summary(summary, step)
 		return cost
 
+	def get_embeddings(self, feed_dict):
+		sess = tf.get_default_session()
+		feed_dict.update({self.training:False})
+		return sess.run(self.prediction, feed_dict)
+
 	def test_batch(self, feed_dict):
 		sess = tf.get_default_session()
 		feed_dict.update({self.training:False})
@@ -389,6 +394,10 @@ class Separator(Network):
 		tf.summary.image('mask/true/1', tf.abs(tf.expand_dims(1.0 + self.y[:,:,:,0],3)))
 		tf.summary.image('mask/true/2', tf.abs(tf.expand_dims(1.0 + self.y[:,:,:,1],3)))
 
+		tf.summary.audio(name= "audio/input/non-mixed", tensor = tf.reshape(self.x_non_mix, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
+		tf.summary.audio(name= "audio/input/mixed", tensor = self.x_mix[:self.B], sample_rate = config.fs, max_outputs=1)
+
+
 
 	@scope
 	def normalization01(self):
@@ -417,7 +426,7 @@ class Separator(Network):
 	def separate(self):
 		# Input for KMeans algorithm [B, TF, E]
 		input_kmeans = tf.reshape(self.prediction, [self.B, -1, self.embedding_size])
-
+		self.embeddings = input_kmeans
 		# S speakers to separate, give self.X in input not to consider silent bins
 		kmeans = KMeans(nb_clusters=self.S, nb_tries=10, nb_iterations=10, 
 			input_tensor=input_kmeans, beta=self.beta, latent_space_tensor=self.X_input if self.with_silence else None)
@@ -433,6 +442,8 @@ class Separator(Network):
 		else:
 			# It produces soft assignements
 			self.masks = labels
+			tf.summary.image('mask/predicted/1', tf.reshape(self.masks[:,:,0],[self.B, -1, self.F, 1]))
+			tf.summary.image('mask/predicted/2', tf.reshape(self.masks[:,:,1],[self.B, -1, self.F, 1]))
 		
 		separated = tf.reshape(self.X_input, [self.B, -1, 1]) * self.masks # [B ,TF, S] 
 		separated = tf.reshape(separated, [self.B, -1, self.F, self.S])

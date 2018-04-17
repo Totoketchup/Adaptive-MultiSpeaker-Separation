@@ -186,8 +186,9 @@ class Adapt(Network):
 				output = tf.reshape(output, [self.B*self.S, self.T_max_pooled, self.N, 1])
 
 			return output
-
-		return self.sepNet.output
+		else:
+			self.embeddings = self.sepNet.embeddings
+			return self.sepNet.output
 
 	@scope
 	def back(self):

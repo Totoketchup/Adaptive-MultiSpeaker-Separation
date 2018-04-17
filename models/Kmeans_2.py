@@ -33,9 +33,7 @@ class KMeans:
 					self.X_in = input_tensor
 
 				# mean, _ = tf.nn.moments(self.X_in, axes=-1, keep_dims=True)
-
-				x_norm = tf.nn.l2_normalize(self.X_in, axis=-1)
-
+				x_norm = tf.nn.l2_normalize(self.X_in, axis=-1)		
 				self.b = tf.shape(x_norm)[0]
 				self.X = tf.expand_dims(x_norm, 1)
 				self.X = tf.tile(self.X, [1, self.nb_tries, 1, 1])
