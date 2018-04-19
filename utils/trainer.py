@@ -58,11 +58,17 @@ class MyArgs(object):
 		self.parser.add_argument(
 			'--embedding_size', type=int, help='Size of the embedding output', required=False, default=40)
 		self.parser.add_argument(
+			'--nb_tries', type=int, help='Number of tries for KMEANS', required=False, default=10)
+		self.parser.add_argument(
+			'--nb_steps', type=int, help='Number of steps for KMEANS', required=False, default=10)
+		self.parser.add_argument(
 			'--no_normalize', help='Normalization of the embedded space', action="store_false")
 		self.parser.add_argument(
 			'--abs_input', help='tf.abs on the L41 input', action="store_true")
 		self.parser.add_argument(
 			'--beta_kmeans', type=float, help='Beta value for KMEANS - None = Hard KMEANS', required=False, default=None)
+		self.parser.add_argument(
+			'--threshold', type=float, help='Threshold for the silent bins', required=False, default=2.0)
 		self.parser.add_argument(
 			'--with_silence', help='Silence weak bins during KMEANS', action="store_true")
 
@@ -74,7 +80,7 @@ class MyArgs(object):
 		self.parser.add_argument(
 			'--layer_size_enhance', type=int, help='Size of hidden layers in BLSTM', required=False, default=600)
 		self.parser.add_argument(
-			'--nonlinearity', help='Nonlinearity used in output', choices=['tanh', 'softmax'], required=False, default='softmax')
+			'--nonlinearity', help='Nonlinearity used in output', choices=['tanh', 'softmax', 'None'], required=False, default='softmax')
 
 	def add_adapt_args(self):
 		#Preprocess arguments

@@ -81,6 +81,10 @@ class Network(object):
 						self.B = shape_in[0]
 						self.L = shape_in[1]
 
+						tf.summary.audio(name= "audio/input/non-mixed", tensor = tf.reshape(self.x_non_mix, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
+						tf.summary.audio(name= "audio/input/mixed", tensor = self.x_mix[:self.B], sample_rate = config.fs, max_outputs=1)
+
+
 
 	def tensorboard_init(self):
 		self.saver = tf.train.Saver()
@@ -162,7 +166,6 @@ class Network(object):
 	def optimize(self):
 		print 'Train the following variables :'
 		print map(lambda x: x.name, self.trainable_variables)
-
 		optimizer = AMSGrad(self.learning_rate, epsilon=0.001)
 		update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 		with tf.control_dependencies(update_ops):
@@ -266,7 +269,8 @@ class Network(object):
 		with open(params_path) as f:
 			args = json.load(f)
 			keys_to_update = ['learning_rate','epochs','batch_size',
-			'regularization','overlap_coef','loss','beta','model_folder', 'type','pretraining']
+			'regularization','overlap_coef','loss','beta','model_folder', 'type','pretraining', 'with_silence',
+			'beta_kmeans']
 			to_modify = { key: modified_args[key] for key in keys_to_update if key in modified_args.keys() }
 			to_modify.update({key: val for key, val in modified_args.items() if key not in args.keys()})
 
@@ -295,7 +299,10 @@ class Separator(Network):
 		self.normalize_input = kwargs['normalize_separator']
 		self.abs_input = kwargs['abs_input']
 		self.beta = kwargs['beta_kmeans']
+		self.threshold = kwargs['threshold']
 		self.with_silence = kwargs['with_silence']
+		self.nb_tries = kwargs['nb_tries']
+		self.nb_steps = kwargs['nb_steps']
 
 		self.graph = tf.get_default_graph()
 
@@ -384,7 +391,7 @@ class Separator(Network):
 		tf.summary.image('stft/mix', tf.abs(tf.expand_dims(self.stfts,3)), max_outputs=3)
 
 		self.X = tf.sqrt(tf.abs(self.stfts))
-		self.X_input = tf.abs(self.stfts)
+		self.X_input = tf.identity(self.X)
 		self.X_non_mix = tf.reshape(self.stfts_non_mix, [self.B, self.S, -1, self.F])
 		self.X_non_mix = tf.transpose(self.X_non_mix, [0, 2, 3, 1])
 
@@ -393,11 +400,6 @@ class Separator(Network):
 
 		tf.summary.image('mask/true/1', tf.abs(tf.expand_dims(1.0 + self.y[:,:,:,0],3)))
 		tf.summary.image('mask/true/2', tf.abs(tf.expand_dims(1.0 + self.y[:,:,:,1],3)))
-
-		tf.summary.audio(name= "audio/input/non-mixed", tensor = tf.reshape(self.x_non_mix, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
-		tf.summary.audio(name= "audio/input/mixed", tensor = self.x_mix[:self.B], sample_rate = config.fs, max_outputs=1)
-
-
 
 	@scope
 	def normalization01(self):
@@ -428,8 +430,9 @@ class Separator(Network):
 		input_kmeans = tf.reshape(self.prediction, [self.B, -1, self.embedding_size])
 		self.embeddings = input_kmeans
 		# S speakers to separate, give self.X in input not to consider silent bins
-		kmeans = KMeans(nb_clusters=self.S, nb_tries=10, nb_iterations=10, 
-			input_tensor=input_kmeans, beta=self.beta, latent_space_tensor=self.X_input if self.with_silence else None)
+		kmeans = KMeans(nb_clusters=self.S, nb_tries=self.nb_tries, nb_iterations=self.nb_steps, 
+			input_tensor=input_kmeans, beta=self.beta, latent_space_tensor=tf.abs(self.X) if self.with_silence else None,
+			threshold=self.threshold)
 
 		# Extract labels of each bins TF_i - labels [B, TF, 1]
 		_ , labels = kmeans.network
@@ -437,15 +440,16 @@ class Separator(Network):
 		if self.beta is None:
 			# It produces hard assignements [0,1,0, ...]
 			self.masks = tf.one_hot(tf.cast(labels, tf.int32), self.S, 1.0, 0.0) # Create masks [B, TF, S]
-			tf.summary.image('mask/predicted/1', tf.reshape(self.masks[:,:,0],[self.B, -1, self.F, 1]))
-			tf.summary.image('mask/predicted/2', tf.reshape(self.masks[:,:,1],[self.B, -1, self.F, 1]))
 		else:
 			# It produces soft assignements
 			self.masks = labels
-			tf.summary.image('mask/predicted/1', tf.reshape(self.masks[:,:,0],[self.B, -1, self.F, 1]))
-			tf.summary.image('mask/predicted/2', tf.reshape(self.masks[:,:,1],[self.B, -1, self.F, 1]))
-		
-		separated = tf.reshape(self.X_input, [self.B, -1, 1]) * self.masks # [B ,TF, S] 
+
+		tf.summary.image('mask/predicted/1', tf.reshape(self.masks[:,:,0],[self.B, -1, self.F, 1]))
+		tf.summary.image('mask/predicted/2', tf.reshape(self.masks[:,:,1],[self.B, -1, self.F, 1]))
+
+		separated = tf.reshape(self.X, [self.B, -1, 1]) * self.masks # [B ,TF, S]
+		# separated = separated * tf.expand_dims((self.max_ - self.min_), 2) + tf.expand_dims(self.min_, 2)
+		# separated = tf.square(separated)
 		separated = tf.reshape(separated, [self.B, -1, self.F, self.S])
 		separated = tf.transpose(separated, [0,3,1,2]) # [B, S, T, F]
 		separated = tf.reshape(separated, [self.B*self.S, -1, self.F, 1]) # [BS, T, F, 1]
@@ -465,8 +469,6 @@ class Separator(Network):
 			window_fn=tf.contrib.signal.inverse_stft_window_fn(self.window_size-self.hop_size))
 		output = tf.reshape(istft, [self.B, self.S, -1])
 		self.output = output
-		tf.summary.audio(name= "audio/input/non-mixed", tensor = tf.reshape(self.x_non_mix, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
-		tf.summary.audio(name= "audio/input/mixed", tensor = self.x_mix[:self.B], sample_rate = config.fs, max_outputs=1)
 		tf.summary.audio(name= "audio/output/reconstructed", tensor = tf.reshape(output, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
 
 		sdr_improvement, _ = self.sdr_improvement(self.x_non_mix, self.output)
