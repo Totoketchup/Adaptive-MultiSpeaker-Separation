@@ -24,6 +24,8 @@ class L41Model(Separator):
 		# L41 network
 		shape = tf.shape(self.X)
 
+		self.true_masks = 1.0 + self.y
+
 		X_in = tf.identity(self.X)
 		if self.abs_input:
 			X_in = tf.abs(X_in)

@@ -187,8 +187,12 @@ class Adapt(Network):
 
 			return output
 		else:
-			self.embeddings = self.sepNet.embeddings
-			return self.sepNet.output
+			output = self.sepNet.output
+			self.prediction = self.sepNet.prediction
+			self.true_masks = self.sepNet.true_masks
+			self.X_non_mix = self.sepNet.X_non_mix
+			self.X = self.sepNet.X
+			return output
 
 	@scope
 	def back(self):
@@ -232,6 +236,7 @@ class Adapt(Network):
 
 		output = tf.reshape(output, [self.B, self.S, self.L], name='back_output')
 		self.output = output
+
 		return output
 
 	@scope
@@ -318,9 +323,7 @@ class Adapt(Network):
 		variable_summaries(self.conv_filter)
 		variable_summaries(self.conv_filter_2)
 
-		tf.summary.audio(name= "input/non-mixed", tensor = tf.reshape(self.x_non_mix, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
-		tf.summary.audio(name= "input/mixed", tensor = self.x[:self.B], sample_rate = config.fs, max_outputs=1)
-		tf.summary.audio(name= "output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
+		tf.summary.audio(name= "audio/output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
 		
 		with tf.name_scope('loss_values'):
 			tf.summary.scalar('l2_loss', l2)
@@ -357,6 +360,20 @@ class Adapt(Network):
 		self.finish_construction()
 		self.freeze_all_with('front/')
 		self.freeze_all_with('back/')
+		self.optimize
+		self.tensorboard_init()
+
+	def connect_enhance_to_separator(self, separator):
+		self.connect_front(separator)
+		self.sepNet.output = self.sepNet.enhance
+		self.cost_model = self.sepNet.enhance_cost
+		self.back # To save the back values !
+		var_list =[v for v in tf.global_variables() 
+			if ('back/' in v.name or 'front/' in v.name or 'prediction/' in v.name or 'speaker_centroids' in v.name )]
+		self.create_saver(subset=var_list)
+		self.restore_model(self.args['model_folder'])
+		self.finish_construction()
+		self.freeze_all_except('enhance/')
 		self.optimize
 		self.tensorboard_init()
 

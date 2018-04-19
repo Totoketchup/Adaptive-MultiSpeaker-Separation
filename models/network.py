@@ -255,11 +255,13 @@ class Network(object):
 		for to_del in to_delete:
 			self.trainable_variables.remove(to_del)
 
-	def freeze_all_except(self, prefix):
+	def freeze_all_except(self, *prefix):
 		to_train = []
 		for var in self.trainable_variables:
-			if prefix in var.name:
-				to_train.append(var)
+			for p in prefix:
+				if p in var.name:
+					to_train.append(var)
+					break
 		self.trainable_variables = to_train
 
 	@classmethod
@@ -367,10 +369,11 @@ class Separator(Network):
 	def add_finetuning(self):
 		self.separate
 		self.postprocessing
+		self.cost_finetuning
 		self.cost_model = self.cost_finetuning
 		self.finish_construction()
-		self.freeze_all_except('prediction')
-		# self.tensorboard_init()
+		# self.freeze_all_except('prediction')
+		self.tensorboard_init()
 		self.optimize
 
 	@scope
@@ -504,10 +507,7 @@ class Separator(Network):
 	def enhance(self):
 		# [B, S, T, F]
 		separated = tf.reshape(self.separate, [self.B, self.S, -1, self.F])
-		if self.args['normalize_enhance']:
-			mean, std = tf.nn.moments(separated, axes=[2,3], keep_dims=True)
-			separated = (separated - mean) / std
-
+		
 		# X [B, T, F]
 		# Tiling the input S time - like [ a, b, c] -> [ a, a, b, b, c, c], not [a, b, c, a, b, c]
 		X_in = tf.expand_dims(self.X, 1)
@@ -518,6 +518,11 @@ class Separator(Network):
 		sep_and_in = tf.concat([separated, X_in], axis = 3)
 		sep_and_in = tf.reshape(sep_and_in, [self.B*self.S, -1, 2*self.F])
 		
+		if self.args['normalize_enhance']:
+			mean, var = tf.nn.moments(sep_and_in, axes=[1,2], keep_dims=True)
+			sep_and_in = (sep_and_in - mean) / tf.sqrt(var)
+
+
 		layers = [
 			BLSTM(self.args['layer_size_enhance'], 
 				'BLSTM_'+str(i)) for i in range(self.args['nb_layers_enhance'])
@@ -527,12 +532,16 @@ class Separator(Network):
 		y = tf.layers.dense(y, self.F)
 
 		y = tf.reshape(y, [self.B, self.S, -1]) # [B, S, TF]
-
+		tf.summary.image('mask/predicted/enhanced', tf.reshape(y, [self.B*self.S, -1, self.F, 1]))
 		y = tf.transpose(y, [0, 2, 1]) # [B, TF, S]
+
 		if self.args['nonlinearity'] == 'softmax':
-			y = tf.nn.softmax(y) * tf.reshape(self.X, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
+			y = tf.nn.softmax(y)
 		elif self.args['nonlinearity'] == 'tanh':
-			y = tf.nn.tanh(y) * tf.reshape(self.X, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
+			y = tf.nn.tanh(y)
+		
+		tf.summary.image('mask/predicted/enhanced_soft', tf.reshape(tf.transpose(y, [0,2,1]), [self.B*self.S, -1, self.F, 1]))
+		y = y * tf.reshape(self.X, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
 
 		# y = y * tf.reshape(self.X, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
 		self.cost_in = y
@@ -548,7 +557,6 @@ class Separator(Network):
 
 		# enhance [ B, TF, S] , X [B, T, F] -> [ B, TF, S]
 		test_enhance = tf.tile(tf.reshape(tf.transpose(self.cost_in, [0,2,1]), [self.B, 1, self.S, -1]), [1, length_perm, 1, 1]) # [B, S, TF]
-
 		
 		perms = tf.reshape(tf.constant(perms), [1, length_perm, self.S, 1])
 		perms = tf.tile(perms, [self.B, 1, 1, 1])
