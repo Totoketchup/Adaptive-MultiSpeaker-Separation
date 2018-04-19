@@ -11,13 +11,16 @@ from  sklearn.datasets import make_blobs
 
 class KMeans:
 
-	def __init__(self, nb_clusters, centroids_init=None, nb_tries=10, nb_iterations=10, input_tensor=None, latent_space_tensor=None, beta=None):
+	def __init__(self, nb_clusters, centroids_init=None, nb_tries=10, 
+		nb_iterations=10, input_tensor=None, latent_space_tensor=None, beta=None, threshold=2.5, assign_at_end=False):
 
 		self.nb_clusters = nb_clusters
 		self.nb_iterations = nb_iterations
 		self.nb_tries = nb_tries
 		self.latent_space_tensor = latent_space_tensor
 		self.beta = beta
+		self.assign_at_end = assign_at_end
+
 		if input_tensor is None:
 			self.graph = tf.Graph()
 		else:
@@ -35,6 +38,7 @@ class KMeans:
 				# mean, _ = tf.nn.moments(self.X_in, axes=-1, keep_dims=True)
 				x_norm = tf.nn.l2_normalize(self.X_in, axis=-1)		
 				self.b = tf.shape(x_norm)[0]
+				self.X_original = tf.identity(x_norm)
 				self.X = tf.expand_dims(x_norm, 1)
 				self.X = tf.tile(self.X, [1, self.nb_tries, 1, 1])
 
@@ -65,9 +69,9 @@ class KMeans:
 					self.centroids = tf.tile(self.centroids, [self.nb_tries, 1 , 1])
 
 				if not self.latent_space_tensor is None:
-					log_lst = tf.log(tf.reduce_max(latent_space_tensor, -1, keep_dims=True) / latent_space_tensor)
-					self.t = log_lst
-					self.notsilent_notry = tf.reshape(tf.cast(log_lst < 2.0, tf.float32), [self.b, self.L, 1])
+					latent_space_tensor = tf.reshape(latent_space_tensor, [self.b, self.L])
+					log_lst = tf.log(tf.divide(tf.reduce_max(latent_space_tensor, [-1], keep_dims=True),latent_space_tensor))
+					self.notsilent_notry = tf.reshape(tf.cast(log_lst < threshold, tf.float32), [self.b, self.L, 1])
 					self.notsilent = tf.tile(self.notsilent_notry, [self.nb_tries, 1 , 1])
 				else:
 					self.notsilent = tf.ones([self.B, self.L, 1])
@@ -94,7 +98,11 @@ class KMeans:
 		centroids = tf.reshape(centroids, [self.b*self.nb_tries, self.nb_clusters, self.E])
 		centroids = tf.gather(centroids, index)
 
-		labels = tf.gather(labels, index)
+		if self.assign_at_end:
+			labels = self.get_labels(centroids, end=True)
+		else:
+			labels = tf.gather(labels, index)
+
 		return centroids, labels
 
 
@@ -153,20 +161,25 @@ class KMeans:
 
 			return [i+1, new_centroids, self.get_labels(new_centroids)]
 
-	def get_labels(self, centroids):
+	def get_labels(self, centroids, end=False):
 
-		X = self.X
+		if end:
+			notsilent = tf.ones([self.b, self.L, 1])
+			X = self.X_original
+		else:
+			notsilent = self.notsilent
+			X = self.X
 
 		X_ = tf.expand_dims(X, 2) # B L 1 E
 		centroids_ = tf.expand_dims(centroids, 1) # B 1 C E
 
 		if self.beta is not None:
-			distances = tf.reduce_sum(tf.square(X_ - centroids_) * tf.expand_dims(self.notsilent, 2), axis=3)
+			distances = tf.reduce_sum(tf.square(X_ - centroids_) * tf.expand_dims(notsilent, 2), axis=3)
 			exp = tf.exp(-1.0 *  self.beta * distances)
 			exp =  exp / tf.reduce_sum(exp, -1, keep_dims=True)
 			return exp
 		else:
-			distances = tf.sqrt(tf.reduce_sum(tf.square(X_ - centroids_) * tf.expand_dims(self.notsilent, 2), axis=3))
+			distances = tf.sqrt(tf.reduce_sum(tf.square(X_ - centroids_) * tf.expand_dims(notsilent, 2), axis=3))
 			return tf.argmin(distances, axis=2, output_type=tf.int32)
 
 	def fit(self, X_train):
