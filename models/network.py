@@ -272,7 +272,7 @@ class Network(object):
 			args = json.load(f)
 			keys_to_update = ['learning_rate','epochs','batch_size',
 			'regularization','overlap_coef','loss','beta','model_folder', 'type','pretraining', 'with_silence',
-			'beta_kmeans']
+			'beta_kmeans', 'nb_tries', 'nb_steps']
 			to_modify = { key: modified_args[key] for key in keys_to_update if key in modified_args.keys() }
 			to_modify.update({key: val for key, val in modified_args.items() if key not in args.keys()})
 
@@ -300,11 +300,20 @@ class Separator(Network):
 		self.b = kwargs['mask_b']
 		self.normalize_input = kwargs['normalize_separator']
 		self.abs_input = kwargs['abs_input']
+
+		# Loss Parameters
+		self.loss_with_silence = kwargs['silence_loss']
+		self.threshold_silence_loss = kwargs['threshold_silence_loss']
+		self.function_mask = kwargs['function_mask']
+
+		# Kmeans Parameters
 		self.beta = kwargs['beta_kmeans']
 		self.threshold = kwargs['threshold']
 		self.with_silence = kwargs['with_silence']
 		self.nb_tries = kwargs['nb_tries']
 		self.nb_steps = kwargs['nb_steps']
+
+
 
 		self.graph = tf.get_default_graph()
 
@@ -333,6 +342,23 @@ class Separator(Network):
 					argmax = tf.argmax(tf.abs(self.X_non_mix), axis=3)
 					self.y = tf.one_hot(argmax, self.S, self.a, self.b)
 					self.y_test_export = tf.reshape(self.y[:, :, :, 0], [self.B, -1])
+
+					if self.function_mask == 'linear':
+						max_ = tf.reduce_max(tf.abs(self.X), [1, 2], keep_dims=True)
+						self.y = self.y * tf.expand_dims(tf.abs(self.X)/max_, 3)
+					elif self.function_mask == 'sqrt':
+						max_ = tf.reduce_max(tf.abs(self.X), [1, 2], keep_dims=True)
+						self.y = self.y * tf.expand_dims(tf.sqrt(tf.abs(self.X)/max_), 3)
+					elif self.function_mask == 'square':
+						max_ = tf.reduce_max(tf.abs(self.X), [1, 2], keep_dims=True)
+						self.y = self.y * tf.expand_dims(tf.square(tf.abs(self.X)/max_), 3)
+
+					if self.loss_with_silence:
+						max_ = tf.reduce_max(tf.abs(self.X), [1, 2], keep_dims=True)
+						log_compare = log10(tf.divide(max_, tf.abs(self.X)))
+						mask = tf.cast(log_compare < self.threshold_silence_loss, tf.float32)
+						tf.summary.image('separator/silence_mask', tf.expand_dims(mask,3), max_outputs=1)
+						self.y = self.y * tf.expand_dims(mask, 3)
 
 				# Speakers indices used in the mixtures
 				# shape = [ batch size, #speakers]

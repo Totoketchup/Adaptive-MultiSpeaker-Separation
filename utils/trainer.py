@@ -71,7 +71,13 @@ class MyArgs(object):
 			'--threshold', type=float, help='Threshold for the silent bins', required=False, default=2.0)
 		self.parser.add_argument(
 			'--with_silence', help='Silence weak bins during KMEANS', action="store_true")
-
+		self.parser.add_argument(
+			'--silence_loss', help='Silence weak bins in the loss function', action="store_true")
+		self.parser.add_argument(
+			'--threshold_silence_loss', type=float, help='Threshold for the silent bins', required=False, default=2.0)
+		self.parser.add_argument(
+			'--function_mask', help='#TODO', choices=['None','linear', 'sqrt', 'square'], required=False, default='None')
+		
 	def add_enhance_layer_args(self):
 		self.parser.add_argument(
 			'--normalize_enhance', help='Normalize the input of the enhance layer', action="store_true")

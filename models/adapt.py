@@ -103,6 +103,7 @@ class Adapt(Network):
 		self.bases = get_scope_variable('bases', 'bases', shape=[self.window, self.N], initializer=tf.contrib.layers.xavier_initializer_conv2d())
 		self.conv_filter = tf.reshape(tf.abs(tf.expand_dims(self.window_filter,1))*self.bases , [1, self.window, 1, self.N])
 		# self.conv_filter = get_scope_variable('filters_front','filters_front', shape=[1, self.window, 1, self.N])
+		variable_summaries(self.conv_filter)
 
 		# 1 Dimensional convolution along T axis with a window length = self.window
 		# And N = 256 filters -> Create a [Btot, 1, T, N]
@@ -123,6 +124,7 @@ class Adapt(Network):
 		# [Btot, 1, T_pool, N] -> [Btot, T-pool, N, 1]
 		self.y = tf.transpose(self.y,[0, 2, 3, 1], name='output')
 
+		tf.summary.image('front/output', self.y, max_outputs=3)
 		y_shape = tf.shape(self.y)
 		y = tf.reshape(self.y, [self.B_tot, y_shape[1]*y_shape[2]])
 		self.p_hat = tf.reduce_sum(tf.abs(y), 0)
@@ -134,7 +136,6 @@ class Adapt(Network):
 	def separator(self):
 		# shape = [B_tot, T_, N, 1], shape = [B(1+S), T , N, 1], [B(1+S), T_ , N, 1]
 		separator_in = self.front
-
 		# Compute the overlapping rate:
 		nb = 2
 		comb = list(combinations(range(self.S), nb))
@@ -320,7 +321,6 @@ class Adapt(Network):
 		if self.overlap_coef != 0.0:
 			cost_value += self.overlap_coef * self.overlapping_constraint
 
-		variable_summaries(self.conv_filter)
 		variable_summaries(self.conv_filter_2)
 
 		tf.summary.audio(name= "audio/output/reconstructed", tensor = tf.reshape(self.back, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
