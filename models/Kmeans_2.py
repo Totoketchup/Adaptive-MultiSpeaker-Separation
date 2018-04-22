@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # My Model 
-from utils.ops import scope
+from utils.ops import scope, log10
 import tensorflow as tf
 import numpy as np
 from  sklearn.datasets import make_blobs
@@ -70,7 +70,7 @@ class KMeans:
 
 				if not self.latent_space_tensor is None:
 					latent_space_tensor = tf.reshape(latent_space_tensor, [self.b, self.L])
-					log_lst = tf.log(tf.divide(tf.reduce_max(latent_space_tensor, [-1], keep_dims=True),latent_space_tensor))
+					log_lst = log10(tf.divide(tf.reduce_max(latent_space_tensor, [-1], keep_dims=True),latent_space_tensor))
 					self.notsilent_notry = tf.reshape(tf.cast(log_lst < threshold, tf.float32), [self.b, self.L, 1])
 					self.notsilent = tf.tile(self.notsilent_notry, [self.nb_tries, 1 , 1])
 				else:
