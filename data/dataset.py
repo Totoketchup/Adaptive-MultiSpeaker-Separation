@@ -9,6 +9,7 @@ import copy
 import time
 from librosa.core import resample,load
 import tensorflow as tf
+from itertools import combinations_with_replacement
 
 """
 Class used to have a consistent Randomness between Training/Validation/Test for
@@ -386,7 +387,6 @@ def create_tfrecord_file_2(output_fn, chunk_size, batch_size, nb_speakers, sex, 
 
 		writer.close()
 
-
 def from_flac_to_tfrecords(train_r=0.8, valid_test_r=0.2):
 	# Extract the information about this subset (speakers, chapters)
 	# Dictionary with the following shape: 
@@ -464,7 +464,6 @@ def mix(*non_mix):
 	non_mix = tf.stack(non_mix)
 	keys = tf.stack(keys)
 	mix = tf.reduce_sum(non_mix, 0)
-	print mix, non_mix, keys
 	return mix, non_mix, keys
 
 
@@ -490,10 +489,39 @@ def setshape(mix, non_mix, keys, chunk, N):
 	keys = tf.reshape(keys, [N])
 	return mix, non_mix, keys
 
+def process(combinations, batch_size):
+	# TRAINING SET
+	initializers = []
+	handles = []
+	for i, c in enumerate(combinations):
+		# Creating zipped dataset [M,M] [M,F] [F,F] for 2 speakers
+		dataset_lambda_evald = tuple([d(i+j) for j, d in enumerate(c)])
+
+		current_zip = tf.data.TFRecordDataset.zip(dataset_lambda_evald)
+		current_zip = current_zip.map(mix)
+		current_zip = current_zip.filter(filtering)
+		current_zip = current_zip.batch(batch_size)
+		current_zip = current_zip.prefetch(1)
+
+		current_zip_iter = current_zip.make_initializable_iterator()
+		output_types, output_shapes = current_zip.output_types, current_zip.output_shapes
+		initializers.append(current_zip_iter.initializer)
+		handles.append(tf.get_default_session().run(current_zip_iter.string_handle()))
+
+	# Handles for dataset combinations
+	# This iterator will infinitely pass through all handles
+	handles_generator = tf.data.Dataset.from_tensor_slices(handles)
+	handles_generator = handles_generator.repeat()
+	handle = handles_generator.make_one_shot_iterator().get_next()
+
+	iterator = tf.data.Iterator.from_string_handle(handle, output_types, output_shapes)
+
+	return iterator, initializers
+
 class TFDataset(object):
 
 	def get_data(self, name, seed):
-		return tf.data.TFRecordDataset(name) \
+		return tf.data.TFRecordDataset(os.path.join(config.workdir, name)) \
 				.map(decode) \
 				.shuffle(1000, seed=seed) \
 				.filter(lambda a, k : is_long_enough(a, k, self.chunk_size)) \
@@ -501,15 +529,15 @@ class TFDataset(object):
 				.apply(tf.contrib.data.unbatch()) \
 				.shuffle(1000, seed=seed)
 
-
 	def __init__(self, **kwargs):
 
 		batch_size = kwargs['batch_size']
 		self.normalize = kwargs['dataset_normalize']
 		self.chunk_size = kwargs['chunk_size']
+		self.no_random_picking = kwargs['no_random_picking']
+
 		N = kwargs['nb_speakers']
 
-		print kwargs['sex']
 		with tf.name_scope('dataset'):
 
 			# MALES
@@ -526,9 +554,15 @@ class TFDataset(object):
 
 			# MIXING
 			if 'M' in kwargs['sex'] and 'F' in kwargs['sex']:
-				train_list = tuple([train_M(i) if i%2 == 0 else train_F(i) for i in range(N)])
-				valid_list = tuple([valid_M(i) if i%2 == 0 else valid_F(i) for i in range(N)])
-				test_list = tuple([test_M(i) if i%2 == 0 else test_F(i) for i in range(N)])
+				if self.no_random_picking:
+					train_list = tuple([train_M(i) if i%2 == 0 else train_F(i) for i in range(N)])
+					valid_list = tuple([valid_M(i) if i%2 == 0 else valid_F(i) for i in range(N)])
+					test_list = tuple([test_M(i) if i%2 == 0 else test_F(i) for i in range(N)])
+				else:
+					train_comb = list(combinations_with_replacement([train_M, train_F], N))
+					valid_comb = list(combinations_with_replacement([valid_M, valid_F], N))
+					test_comb = list(combinations_with_replacement([test_M, test_F], N))
+
 			elif 'M' in kwargs['sex']:
 				train_list = tuple([train_M(i) for i in range(N)])
 				valid_list = tuple([valid_M(i) for i in range(N)])
@@ -538,45 +572,55 @@ class TFDataset(object):
 				valid_list = tuple([valid_F(i) for i in range(N)])
 				test_list = tuple([test_F(i) for i in range(N)])
 			
-			train_mix = tf.data.TFRecordDataset.zip(train_list)
-			valid_mix = tf.data.TFRecordDataset.zip(valid_list)
-			test_mix = tf.data.TFRecordDataset.zip(test_list)
-			
-			train_mix = train_mix.map(mix)
-			train_mix = train_mix.filter(filtering)
-			train_mix = train_mix.batch(batch_size)
-			train_mix = train_mix.prefetch(1)
+			if self.no_random_picking:
+				train_mix = tf.data.TFRecordDataset.zip(train_list)
+				valid_mix = tf.data.TFRecordDataset.zip(valid_list)
+				test_mix = tf.data.TFRecordDataset.zip(test_list)
+				
+				train_mix = train_mix.map(mix)
+				train_mix = train_mix.filter(filtering)
+				train_mix = train_mix.batch(batch_size)
+				train_mix = train_mix.prefetch(1)
 
-			valid_mix = valid_mix.map(mix)
-			valid_mix = valid_mix.filter(filtering)
-			valid_mix = valid_mix.batch(batch_size)
-			valid_mix = valid_mix.prefetch(1)
+				valid_mix = valid_mix.map(mix)
+				valid_mix = valid_mix.filter(filtering)
+				valid_mix = valid_mix.batch(batch_size)
+				valid_mix = valid_mix.prefetch(1)
 
-			test_mix = test_mix.map(mix)
-			test_mix = test_mix.filter(filtering)
-			test_mix = test_mix.batch(batch_size)
-			test_mix = test_mix.prefetch(1)
+				test_mix = test_mix.map(mix)
+				test_mix = test_mix.filter(filtering)
+				test_mix = test_mix.batch(batch_size)
+				test_mix = test_mix.prefetch(1)
+
+				self.training_iterator = train_mix.make_initializable_iterator()
+				self.validation_iterator = valid_mix.make_initializable_iterator()
+				self.test_iterator = test_mix.make_initializable_iterator()
+
+				self.training_initializer = self.training_iterator.initializer
+				self.validation_initializer = self.validation_iterator.initializer
+				self.test_initializer = self.test_iterator.initializer
+
+			else:
+				self.training_iterator, self.training_initializer = process(train_comb, batch_size)
+				self.validation_iterator, self.validation_initializer = process(valid_comb, batch_size)
+				self.test_iterator, self.test_initializer = process(test_comb, batch_size)
+
 
 			self.handle = tf.placeholder(tf.string, shape=[])
 			iterator = tf.data.Iterator.from_string_handle(
-				self.handle, train_mix.output_types, train_mix.output_shapes)
+				self.handle, self.training_iterator.output_types, self.training_iterator.output_shapes)
 			self.next_element = iterator.get_next()
 
-			self.training_iterator = train_mix.make_initializable_iterator()
-			self.validation_iterator = valid_mix.make_initializable_iterator()
-			self.test_iterator = test_mix.make_initializable_iterator()
+			sess = tf.get_default_session()
+			self.training_handle = sess.run(self.training_iterator.string_handle())
+			self.validation_handle = sess.run(self.validation_iterator.string_handle())
+			self.test_handle = sess.run(self.test_iterator.string_handle())
 
-			self.training_initializer = self.training_iterator.initializer
-			self.validation_initializer = self.validation_iterator.initializer
-			self.test_initializer = self.test_iterator.initializer
+			self.TRAIN = 'train'
+			self.TEST = 'test'
+			self.VALID = 'valid'
 
 			self.next_mix, self.next_non_mix, self.next_ind = self.next_element
-
-	def init_handle(self):
-		sess = tf.get_default_session()
-		self.training_handle = sess.run(self.training_iterator.string_handle())
-		self.validation_handle = sess.run(self.validation_iterator.string_handle())
-		self.test_handle = sess.run(self.test_iterator.string_handle())
 
 	def get_handle(self, split):
 		if split == 'train':
@@ -624,9 +668,7 @@ class MixGenerator(object):
 
 		train_mix = train_mix.map(lambda x, y, z: setshape(x,y,z,chunk_size, N))
 		train_mix = train_mix.batch(batch_size)
-		train_mix = train_mix.prefetch(1)	
-		print '---------------------------'
-		print train_mix
+		train_mix = train_mix.prefetch(1)
 		
 		valid_mix = valid_mix.map(lambda x, y, z: setshape(x,y,z,chunk_size, N))
 		valid_mix = valid_mix.batch(batch_size)

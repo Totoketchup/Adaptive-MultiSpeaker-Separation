@@ -141,13 +141,8 @@ class Trainer(object):
 		kwargs.update(additional_args)
 		self.args = kwargs
 
-	def train(self):
+	def inference(self):
 
-		print 'Total name :' 
-
-		nb_epochs = self.args['epochs']
-		time_spent = [0 for _ in range(10)]
-		
 		with tf.Graph().as_default() as graph:
 			tfds = TFDataset(**self.args)
 
@@ -169,18 +164,87 @@ class Trainer(object):
 
 				self.build()
 
-				tfds.init_handle()
-
-				nb_batches_train = tfds.length('train')
 				nb_batches_test = tfds.length('test')
-				nb_batches_valid = tfds.length('valid')
+				feed_dict_test = {tfds.handle: tfds.get_handle('test')}
+
+				sess.run(tfds.test_initializer)
+
+				for b in range(nb_batches_test):
+					c, audio = self.model.infer(feed_dict_test, b)
+					print 'Batch #', b+1, '/', nb_batches_test, 'sec loss=', c
+
+	def test(self):
+
+		with tf.Graph().as_default() as graph:
+			tfds = TFDataset(**self.args)
+
+			additional_args = {
+				"mix": tfds.next_mix,
+				"non_mix": tfds.next_non_mix,
+				"ind": tfds.next_ind,
+				"pipeline": True,
+				"tot_speakers" : 251
+			}
+
+			self.args.update(additional_args)
+
+			config_ = tf.ConfigProto()
+			config_.gpu_options.allow_growth = True
+			config_.allow_soft_placement = True
+
+			with tf.Session(graph=graph, config=config_).as_default() as sess:
+
+				self.build()
+
+				nb_batches_test = tfds.length('test')
+				feed_dict_test = {tfds.handle: tfds.get_handle('test')}
+
+				step = 0
+				sess.run(tfds.training_initializer)
+
+				for b in range(nb_batches_test):
+					c = self.model.test_batch(feed_dict_test, step)
+					print 'Batch #', b+1, '/', nb_batches_test, 'sec loss=', c
+
+	def train(self):
+
+		print 'Total name :' 
+
+		nb_epochs = self.args['epochs']
+		time_spent = [0 for _ in range(10)]
+		
+		with tf.Graph().as_default() as graph:
+			config_ = tf.ConfigProto()
+			config_.gpu_options.allow_growth = True
+			config_.allow_soft_placement = True
+
+			with tf.Session(graph=graph, config=config_).as_default() as sess:
+
+				tfds = TFDataset(**self.args)
+
+				additional_args = {
+					"mix": tfds.next_mix,
+					"non_mix": tfds.next_non_mix,
+					"ind": tfds.next_ind,
+					"pipeline": True,
+					"tot_speakers" : 251
+				}
+
+				self.args.update(additional_args)
+
+				self.build()
+
+
+				nb_batches_train = tfds.length(tfds.TRAIN)#894 # tfds.length('train')
+				nb_batches_test = tfds.length(tfds.TEST)#50 #tfds.length('test')
+				nb_batches_valid = tfds.length(tfds.VALID)#50#tfds.length('valid')
 
 				print 'BATCHES'
 				print nb_batches_train, nb_batches_test, nb_batches_valid
 
-				feed_dict_train = {tfds.handle: tfds.get_handle('train')}
-				feed_dict_valid = {tfds.handle: tfds.get_handle('valid')}
-				feed_dict_test = {tfds.handle: tfds.get_handle('test')}
+				feed_dict_train = {tfds.handle: tfds.get_handle(tfds.TRAIN)}
+				feed_dict_valid = {tfds.handle: tfds.get_handle(tfds.VALID)}
+				feed_dict_test = {tfds.handle: tfds.get_handle(tfds.TEST)}
 
 				best_validation_cost = 1e100
 
@@ -193,10 +257,12 @@ class Trainer(object):
 
 					for b in range(nb_batches_train):
 
-						t = time.clock()
+						t = time.time()
+						# m =  self.model.test(feed_dict_train)
+						# print m
 
 						c = self.model.train(feed_dict_train, step)
-										
+								
 						if (step+1)%self.args['validation_step'] == 0:
 							t = time.clock()
 
@@ -218,7 +284,7 @@ class Trainer(object):
 								best_path = self.model.save(step)
 								print 'Save best model with :', best_validation_cost
 
-							t_f = time.clock()
+							t_f = time.time()
 							print 'Validation set tested in ', t_f - t, ' seconds'
 							print 'Validation set: ', valid_cost
 
@@ -227,7 +293,7 @@ class Trainer(object):
 						print 'Epoch #', epoch+1,'/', nb_epochs,' Batch #', b+1,'/',nb_batches_train,'in', avg,'sec loss=', c \
 							, ' ETA = ', getETA(avg, nb_batches_train, b+1, nb_epochs, epoch+1)
 
-						t1 = time.clock()
+						t1 = time.time()
 
 						step += 1
 
@@ -349,9 +415,11 @@ class Front_Separator_Enhance_Finetuning_Trainer(Trainer):
 		self.model.connect_front(self.separator)
 		self.model.sepNet.output = self.model.sepNet.enhance
 		self.model.back
+		self.model.create_saver()
 		self.model.restore_model(self.args['model_folder'])
 		self.model.cost_model = self.model.cost
 		self.model.finish_construction()
+		self.model.freeze_all_except('prediction', 'speaker_centroids', 'enhance')
 		self.model.optimize
 		self.model.tensorboard_init()
 		# Initialize only non restored values
