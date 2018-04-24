@@ -213,9 +213,8 @@ class Network(object):
 
 	def infer(self, feed_dict, step):
 		feed_dict.update({self.training:False})
-		summary, cost, output = tf.get_default_session().run([self.merged_test, self.cost_model, self.output], feed_dict)
-		self.test_writer.add_summary(summary, step)
-		return cost, output
+		output = tf.get_default_session().run([self.x_mix, self.x_non_mix, self.output], feed_dict)
+		return output
 
 	def valid_batch(self, feed_dict, step):
 		sess = tf.get_default_session()
@@ -312,7 +311,6 @@ class Separator(Network):
 		self.with_silence = kwargs['with_silence']
 		self.nb_tries = kwargs['nb_tries']
 		self.nb_steps = kwargs['nb_steps']
-
 
 
 		self.graph = tf.get_default_graph()

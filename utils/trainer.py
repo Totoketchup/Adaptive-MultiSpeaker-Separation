@@ -144,34 +144,36 @@ class Trainer(object):
 	def inference(self):
 
 		with tf.Graph().as_default() as graph:
-			tfds = TFDataset(**self.args)
-
-			additional_args = {
-				"mix": tfds.next_mix,
-				"non_mix": tfds.next_non_mix,
-				"ind": tfds.next_ind,
-				"pipeline": True,
-				"tot_speakers" : 251
-			}
-
-			self.args.update(additional_args)
-
+			
 			config_ = tf.ConfigProto()
 			config_.gpu_options.allow_growth = True
 			config_.allow_soft_placement = True
 
 			with tf.Session(graph=graph, config=config_).as_default() as sess:
 
+				tfds = TFDataset(**self.args)
+
+				additional_args = {
+					"mix": tfds.next_mix,
+					"non_mix": tfds.next_non_mix,
+					"ind": tfds.next_ind,
+					"pipeline": True,
+					"tot_speakers" : 251
+				}
+
+				self.args.update(additional_args)
 				self.build()
 
-				nb_batches_test = tfds.length('test')
-				feed_dict_test = {tfds.handle: tfds.get_handle('test')}
+				nb_batches_test = tfds.length(tfds.TEST)
+				print nb_batches_test
+				feed_dict_test = {tfds.handle: tfds.get_handle(tfds.TEST)}
 
 				sess.run(tfds.test_initializer)
 
 				for b in range(nb_batches_test):
-					c, audio = self.model.infer(feed_dict_test, b)
-					print 'Batch #', b+1, '/', nb_batches_test, 'sec loss=', c
+					output = self.model.infer(feed_dict_test, b)
+					yield output
+					print 'Batch #', b+1, '/', nb_batches_test
 
 	def test(self):
 

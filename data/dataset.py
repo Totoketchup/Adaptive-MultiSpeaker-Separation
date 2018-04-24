@@ -491,8 +491,7 @@ def setshape(mix, non_mix, keys, chunk, N):
 
 def process(combinations, batch_size):
 	# TRAINING SET
-	initializers = []
-	handles = []
+	datasets = []
 	for i, c in enumerate(combinations):
 		# Creating zipped dataset [M,M] [M,F] [F,F] for 2 speakers
 		dataset_lambda_evald = tuple([d(i+j) for j, d in enumerate(c)])
@@ -500,23 +499,17 @@ def process(combinations, batch_size):
 		current_zip = tf.data.TFRecordDataset.zip(dataset_lambda_evald)
 		current_zip = current_zip.map(mix)
 		current_zip = current_zip.filter(filtering)
-		current_zip = current_zip.batch(batch_size)
-		current_zip = current_zip.prefetch(1)
+		datasets.append(current_zip)
 
-		current_zip_iter = current_zip.make_initializable_iterator()
-		output_types, output_shapes = current_zip.output_types, current_zip.output_shapes
-		initializers.append(current_zip_iter.initializer)
-		handles.append(tf.get_default_session().run(current_zip_iter.string_handle()))
+	all_zip = tf.data.Dataset.zip(tuple(datasets))
+	all_zip = all_zip.map(lambda *x: map(tf.stack, zip(*x)))
+	all_zip = all_zip.apply(tf.contrib.data.unbatch())
+	all_zip = all_zip.batch(batch_size)
+	all_zip = all_zip.prefetch(1)
 
-	# Handles for dataset combinations
-	# This iterator will infinitely pass through all handles
-	handles_generator = tf.data.Dataset.from_tensor_slices(handles)
-	handles_generator = handles_generator.repeat()
-	handle = handles_generator.make_one_shot_iterator().get_next()
+	iterator = all_zip.make_initializable_iterator()
 
-	iterator = tf.data.Iterator.from_string_handle(handle, output_types, output_shapes)
-
-	return iterator, initializers
+	return iterator, iterator.initializer
 
 class TFDataset(object):
 
@@ -532,10 +525,12 @@ class TFDataset(object):
 	def __init__(self, **kwargs):
 
 		batch_size = kwargs['batch_size']
-		self.normalize = kwargs['dataset_normalize']
 		self.chunk_size = kwargs['chunk_size']
 		self.no_random_picking = kwargs['no_random_picking']
-
+			
+		self.TRAIN = 'train'
+		self.TEST = 'test'
+		self.VALID = 'valid'
 		N = kwargs['nb_speakers']
 
 		with tf.name_scope('dataset'):
@@ -599,12 +594,10 @@ class TFDataset(object):
 				self.training_initializer = self.training_iterator.initializer
 				self.validation_initializer = self.validation_iterator.initializer
 				self.test_initializer = self.test_iterator.initializer
-
 			else:
 				self.training_iterator, self.training_initializer = process(train_comb, batch_size)
 				self.validation_iterator, self.validation_initializer = process(valid_comb, batch_size)
 				self.test_iterator, self.test_initializer = process(test_comb, batch_size)
-
 
 			self.handle = tf.placeholder(tf.string, shape=[])
 			iterator = tf.data.Iterator.from_string_handle(
@@ -616,10 +609,7 @@ class TFDataset(object):
 			self.validation_handle = sess.run(self.validation_iterator.string_handle())
 			self.test_handle = sess.run(self.test_iterator.string_handle())
 
-			self.TRAIN = 'train'
-			self.TEST = 'test'
-			self.VALID = 'valid'
-
+					
 			self.next_mix, self.next_non_mix, self.next_ind = self.next_element
 
 	def get_handle(self, split):
@@ -734,31 +724,18 @@ if __name__ == "__main__":
 	### TEST
 	##
 
-	from_flac_to_tfrecords()
+	#from_flac_to_tfrecords()
+	index_to_gender = np.load('genders_index.npy')
 
-	# ds = TFDataset(dataset ='h5py_files/train-clean-100-8-s.h5', batch_size=256, dataset_normalize=False, nb_speakers=2, sex=['M', 'F'], chunk_size=20480, no_random_picking=True)
-	# with tf.Session().as_default() as sess:
-	# 	ds.init_handle() 
-	# 	# L = ds.length('train')
-	# 	# print ds.length('train'), ds.length('test'), ds.length('valid')
-	# 	sess.run(ds.training_initializer)
-	# 	for i in range(10):
-	# 		t = time.time()
-	# 		value = sess.run(ds.next_element, feed_dict={ds.handle: ds.get_handle('train')})
-	# 		print value[2]
-	# 		# print time.time() - t
+	with tf.Session().as_default() as sess:
+		tfds = TFDataset(batch_size=10, nb_speakers=2, sex=['M', 'F'], chunk_size=20480, no_random_picking=False)
 
-	# 	ds.init_handle() 
-	# 	sess.run(ds.training_initializer)
-	# 	for i in range(10):
-	# 		t = time.time()
-	# 		value = sess.run(ds.next_element, feed_dict={ds.handle: ds.get_handle('train')})
-	# 		print time.time() - t
+		nb_batches_test = 10#tfds.length(tfds.TEST)
 
-	# 		sess.run(ds.validation_initializer)
-	# 		for _ in range(10):
-	# 			t = time.time()
-	# 			value = sess.run(ds.next_element, feed_dict={ds.handle: ds.get_handle('valid')})
-	# 			print '--- ', time.time() - t
-			
+		feed_dict_test = {tfds.handle: tfds.get_handle(tfds.TRAIN)}
+		sess.run(tfds.training_initializer)
 
+		for b in range(nb_batches_test):
+			mix ,n_m,m = sess.run(tfds.next_element, feed_dict=feed_dict_test)
+			print mix.shape, n_m.shape
+			print index_to_gender[m]
