@@ -224,7 +224,7 @@ class Trainer(object):
 
 				best_validation_cost = 1e100
 
-				t1 = time.clock()
+				t1 = time.time()
 
 				step = 0
 
@@ -240,7 +240,7 @@ class Trainer(object):
 						c = self.model.train(feed_dict_train, step)
 								
 						if (step+1)%self.args['validation_step'] == 0:
-							t = time.clock()
+							t = time.time()
 
 							sess.run(tfds.validation_initializer)
 
@@ -264,7 +264,7 @@ class Trainer(object):
 							print 'Validation set tested in ', t_f - t, ' seconds'
 							print 'Validation set: ', valid_cost
 
-						time_spent = time_spent[1:] +[time.clock()-t1]
+						time_spent = time_spent[1:] +[time.time()-t1]
 						avg =  sum(time_spent)/len(time_spent)
 						print 'Epoch #', epoch+1,'/', nb_epochs,' Batch #', b+1,'/',nb_batches_train,'in', avg,'sec loss=', c \
 							, ' ETA = ', getETA(avg, nb_batches_train, b+1, nb_epochs, epoch+1)
