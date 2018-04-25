@@ -4,7 +4,6 @@ import time
 import numpy as np
 import argparse
 from utils.tools import getETA
-from utils.ops import normalize_mix
 import tensorflow as tf
 from models.adapt import Adapt
 
@@ -77,7 +76,15 @@ class MyArgs(object):
 			'--threshold_silence_loss', type=float, help='Threshold for the silent bins', required=False, default=2.0)
 		self.parser.add_argument(
 			'--function_mask', help='#TODO', choices=['None','linear', 'sqrt', 'square'], required=False, default='None')
-		
+	
+	def select_inferencer(self):
+		self.parser.add_argument(
+			'--model', help='#TODO', 
+			choices=['front_L41','front_L41_finetuned', 'front_L41_enhanced', 
+			'front_L41_enhanced_finetuned', 'STFT_L41', 'STFT_L41_finetuned', 
+			'STFT_L41_enhanced', 'STFT_L41_enhanced_finetuned'], required=True)
+	
+
 	def add_enhance_layer_args(self):
 		self.parser.add_argument(
 			'--normalize_enhance', help='Normalize the input of the enhance layer', action="store_true")
@@ -174,39 +181,6 @@ class Trainer(object):
 					output = self.model.infer(feed_dict_test, b)
 					yield output
 					print 'Batch #', b+1, '/', nb_batches_test
-
-	def test(self):
-
-		with tf.Graph().as_default() as graph:
-			tfds = TFDataset(**self.args)
-
-			additional_args = {
-				"mix": tfds.next_mix,
-				"non_mix": tfds.next_non_mix,
-				"ind": tfds.next_ind,
-				"pipeline": True,
-				"tot_speakers" : 251
-			}
-
-			self.args.update(additional_args)
-
-			config_ = tf.ConfigProto()
-			config_.gpu_options.allow_growth = True
-			config_.allow_soft_placement = True
-
-			with tf.Session(graph=graph, config=config_).as_default() as sess:
-
-				self.build()
-
-				nb_batches_test = tfds.length('test')
-				feed_dict_test = {tfds.handle: tfds.get_handle('test')}
-
-				step = 0
-				sess.run(tfds.training_initializer)
-
-				for b in range(nb_batches_test):
-					c = self.model.test_batch(feed_dict_test, step)
-					print 'Batch #', b+1, '/', nb_batches_test, 'sec loss=', c
 
 	def train(self):
 
@@ -311,6 +285,69 @@ class Trainer(object):
 					cost = self.model.test_batch(feed_dict_test)
 					costs.append(cost)
 				print 'Test cost = ', np.mean(costs)
+
+class STFT_finetuned_inference(Trainer):
+	def __init__(self, separator, name, **kwargs):
+		self.separator = separator
+		super(STFT_inference, self).__init__(trainer_type=name, **kwargs)
+
+	def build(self):
+		self.model = self.separator.load(self.args['model_folder'], self.args)
+		self.model.add_finetuning(inference=True)
+		self.model.create_saver()
+		self.model.restore_model(self.args['model_folder'])
+		self.model.initialize_non_init()
+
+class STFT_inference(Trainer):
+	def __init__(self, separator, name, **kwargs):
+		self.separator = separator
+		super(STFT_inference, self).__init__(trainer_type=name, **kwargs)
+
+	def build(self):
+		self.model = self.separator.load(self.args['model_folder'], self.args)
+		self.model.separate
+		self.model.postprocessing
+		self.model.create_saver()
+		self.model.restore_model(self.args['model_folder'])
+		self.model.initialize_non_init()
+
+# Can be used with Finetuned or non Finetuned model
+class Front_Separator_Inference(Trainer):
+	def __init__(self, separator, name, **kwargs):
+		super(Front_Separator_Inference, self).__init__(trainer_type=name, **kwargs)
+		self.separator = separator
+
+	def build(self):
+		self.model = Adapt.load(self.args['model_folder'], self.args)
+		# Expanding the graph with enhance layer
+		self.model.connect_front(self.separator)
+		self.model.sepNet.output = self.model.sepNet.separate
+		self.model.back
+		self.model.create_saver()
+		self.model.restore_model(self.args['model_folder'])
+		self.model.finish_construction()
+		self.model.initialize_non_init()
+
+# Can be used with Finetuned or non Finetuned model
+class Front_Separator_Enhanced_Inference(Trainer):
+	def __init__(self, separator, name, **kwargs):
+		super(Front_Separator_Enhanced_Inference, self).__init__(trainer_type=name, **kwargs)
+		self.separator = separator
+
+	def build(self):
+		self.model = Adapt.load(self.args['model_folder'], self.args)
+		# Restoring the front layer:
+		# Expanding the graph with enhance layer
+		self.model.connect_front(self.separator)
+		self.model.sepNet.output = self.model.sepNet.enhance
+		self.model.back
+		self.model.create_saver()
+		self.model.restore_model(self.args['model_folder'])
+		# Initialize only non restored values
+		self.model.initialize_non_init()
+
+
+## TRAINERS CLASSES	
 
 
 class STFT_Separator_Trainer(Trainer):

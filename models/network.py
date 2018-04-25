@@ -377,7 +377,7 @@ class Separator(Network):
 			self.normalization01
 			self.prediction
 			#TODO TO IMPROVE !
-			if 'enhance' not in self.folder and 'finetuning' not in self.folder:
+			if 'inference' not in self.folder and 'enhance' not in self.folder and 'finetuning' not in self.folder:
 				self.cost_model = self.cost
 				self.finish_construction()
 				self.optimize
@@ -396,7 +396,7 @@ class Separator(Network):
 		self.cost_finetuning
 		self.cost_model = self.cost_finetuning
 		self.finish_construction()
-		# self.freeze_all_except('prediction')
+		self.freeze_all_except('prediction')
 		self.tensorboard_init()
 		self.optimize
 
@@ -475,8 +475,9 @@ class Separator(Network):
 		tf.summary.image('mask/predicted/2', tf.reshape(self.masks[:,:,1],[self.B, -1, self.F, 1]))
 
 		separated = tf.reshape(self.X, [self.B, -1, 1]) * self.masks # [B ,TF, S]
-		# separated = separated * tf.expand_dims((self.max_ - self.min_), 2) + tf.expand_dims(self.min_, 2)
-		# separated = tf.square(separated)
+		if not self.plugged:
+			separated = separated * tf.expand_dims((self.max_ - self.min_), 2) + tf.expand_dims(self.min_, 2)
+			separated = tf.square(separated)
 		separated = tf.reshape(separated, [self.B, -1, self.F, self.S])
 		separated = tf.transpose(separated, [0,3,1,2]) # [B, S, T, F]
 		separated = tf.reshape(separated, [self.B*self.S, -1, self.F, 1]) # [BS, T, F, 1]
