@@ -1,0 +1,29 @@
+#!/bin/bash
+#$ -S /bin/bash
+#$ -cwd
+#$ -ac d=nvcr-tensorflow-1802-py2
+#$ -jc gpu-container_g1.24h
+#$ -e err_pre.o
+#$ -o std_pre.o
+
+export MY_PROXY_URL="http://10.1.10.1:8080/"
+export HTTP_PROXY=$MY_PROXY_URL
+export HTTPS_PROXY=$MY_PROXY_URL
+export FTP_PROXY=$MY_PROXY_URL
+export http_proxy=$MY_PROXY_URL 
+export https_proxy=$MY_PROXY_URL
+export ftp_proxy=$MY_PROXY_URL
+
+. /fefs/opt/dgx/env_set/common_env_set.sh
+
+export PATH="/home/anthony/anaconda2/bin:$PATH"
+export LD_LIBRARY_PATH="/home/anthony/anaconda2/lib:$LD_LIBRARY_PATH"
+export PATH="/home/anthony/anaconda2/lib:$PATH"
+export LIBRARY_PATH="/home/anthony/anaconda2/lib:$LIBRARY_PATH"
+export PATH="/home/anthony/.local/bin:$PATH"
+
+python -u -m experiments.training.pretraining --nb_speakers ${NB_SPEAKERS} --batch_size  ${BATCH_SIZE} --learning_rate  ${LEARNING_RATE} \
+--window_size  ${WINDOW_SIZE} --max_pool ${MAX_POOL} --filters ${FILTERS} \
+--beta ${BETA} --sparsity ${SPARSITY} --regularization ${REGULARIZATION} --overlap_coef ${OVERLAP_COEF} \
+--loss ${LOSS} ${MEN} ${WOMEN} --epochs ${EPOCHS} ${NO_RANDOM_PICKING} \
+ ${WITH_MAX_POOL}  ${WITH_AVERAGE_POOL}  > ${NAME}.txt
