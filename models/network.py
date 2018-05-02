@@ -554,7 +554,7 @@ class Separator(Network):
 		]
 
 		layers += [
-			Conv1D([1, self.layer_size, self.F])
+			Conv1D([1, self.args['layer_size_enhance'], self.F])
 		]
 		y = f_props(layers, sep_and_in)
 
