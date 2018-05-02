@@ -27,3 +27,5 @@ python -u -m experiments.training.pretraining --nb_speakers ${NB_SPEAKERS} --bat
 --beta ${BETA} --sparsity ${SPARSITY} --regularization ${REGULARIZATION} --overlap_coef ${OVERLAP_COEF} \
 --loss ${LOSS} ${MEN} ${WOMEN} --epochs ${EPOCHS} ${NO_RANDOM_PICKING} \
  ${WITH_MAX_POOL}  ${WITH_AVERAGE_POOL}  > ${NAME}.txt
+
+echo 'KKEEP2KEOAZEKPAZOK'

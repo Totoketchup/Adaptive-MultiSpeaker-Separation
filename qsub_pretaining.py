@@ -42,8 +42,28 @@ for prod in product(_batch_size, _learning, _epochs, _window_size, _max_pool, _f
 
 	i += 1
 
+	name = """b{0}
+			a{1}
+			e{2}
+			win{3}
+			max{4}
+			f{5}
+			mxpl{6}
+			avpl{7}
+			bt{8}
+			spr{9}
+			reg{10}
+			ov{11}
+			l{12}
+			n{13}
+			MEN{14}
+			WOMEN{15}
+			rand{16}""".format(b, a, e, w, m, f, w_m, w_a,bt, s, r, o_c, l, n, me, wo, nr)
 
-	qsub_command = """qsub -v BATCH_SIZE={0},
+	name = name.replace("\n", "")
+	name = name.replace("\t", "")
+
+	qsub_command = """sh -v BATCH_SIZE={0},
 								LEARNING_RATE={1},
 								EPOCHS={2},
 								WINDOW_SIZE={3},
@@ -54,23 +74,26 @@ for prod in product(_batch_size, _learning, _epochs, _window_size, _max_pool, _f
 								BETA={8},
 								SPARSITY={9},
 								REGULARIZATION={10},
-								OVERLAP_COEF={11} 
+								OVERLAP_COEF={11},
 								LOSS={12},
 								NB_SPEAKERS={13},
 								MEN={14},
 								WOMEN={15},
-								NO_RANDOM_PICKING={16} job_pretraining.pbs"""\
-								.format(b, a, e, w, m, f, 
-									'--with_max_pool' if w_m else ' ', '--with_average_pool' if w_a else ' ', 
+								NO_RANDOM_PICKING={16},
+								NAME={17} job_pretraining.pbs""".format(b, a, e, w, m, f,
+									'--with_max_pool' if w_m else None, '--with_average_pool' if w_a else None,
 									bt, s, r, o_c, l, n, 
-									'--men' if me else '' , '--women' if wo else ' ',
-									'--no_random_picking' if nr else ' ')
+									'--men' if me else None , '--women' if wo else None,
+									'--no_random_picking' if nr else None, name)
+
+	qsub_command = qsub_command.replace("\n", "")
+	qsub_command = qsub_command.replace("\t", "")
 
 	print qsub_command 
-
 	# Comment the following 3 lines when testing to prevent jobs from being submitted
 	exit_status = subprocess.call(qsub_command, shell=True)
 	if exit_status is 1:  # Check to make sure the job submitted
 		print "Job {0} failed to submit".format(qsub_command)
 
+	break
 print i
