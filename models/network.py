@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from utils.ops import scope, AMSGrad, BLSTM, f_props, log10
+from utils.ops import scope, AMSGrad, BLSTM, f_props, log10, Conv1D
 import os
 import config
 import tensorflow as tf
@@ -553,8 +553,10 @@ class Separator(Network):
 				'BLSTM_'+str(i)) for i in range(self.args['nb_layers_enhance'])
 		]
 
+		layers += [
+			Conv1D([1, self.layer_size, self.F])
+		]
 		y = f_props(layers, sep_and_in)
-		y = tf.layers.dense(y, self.F)
 
 		y = tf.reshape(y, [self.B, self.S, -1]) # [B, S, TF]
 		tf.summary.image('mask/predicted/enhanced', tf.reshape(y, [self.B*self.S, -1, self.F, 1]))
