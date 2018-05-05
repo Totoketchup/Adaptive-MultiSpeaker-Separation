@@ -36,7 +36,7 @@ class MyModel(Separator):
 			mean, var = tf.nn.moments(X_in, axes=[1,2], keep_dims=True)
 			X_in = (X_in - mean) / tf.sqrt(var)
 
-		f = 48
+		f = 128
 		X_in = tf.expand_dims(X_in, 3)
 		X_in = tf.reshape(X_in, [-1, 80, 256, 1])
 		y = tf.contrib.layers.conv2d(X_in, f, [1, 7], rate=[1,1])
@@ -51,11 +51,13 @@ class MyModel(Separator):
 		y = tf.contrib.layers.conv2d(y, f, [5, 5], rate=[8,8])
 		y = tf.contrib.layers.conv2d(y, f, [5, 5], rate=[16,16])
 		y = tf.contrib.layers.conv2d(y, f, [5, 5], rate=[32,32])
-		y = tf.contrib.layers.conv2d(y, 8, [5, 5], rate=[1,1])
+		y = tf.contrib.layers.conv2d(y, 4, [5, 5], rate=[1,1])
 
-		y = tf.reshape(y, [self.B, 80, 256*8])
+		y = tf.reshape(y, [self.B, 80, 256*4])
 
 		y = BLSTM(400, 'BLSTM_1').f_prop(y)
+		y = BLSTM(400, 'BLSTM_2').f_prop(y)
+		y = BLSTM(400, 'BLSTM_3').f_prop(y)
 		y = Conv1D([1, 400, self.embedding_size*self.F]).f_prop(y)
 		y = tf.reshape(y, [self.B, 80, self.F, self.embedding_size])
 
