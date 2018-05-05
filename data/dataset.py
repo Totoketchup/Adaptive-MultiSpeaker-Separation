@@ -494,7 +494,7 @@ def process(combinations, batch_size):
 	datasets = []
 	for i, c in enumerate(combinations):
 		# Creating zipped dataset [M,M] [M,F] [F,F] for 2 speakers
-		dataset_lambda_evald = tuple([d(i+j) for j, d in enumerate(c)])
+		dataset_lambda_evald = tuple([d for j, d in enumerate(c)])
 
 		current_zip = tf.data.TFRecordDataset.zip(dataset_lambda_evald)
 		current_zip = current_zip.map(mix)
@@ -504,6 +504,7 @@ def process(combinations, batch_size):
 	all_zip = tf.data.Dataset.zip(tuple(datasets))
 	all_zip = all_zip.map(lambda *x: map(tf.stack, zip(*x)))
 	all_zip = all_zip.apply(tf.contrib.data.unbatch())
+	all_zip = all_zip.shuffle(len(combinations), seed=config.seed)
 	all_zip = all_zip.batch(batch_size)
 	all_zip = all_zip.prefetch(1)
 
@@ -516,11 +517,11 @@ class TFDataset(object):
 	def get_data(self, name, seed):
 		return tf.data.TFRecordDataset(os.path.join(config.workdir, name)) \
 				.map(decode) \
-				.shuffle(1000, seed=seed) \
+				.shuffle(100, seed=seed) \
 				.filter(lambda a, k : is_long_enough(a, k, self.chunk_size)) \
 				.map(lambda a, k : chunk(a, k, self.chunk_size)) \
 				.apply(tf.contrib.data.unbatch()) \
-				.shuffle(1000, seed=seed)
+				.shuffle(10, seed=seed)
 
 	def __init__(self, **kwargs):
 
@@ -554,9 +555,9 @@ class TFDataset(object):
 					valid_list = tuple([valid_M(i) if i%2 == 0 else valid_F(i) for i in range(N)])
 					test_list = tuple([test_M(i) if i%2 == 0 else test_F(i) for i in range(N)])
 				else:
-					train_comb = list(combinations_with_replacement([train_M, train_F], N))
-					valid_comb = list(combinations_with_replacement([valid_M, valid_F], N))
-					test_comb = list(combinations_with_replacement([test_M, test_F], N))
+					train_comb = [[train_M(j+N*i) for j in range(i)] + [train_F(k+N*i) for k in range(N-i)] for i in range(N+1)] 
+					valid_comb = [[valid_M(j+N*i) for j in range(i)] + [valid_F(k+N*i) for k in range(N-i)] for i in range(N+1)] 
+					test_comb = [[test_M(j+N*i) for j in range(i)] + [test_F(k+N*i) for k in range(N-i)] for i in range(N+1)]
 
 			elif 'M' in kwargs['sex']:
 				train_list = tuple([train_M(i) for i in range(N)])
@@ -609,7 +610,6 @@ class TFDataset(object):
 			self.validation_handle = sess.run(self.validation_iterator.string_handle())
 			self.test_handle = sess.run(self.test_iterator.string_handle())
 
-					
 			self.next_mix, self.next_non_mix, self.next_ind = self.next_element
 
 	def get_handle(self, split):
