@@ -80,7 +80,7 @@ class MyArgs(object):
 	def select_inferencer(self):
 		self.parser.add_argument(
 			'--model', help='#TODO', 
-			choices=['front_L41','front_L41_finetuned', 'front_L41_enhanced', 
+			choices=['pretraining','front_L41','front_L41_finetuned', 'front_L41_enhance', 
 			'front_L41_enhanced_finetuned', 'STFT_L41', 'STFT_L41_finetuned', 
 			'STFT_L41_enhanced', 'STFT_L41_enhanced_finetuned'], required=True)
 	
@@ -179,6 +179,41 @@ class Trainer(object):
 
 				for b in range(nb_batches_test):
 					output = self.model.infer(feed_dict_test, b)
+					yield output
+					print 'Batch #', b+1, '/', nb_batches_test
+
+	def sdr_improvement(self):
+
+		with tf.Graph().as_default() as graph:
+			
+			config_ = tf.ConfigProto()
+			config_.gpu_options.allow_growth = True
+			config_.allow_soft_placement = True
+
+			with tf.Session(graph=graph, config=config_).as_default() as sess:
+
+				tfds = TFDataset(**self.args)
+
+				additional_args = {
+					"mix": tfds.next_mix,
+					"non_mix": tfds.next_non_mix,
+					"ind": tfds.next_ind,
+					"pipeline": True,
+					"tot_speakers" : 251
+				}
+
+				self.args.update(additional_args)
+				self.build()
+
+				print self.args
+
+				nb_batches_test = tfds.length(tfds.TEST)
+				feed_dict_test = {tfds.handle: tfds.get_handle(tfds.TEST)}
+
+				sess.run(tfds.test_initializer)
+
+				for b in range(nb_batches_test):
+					output = self.model.improvement(feed_dict_test, b)
 					yield output
 					print 'Batch #', b+1, '/', nb_batches_test
 
@@ -346,6 +381,16 @@ class Front_Separator_Enhanced_Inference(Trainer):
 		# Initialize only non restored values
 		self.model.initialize_non_init()
 
+class Pretrained_Inference(Trainer):
+	def __init__(self, separator, name, **kwargs):
+		super(Pretrained_Inference, self).__init__(trainer_type=name, **kwargs)
+		self.separator = separator
+
+	def build(self):
+		self.args.update({'pretraining':True})
+		self.model = Adapt(**self.args)
+		self.model.create_saver()
+		self.model.restore_model(self.args['model_folder'])
 
 ## TRAINERS CLASSES	
 
