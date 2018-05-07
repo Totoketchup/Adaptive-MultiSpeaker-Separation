@@ -456,32 +456,38 @@ def decode(serialized_example):
 def normalize(non_mix, ind):
 	mean, var = tf.nn.moments(non_mix, -1, keep_dims=True)
 	non_mix = (non_mix - mean)/tf.sqrt(var)
+	# Keep mean and std information for post processing
+	return non_mix, ind, tf.concat([tf.expand_dims(mean,0), tf.expand_dims(var,0)], 0)
 
-	return non_mix, ind
+def mix(*inputs):
+	out = []
+	zipped = zip(*inputs)
+	for inp in zipped:
+		out.append(tf.stack(inp))
+	out = [tf.reduce_sum(out[0], 0)] + out
+	return tuple(out)
 
-def mix(*non_mix):
-	non_mix, keys = zip(*non_mix)
-	non_mix = tf.stack(non_mix)
-	keys = tf.stack(keys)
-	mix = tf.reduce_sum(non_mix, 0)
-	return mix, non_mix, keys
+def is_long_enough(chunk_size, *x):
+	return tf.less(chunk_size, tf.shape(x[0])[0])
 
-
-def is_long_enough(audio, key, chunk_size):
-	return tf.less(chunk_size, tf.shape(audio)[0])
-
-def filtering(mix, non_mix, keys):
+def filtering(*inputs):
+	keys = inputs[2]
 	L = tf.shape(keys)[0]
 	tiled = tf.tile(tf.expand_dims(keys, 1), [1, L])
 	sums = tf.reduce_sum(tf.cast(tf.equal(keys, tiled), tf.int32))
 	sums = tf.reduce_sum(sums)
 	return tf.equal(L, sums)
 
-def chunk(audio, key, chunk_size):
+def chunk(chunk_size, *x):
+	audio = x[0]
+	key = x[1]
 	L = tf.shape(audio)[0]
 	nb = tf.floordiv(L, chunk_size)
 	chunks = tf.map_fn(lambda i : audio[i*chunk_size:(i+1)*chunk_size], tf.range(nb), dtype=tf.float32)
-	return chunks, tf.tile(tf.expand_dims(key, 0), [nb]) 	# [N, chunk_size]
+	if len(x) == 2:
+		return chunks, tf.tile(tf.expand_dims(key, 0), [nb]) 	# [N, chunk_size]
+	else:
+		return chunks, tf.tile(tf.expand_dims(key, 0), [nb]), tf.tile(tf.expand_dims(x[-1], 0), [nb, 1, 1])
 
 def setshape(mix, non_mix, keys, chunk, N):
 	mix = tf.reshape(mix, [chunk])
@@ -517,9 +523,10 @@ class TFDataset(object):
 	def get_data(self, name, seed):
 		return tf.data.TFRecordDataset(os.path.join(config.workdir, name)) \
 				.map(decode) \
+				.map(normalize if self.args['dataset_normalize'] else lambda x,y: (x,y)) \
 				.shuffle(100, seed=seed) \
-				.filter(lambda a, k : is_long_enough(a, k, self.chunk_size)) \
-				.map(lambda a, k : chunk(a, k, self.chunk_size)) \
+				.filter(lambda *x: is_long_enough(self.chunk_size, *x)) \
+				.map(lambda *x: chunk(self.chunk_size, *x)) \
 				.apply(tf.contrib.data.unbatch()) \
 				.shuffle(10, seed=seed)
 
@@ -528,7 +535,7 @@ class TFDataset(object):
 		batch_size = kwargs['batch_size']
 		self.chunk_size = kwargs['chunk_size']
 		self.no_random_picking = kwargs['no_random_picking']
-			
+		self.args = kwargs
 		self.TRAIN = 'train'
 		self.TEST = 'test'
 		self.VALID = 'valid'
@@ -610,7 +617,12 @@ class TFDataset(object):
 			self.validation_handle = sess.run(self.validation_iterator.string_handle())
 			self.test_handle = sess.run(self.test_iterator.string_handle())
 
-			self.next_mix, self.next_non_mix, self.next_ind = self.next_element
+			if kwargs['dataset_normalize']:
+				self.next_mix, self.next_non_mix, self.next_ind, meanstd = self.next_element
+				self.meanstd = tf.identity(meanstd, name='meanstd')
+				print self.meanstd
+			else:
+				self.next_mix, self.next_non_mix, self.next_ind = self.next_element
 
 	def get_handle(self, split):
 		if split == 'train':

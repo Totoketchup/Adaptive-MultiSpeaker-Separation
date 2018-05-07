@@ -216,6 +216,11 @@ class Network(object):
 		output = tf.get_default_session().run([self.x_mix, self.x_non_mix, self.output], feed_dict)
 		return output
 
+	def improvement(self, feed_dict, step):
+		feed_dict.update({self.training:False})
+		output = tf.get_default_session().run([self.x_mix, self.x_non_mix, self.sdr_imp], feed_dict)
+		return output
+
 	def valid_batch(self, feed_dict, step):
 		sess = tf.get_default_session()
 		feed_dict.update({self.training:False})
@@ -311,7 +316,6 @@ class Separator(Network):
 		self.with_silence = kwargs['with_silence']
 		self.nb_tries = kwargs['nb_tries']
 		self.nb_steps = kwargs['nb_steps']
-
 
 		self.graph = tf.get_default_graph()
 
@@ -546,7 +550,6 @@ class Separator(Network):
 		if self.args['normalize_enhance']:
 			mean, var = tf.nn.moments(sep_and_in, axes=[1,2], keep_dims=True)
 			sep_and_in = (sep_and_in - mean) / tf.sqrt(var)
-
 
 		layers = [
 			BLSTM(self.args['layer_size_enhance'], 

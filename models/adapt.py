@@ -111,11 +111,11 @@ class Adapt(Network):
 
 		if self.with_max_pool:
 			self.X = tf.nn.conv2d(input_front, self.conv_filter, strides=[1, 1, 1, 1], padding="SAME", name='Conv_STFT')
-			self.y, self.argmax = tf.nn.max_pool_with_argmax(self.X, [1, 1, self.max_pool_value, 1], strides=[1, 1, self.max_pool_value, 1], padding="SAME", name='output')
+			self.y, self.argmax = tf.nn.max_pool_with_argmax(self.X, [1, 1, self.max_pool_value, 1], 
+										strides=[1, 1, self.max_pool_value, 1], padding="VALID", name='output')
 			print self.argmax
 		elif self.with_average_pool:
 			self.X = tf.nn.conv2d(input_front, self.conv_filter, strides=[1, 1, 1, 1], padding="SAME", name='Conv_STFT')
-			# self.y = tf.nn.avg_pool(self.X, [1, 1, self.max_pool_value, 1], [1, 1, self.max_pool_value, 1], padding="SAME")
 			self.y = tf.layers.average_pooling2d(self.X, (1, self.max_pool_value), strides=(1, self.max_pool_value), name='output')		
 		else:
 			self.y = tf.nn.conv2d(input_front, self.conv_filter, strides=[1, 1, self.max_pool_value, 1], padding="SAME", name='Conv_STFT')
@@ -216,7 +216,7 @@ class Adapt(Network):
 			output = tf.reshape(output, [self.B*self.S, 1, self.T, self.N])
 
 		elif self.with_average_pool:
-			input_tensor = tf.reshape(input_tensor, [self.B*self.S, 1, self.T_max_pooled,self.N])
+			input_tensor = tf.reshape(input_tensor, [self.B*self.S, 1, self.T_max_pooled, self.N])
 			output = tf.keras.layers.UpSampling2D((1, self.max_pool_value))(input_tensor)
 			output = tf.reshape(output, [self.B*self.S, 1, self.T, self.N])
 		else:
@@ -265,6 +265,7 @@ class Adapt(Network):
 			l2 = tf.reduce_mean(l2, -1) # Mean over batches
 
 			sdr_improvement, sdr = self.sdr_improvement(self.x_non_mix, self.back)
+			self.sdr_imp = sdr_improvement
 			sdr = tf.reduce_mean(sdr) # Mean over speakers
 			sdr = tf.reduce_mean(sdr) # Mean over batches
 
@@ -300,6 +301,7 @@ class Adapt(Network):
 			l2 = tf.reduce_mean(l2, -1)
 
 			sdr_improvement, sdr = self.sdr_improvement(X_nmr, self.back, True)
+			self.sdr_imp = sdr_improvement
 			sdr = tf.reduce_min(sdr, 1) # Get the minimum over all possible permutations : B S
 			sdr = tf.reduce_sum(sdr, -1)
 			sdr = tf.reduce_mean(sdr, -1)
