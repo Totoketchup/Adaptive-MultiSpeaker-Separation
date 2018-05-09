@@ -1,6 +1,7 @@
 # coding: utf-8
 from utils.trainer import *
 from models.L41 import L41Model
+import numpy as np
 
 if __name__ == '__main__':
 	p = MyArgs()
@@ -27,6 +28,9 @@ if __name__ == '__main__':
 
 	i = 0
 	for _, _, sdr_ in inferencer.sdr_improvement():
+		if np.isnan(sdr_): 
+			continue
+
 		sdr += sdr_*args.batch_size
 		i += 1
 		print sdr/float(i*args.batch_size), sdr_
