@@ -228,6 +228,8 @@ class Trainer(object):
 
 		nb_epochs = self.args['epochs']
 		time_spent = [0 for _ in range(10)]
+
+		best_path = ''
 		
 		with tf.Graph().as_default() as graph:
 			config_ = tf.ConfigProto()
