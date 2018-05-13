@@ -647,7 +647,7 @@ class TFDataset(object):
 		sess.run(self.get_initializer(split), feed_dict={self.chunk_size: self.init_chunk} )
 		try:
 			while True:
-				sess.run(self.next_element, feed_dict={self.handle: self.get_handle(split), self.chunk_size: chunk})
+				sess.run(self.next_element, feed_dict={self.handle: self.get_handle(split), self.chunk_size: self.init_chunk})
 				count += 1
 		except Exception:
 			return count
