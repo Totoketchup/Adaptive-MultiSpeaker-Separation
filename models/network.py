@@ -410,7 +410,7 @@ class Separator(Network):
 			if self.pre_func == 'sqrt':
 				self.X = tf.sqrt(self.X)
 			elif self.pre_func == 'log':
-				self.X = tf.log(self.X)
+				self.X = log10(self.X)
 
 			if self.normalize_input == '01':
 				self.normalization01
