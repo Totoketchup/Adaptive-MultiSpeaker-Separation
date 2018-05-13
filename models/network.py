@@ -24,6 +24,8 @@ class Network(object):
 			self.S = kwargs['nb_speakers']
 			self.args = kwargs
 			self.learning_rate = kwargs['learning_rate']
+			self.my_opt = kwargs['optimizer']
+			self.decay_steps = kwargs['decay_steps']
 		else:
 			raise Exception('Keyword Arguments missing ! Please add the right arguments in input | check doc')
 
@@ -83,8 +85,6 @@ class Network(object):
 
 						tf.summary.audio(name= "audio/input/non-mixed", tensor = tf.reshape(self.x_non_mix, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
 						tf.summary.audio(name= "audio/input/mixed", tensor = self.x_mix[:self.B], sample_rate = config.fs, max_outputs=1)
-
-
 
 	def tensorboard_init(self):
 		self.saver = tf.train.Saver()
@@ -151,8 +151,9 @@ class Network(object):
 		is_not_initialized = tf.get_default_session().run([~(tf.is_variable_initialized(var)) \
 									   for var in global_vars])
 		not_initialized_vars = list(compress(global_vars, is_not_initialized))
-		print 'not init: '
-		print [v.name for v in not_initialized_vars]
+		
+		print 'not init: ', [v.name for v in not_initialized_vars]
+
 		if len(not_initialized_vars):
 			init = tf.variables_initializer(not_initialized_vars)
 			return init
@@ -164,13 +165,24 @@ class Network(object):
 
 	@scope
 	def optimize(self):
-		print 'Train the following variables :'
-		print map(lambda x: x.name, self.trainable_variables)
-		optimizer = AMSGrad(self.learning_rate, epsilon=0.001)
+		print 'Train the following variables :', map(lambda x: x.name, self.trainable_variables)
+		
+		global_step = tf.Variable(0, name="global_step", trainable=False)
+
+		learning_rate = tf.train.exponential_decay(self.learning_rate, 
+				global_step, self.decay_steps, 
+				0.5, staircase=True)
+		if self.my_opt == 'Adam':
+			optimizer = AMSGrad(self.learning_rate, epsilon=0.001)
+		elif self.my_opt == 'SGD':
+			optimizer = tf.train.MomentumOptimizer(learning_rate, momentum=0.9)
+		elif self.my_opt == 'RMSProp':
+			optimizer = tf.train.RMSPropOptimizer(learning_rate)
+
 		update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 		with tf.control_dependencies(update_ops):
 			gradients, variables = zip(*optimizer.compute_gradients(self.cost_model, var_list=self.trainable_variables))
-			optimize = optimizer.apply_gradients(zip(gradients, variables))
+			optimize = optimizer.apply_gradients(zip(gradients, variables), global_step=global_step)
 			return optimize
 
 	def sdr_improvement(self, s_target, s_approx, with_perm=False):
@@ -276,12 +288,13 @@ class Network(object):
 			args = json.load(f)
 			keys_to_update = ['learning_rate','epochs','batch_size',
 			'regularization','overlap_coef','loss','beta','model_folder', 'type','pretraining', 'with_silence',
-			'beta_kmeans', 'nb_tries', 'nb_steps']
+			'beta_kmeans', 'nb_tries', 'nb_steps', 'threshold']
 			to_modify = { key: modified_args[key] for key in keys_to_update if key in modified_args.keys() }
 			to_modify.update({key: val for key, val in modified_args.items() if key not in args.keys()})
 
 		# Update with new args such as 'pretraining' or 'type'
 		args.update(to_modify)
+		print "LOADED = ", args
 		# Create a new Adapt model with these parameters
 		return cls(**args)
 
@@ -304,6 +317,9 @@ class Separator(Network):
 		self.b = kwargs['mask_b']
 		self.normalize_input = kwargs['normalize_separator']
 		self.abs_input = kwargs['abs_input']
+
+		#Preproc
+		self.pre_func = kwargs['pre_func']
 
 		# Loss Parameters
 		self.loss_with_silence = kwargs['silence_loss']
@@ -375,10 +391,32 @@ class Separator(Network):
 
 	def init_separator(self):
 		if self.plugged:
+
+			if self.abs_input:
+				self.X = tf.abs(self.X)
+
+			if self.normalize_input == '01':
+				self.normalization01
+			elif self.normalize_input == 'meanstd':
+				self.normalization_mean_std
+
 			self.prediction
+
 		else:
+			
+			# STFT 
 			self.preprocessing
-			self.normalization01
+
+			if self.pre_func == 'sqrt':
+				self.X = tf.sqrt(self.X)
+			elif self.pre_func == 'log':
+				self.X = tf.log(self.X)
+
+			if self.normalize_input == '01':
+				self.normalization01
+			elif self.normalize_input == 'meanstd':
+				self.normalization_mean_std
+
 			self.prediction
 			#TODO TO IMPROVE !
 			if 'inference' not in self.folder and 'enhance' not in self.folder and 'finetuning' not in self.folder:
@@ -421,7 +459,7 @@ class Separator(Network):
 		tf.summary.image('stft/non_mix', tf.abs(tf.expand_dims(self.stfts_non_mix,3)), max_outputs=3)
 		tf.summary.image('stft/mix', tf.abs(tf.expand_dims(self.stfts,3)), max_outputs=3)
 
-		self.X = tf.sqrt(tf.abs(self.stfts))
+		self.X = tf.abs(self.stfts)
 		self.X_input = tf.identity(self.X)
 		self.X_non_mix = tf.reshape(self.stfts_non_mix, [self.B, self.S, -1, self.F])
 		self.X_non_mix = tf.transpose(self.X_non_mix, [0, 2, 3, 1])
@@ -462,7 +500,7 @@ class Separator(Network):
 		self.embeddings = input_kmeans
 		# S speakers to separate, give self.X in input not to consider silent bins
 		kmeans = KMeans(nb_clusters=self.S, nb_tries=self.nb_tries, nb_iterations=self.nb_steps, 
-			input_tensor=input_kmeans, beta=self.beta, latent_space_tensor=tf.abs(self.X) if self.with_silence else None,
+			input_tensor=input_kmeans, beta=self.beta, latent_space_tensor=tf.abs(self.X_input) if self.with_silence else None,
 			threshold=self.threshold)
 
 		# Extract labels of each bins TF_i - labels [B, TF, 1]
@@ -478,10 +516,7 @@ class Separator(Network):
 		tf.summary.image('mask/predicted/1', tf.reshape(self.masks[:,:,0],[self.B, -1, self.F, 1]))
 		tf.summary.image('mask/predicted/2', tf.reshape(self.masks[:,:,1],[self.B, -1, self.F, 1]))
 
-		separated = tf.reshape(self.X, [self.B, -1, 1]) * self.masks # [B ,TF, S]
-		if not self.plugged:
-			separated = separated * tf.expand_dims((self.max_ - self.min_), 2) + tf.expand_dims(self.min_, 2)
-			separated = tf.square(separated)
+		separated = tf.reshape(self.X_input, [self.B, -1, 1]) * self.masks # [B ,TF, S]
 		separated = tf.reshape(separated, [self.B, -1, self.F, self.S])
 		separated = tf.transpose(separated, [0,3,1,2]) # [B, S, T, F]
 		separated = tf.reshape(separated, [self.B*self.S, -1, self.F, 1]) # [BS, T, F, 1]
@@ -490,10 +525,11 @@ class Separator(Network):
 
 	@scope
 	def postprocessing(self):
-		stft = tf.reshape(self.separate, [self.B*self.S, -1, self.F])
-		# denorm
 
+		stft = tf.reshape(self.separate, [self.B*self.S, -1, self.F])
+		
 		stft = tf.complex(stft, 0.0*stft) * tf.exp(tf.complex(0.0, tf.angle(self.stfts)))
+
 		istft = tf.contrib.signal.inverse_stft(
 			stft, 
 			frame_length=self.window_size, 
@@ -539,11 +575,11 @@ class Separator(Network):
 		
 		# X [B, T, F]
 		# Tiling the input S time - like [ a, b, c] -> [ a, a, b, b, c, c], not [a, b, c, a, b, c]
-		X_in = tf.expand_dims(self.X, 1)
+		X_in = tf.expand_dims(self.X_input, 1)
 		X_in = tf.tile(X_in, [1, self.S, 1, 1])
 		X_in = tf.reshape(X_in, [self.B, self.S, -1, self.F])
 
-		# Concat the binary separated input and the actual tiled input
+		# Concat the separated input and the actual tiled input
 		sep_and_in = tf.concat([separated, X_in], axis = 3)
 		sep_and_in = tf.reshape(sep_and_in, [self.B*self.S, -1, 2*self.F])
 		
@@ -559,9 +595,11 @@ class Separator(Network):
 		layers += [
 			Conv1D([1, self.args['layer_size_enhance'], self.F])
 		]
+
 		y = f_props(layers, sep_and_in)
 
 		y = tf.reshape(y, [self.B, self.S, -1]) # [B, S, TF]
+
 		tf.summary.image('mask/predicted/enhanced', tf.reshape(y, [self.B*self.S, -1, self.F, 1]))
 		y = tf.transpose(y, [0, 2, 1]) # [B, TF, S]
 
@@ -569,6 +607,8 @@ class Separator(Network):
 			y = tf.nn.softmax(y)
 		elif self.args['nonlinearity'] == 'tanh':
 			y = tf.nn.tanh(y)
+
+		self.enhanced_masks = tf.identity(y, name='enhanced_masks')
 		
 		tf.summary.image('mask/predicted/enhanced_soft', tf.reshape(tf.transpose(y, [0,2,1]), [self.B*self.S, -1, self.F, 1]))
 		y = y * tf.reshape(self.X, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]

@@ -533,12 +533,13 @@ class TFDataset(object):
 	def __init__(self, **kwargs):
 
 		batch_size = kwargs['batch_size']
-		self.chunk_size = kwargs['chunk_size']
+		self.chunk_size = tf.placeholder(tf.int32)
 		self.no_random_picking = kwargs['no_random_picking']
 		self.args = kwargs
 		self.TRAIN = 'train'
 		self.TEST = 'test'
 		self.VALID = 'valid'
+		self.init_chunk = kwargs['chunk_size']
 		N = kwargs['nb_speakers']
 
 		with tf.name_scope('dataset'):
@@ -556,7 +557,7 @@ class TFDataset(object):
 				test_F = lambda i : self.get_data('test_F.tfrecords', i)
 
 			# MIXING
-			if 'M' in kwargs['sex'] and 'F' in kwargs['sex']:
+			if 'M' and 'F' in kwargs['sex']:
 				if self.no_random_picking:
 					train_list = tuple([train_M(i) if i%2 == 0 else train_F(i) for i in range(N)])
 					valid_list = tuple([valid_M(i) if i%2 == 0 else valid_F(i) for i in range(N)])
@@ -643,10 +644,10 @@ class TFDataset(object):
 	def length(self, split):
 		count = 0
 		sess = tf.get_default_session()
-		sess.run(self.get_initializer(split))
+		sess.run(self.get_initializer(split), feed_dict={self.chunk_size: self.init_chunk} )
 		try:
 			while True:
-				sess.run(self.next_element, feed_dict={self.handle: self.get_handle(split)})
+				sess.run(self.next_element, feed_dict={self.handle: self.get_handle(split), self.chunk_size: chunk})
 				count += 1
 		except Exception:
 			return count

@@ -39,6 +39,12 @@ class MyArgs(object):
 		parser.add_argument(
 			'--learning_rate', type=float, help='learning rate for training', required=False, default=0.1)
 
+		parser.add_argument(
+			'--optimizer', help='Optimizer used during training', 
+			choices=['Adam', 'SGD', 'RMSProp'], required=False, default='Adam')
+		parser.add_argument(
+			'--decay_steps', type=int, help='Number of steps to apply learning rate decay', required=False, default=10000)
+
 		self.parser = parser
 
 	def add_stft_args(self):
@@ -76,6 +82,8 @@ class MyArgs(object):
 			'--threshold_silence_loss', type=float, help='Threshold for the silent bins', required=False, default=2.0)
 		self.parser.add_argument(
 			'--function_mask', help='#TODO', choices=['None','linear', 'sqrt', 'square'], required=False, default='None')
+		self.parser.add_argument(
+			'--pre_func', help='#TODO', choices=['None','sqrt','log'], required=False, default='None')
 	
 	def select_inferencer(self):
 		self.parser.add_argument(
@@ -172,10 +180,9 @@ class Trainer(object):
 				self.build()
 
 				nb_batches_test = tfds.length(tfds.TEST)
-				print nb_batches_test
-				feed_dict_test = {tfds.handle: tfds.get_handle(tfds.TEST)}
+				feed_dict_test = {tfds.handle: tfds.get_handle(tfds.TEST), tfds.chunk_size: self.args['chunk_size']}
 
-				sess.run(tfds.test_initializer)
+				sess.run(tfds.test_initializer, feed_dict={tfds.chunk_size: self.args['chunk_size']} )
 
 				for b in range(nb_batches_test):
 					output = self.model.infer(feed_dict_test, b)
@@ -205,12 +212,10 @@ class Trainer(object):
 				self.args.update(additional_args)
 				self.build()
 
-				print self.args
-
 				nb_batches_test = tfds.length(tfds.TEST)
 				feed_dict_test = {tfds.handle: tfds.get_handle(tfds.TEST)}
 
-				sess.run(tfds.test_initializer)
+				sess.run(tfds.test_initializer, feed_dict={tfds.chunk_size: self.args['chunk_size']})
 
 				for b in range(nb_batches_test):
 					output = self.model.improvement(feed_dict_test, b)
@@ -253,9 +258,9 @@ class Trainer(object):
 				print 'BATCHES'
 				print nb_batches_train, nb_batches_test, nb_batches_valid
 
-				feed_dict_train = {tfds.handle: tfds.get_handle(tfds.TRAIN)}
-				feed_dict_valid = {tfds.handle: tfds.get_handle(tfds.VALID)}
-				feed_dict_test = {tfds.handle: tfds.get_handle(tfds.TEST)}
+				feed_dict_train = {tfds.handle: tfds.get_handle(tfds.TRAIN), tfds.chunk_size: self.args['chunk_size']}
+				feed_dict_valid = {tfds.handle: tfds.get_handle(tfds.VALID), tfds.chunk_size: self.args['chunk_size']}
+				feed_dict_test = {tfds.handle: tfds.get_handle(tfds.TEST), tfds.chunk_size: self.args['chunk_size']}
 
 				best_validation_cost = 1e100
 
@@ -264,7 +269,7 @@ class Trainer(object):
 				step = 0
 
 				for epoch in range(nb_epochs):
-					sess.run(tfds.training_initializer)
+					sess.run(tfds.training_initializer, feed_dict={tfds.chunk_size: self.args['chunk_size']})
 
 					for b in range(nb_batches_train):
 
@@ -277,7 +282,7 @@ class Trainer(object):
 						if (step+1)%self.args['validation_step'] == 0:
 							t = time.time()
 
-							sess.run(tfds.validation_initializer)
+							sess.run(tfds.validation_initializer, feed_dict={tfds.chunk_size: self.args['chunk_size']})
 
 							# Compute validation mean cost with batches to avoid memory problems
 							costs = []
@@ -308,13 +313,34 @@ class Trainer(object):
 
 						step += 1
 
+
+				#Validation at the last step
+				sess.run(tfds.validation_initializer, feed_dict={tfds.chunk_size: self.args['chunk_size']})
+
+				# Compute validation mean cost with batches to avoid memory problems
+				costs = []
+
+				for b_v in range(nb_batches_valid):
+					cost = self.model.valid_batch(feed_dict_valid,step)
+					costs.append(cost)
+
+				valid_cost = np.mean(costs)
+				self.model.add_valid_summary(valid_cost, step)
+
+				# Save the model if it is better:
+				if valid_cost < best_validation_cost:
+					best_validation_cost = valid_cost # Save as new lowest cost
+					best_path = self.model.save(step)
+					print 'Save best model with :', best_validation_cost
+
+
 				print 'Best model with Validation:  ', best_validation_cost
 				print 'Path = ', best_path
 
 				# Load the best model on validation set and test it
 				self.model.restore_last_checkpoint()
 				
-				sess.run(tfds.test_initializer)
+				sess.run(tfds.test_initializer, feed_dict={tfds.chunk_size: self.args['chunk_size']})
 
 				for b_t in range(nb_batches_test):
 					cost = self.model.test_batch(feed_dict_test)

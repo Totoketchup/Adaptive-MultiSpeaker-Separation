@@ -158,17 +158,23 @@ class Adapt(Network):
 		self.overlapping = tf.reduce_mean(overlapping, -1) # Mean over batces
 		self.overlapping_constraint = self.overlapping
 
+		input_mix = tf.reshape(input[:self.B, : , :], [self.B, 1, self.T_max_pooled, self.N]) # B first batches correspond to mix input
+		input_non_mix = tf.reshape(input[self.B:, : , :], [self.B, self.S, self.T_max_pooled, self.N]) # B*S others non mix
+
+		input_mix = tf.tile(input_mix, [1, self.S, 1, 1])
+
+		filters = tf.divide(input_non_mix, input_mix)
+		output = tf.reshape(input_mix * filters, [self.B*self.S, self.T_max_pooled, self.N, 1])
+		output = tf.transpose(output, [0, 3, 1, 2])
+
+		self.filters = filters
 
 		if self.pretraining:
 			self.T_max_pooled = tf.shape(separator_in)[1]
 
 			input = tf.reshape(separator_in, [self.B_tot, self.T_max_pooled, self.N])
 
-			input_mix = tf.reshape(input[:self.B, : , :], [self.B, 1, self.T_max_pooled, self.N]) # B first batches correspond to mix input
-			input_non_mix = tf.reshape(input[self.B:, : , :], [self.B, self.S, self.T_max_pooled, self.N]) # B*S others non mix
-
-			input_mix = tf.tile(input_mix, [1, self.S, 1, 1])
-
+			
 			if self.separation == 'mask':
 				filters = tf.divide(input_non_mix, input_mix)
 				output = tf.reshape(input_mix * filters, [self.B*self.S, self.T_max_pooled, self.N, 1])
@@ -238,6 +244,8 @@ class Adapt(Network):
 		output = tf.reshape(output, [self.B, self.S, self.L], name='back_output')
 		self.output = output
 
+		sdr_improvement, sdr = self.sdr_improvement(self.x_non_mix, output)
+		self.sdr_imp = sdr_improvement
 		return output
 
 	@scope

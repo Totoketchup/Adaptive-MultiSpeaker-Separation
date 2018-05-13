@@ -19,6 +19,7 @@ class DPCL(Separator):
 	@scope
 	def prediction(self):
 		# DPCL network
+		self.true_masks = self.y
 
 		shape = tf.shape(self.X)
 

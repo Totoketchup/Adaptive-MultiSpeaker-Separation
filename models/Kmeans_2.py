@@ -12,7 +12,7 @@ from  sklearn.datasets import make_blobs
 class KMeans:
 
 	def __init__(self, nb_clusters, centroids_init=None, nb_tries=10, 
-		nb_iterations=10, input_tensor=None, latent_space_tensor=None, beta=None, threshold=2.5, assign_at_end=False):
+		nb_iterations=10, input_tensor=None, latent_space_tensor=None, beta=None, threshold=2.5, assign_at_end=True):
 
 		self.nb_clusters = nb_clusters
 		self.nb_iterations = nb_iterations

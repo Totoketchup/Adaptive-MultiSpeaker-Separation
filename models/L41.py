@@ -27,16 +27,7 @@ class L41Model(Separator):
 		self.true_masks = 1.0 + self.y
 
 		X_in = tf.identity(self.X)
-		if self.abs_input:
-			X_in = tf.abs(X_in)
-
-		if self.normalize_input == '01':
-			self.min_ = tf.reduce_min(X_in, axis=[1,2], keep_dims=True)
-			self.max_ = tf.reduce_max(X_in, axis=[1,2], keep_dims=True)
-			X_in = (X_in- self.min_) / (self.max_ - self.min_)
-		elif self.normalize_input == 'meanstd':
-			mean, var = tf.nn.moments(X_in, axes=[1,2], keep_dims=True)
-			X_in = (X_in - mean) / tf.sqrt(var)
+		
 
 		layers = [BLSTM(self.layer_size, 'BLSTM_'+str(i)) for i in range(self.nb_layers)]
 
