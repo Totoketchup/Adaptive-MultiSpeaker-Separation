@@ -25,7 +25,8 @@ class Network(object):
 			self.args = kwargs
 			self.learning_rate = kwargs['learning_rate']
 			self.my_opt = kwargs['optimizer']
-			self.decay_steps = kwargs['decay_steps']
+			self.decay_epoch = kwargs['decay_epoch']
+			self.gradient_clip = kwargs['gradient_norm_clip']
 		else:
 			raise Exception('Keyword Arguments missing ! Please add the right arguments in input | check doc')
 
@@ -167,11 +168,16 @@ class Network(object):
 	def optimize(self):
 		print 'Train the following variables :', map(lambda x: x.name, self.trainable_variables)
 		
-		global_step = tf.Variable(0, name="global_step", trainable=False)
+		global_epoch = tf.Variable(0, name="global_epoch", trainable=False)
+
+		self.increment_epoch = tf.assign(global_epoch, global_epoch+1)
 
 		learning_rate = tf.train.exponential_decay(self.learning_rate, 
-				global_step, self.decay_steps, 
+				global_epoch, self.decay_epoch, 
 				0.5, staircase=True)
+
+		tf.summary.scalar('learning_rate', learning_rate)
+
 		if self.my_opt == 'Adam':
 			optimizer = AMSGrad(self.learning_rate, epsilon=0.001)
 		elif self.my_opt == 'SGD':
@@ -182,7 +188,9 @@ class Network(object):
 		update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 		with tf.control_dependencies(update_ops):
 			gradients, variables = zip(*optimizer.compute_gradients(self.cost_model, var_list=self.trainable_variables))
-			optimize = optimizer.apply_gradients(zip(gradients, variables), global_step=global_step)
+			if self.gradient_clip != 0.:
+				gradients, _ = tf.clip_by_global_norm(gradients, self.gradient_clip)
+			optimize = optimizer.apply_gradients(zip(gradients, variables))
 			return optimize
 
 	def sdr_improvement(self, s_target, s_approx, with_perm=False):
@@ -315,7 +323,7 @@ class Separator(Network):
 		self.nb_layers = kwargs['nb_layers']
 		self.a = kwargs['mask_a']
 		self.b = kwargs['mask_b']
-
+		self.rdropout = kwargs['recurrent_dropout']
 
 		#Preproc
 		self.normalize_input = kwargs['normalize_separator']
@@ -409,12 +417,6 @@ class Separator(Network):
 			# STFT 
 			self.preprocessing
 
-			# Apply silent mask
-			if self.silent_threshold > 0:
-				max_ = tf.reduce_max(self.X, [1,2], keep_dims=True)
-				mask = tf.cast(tf.less(max_/(self.X + 1e-12) , tf.pow(10., self.silent_threshold/20.)), tf.float32)
-				self.X = mask * self.X
-
 			# Apply a certain function
 			if self.pre_func == 'sqrt':
 				self.X = tf.sqrt(self.X)
@@ -426,6 +428,12 @@ class Separator(Network):
 				self.normalization01
 			elif self.normalize_input == 'meanstd':
 				self.normalization_mean_std
+
+			# Apply silent mask
+			if self.silent_threshold > 0:
+				max_ = tf.reduce_max(self.X, [1,2], keep_dims=True)
+				mask = tf.cast(tf.less(max_ - self.X , self.silent_threshold/20.), tf.float32)
+				self.X = mask * self.X
 
 			self.prediction
 			#TODO TO IMPROVE !

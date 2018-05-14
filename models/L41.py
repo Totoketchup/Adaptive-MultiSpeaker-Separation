@@ -16,7 +16,6 @@ class L41Model(Separator):
 			self.speaker_vectors =tf.Variable(tf.truncated_normal(
 								   [self.num_speakers, self.embedding_size],
 								   stddev=tf.sqrt(2/float(self.embedding_size))), name='speaker_centroids')
-
 		self.init_separator()
 
 	@scope
@@ -80,7 +79,7 @@ class L41Model(Separator):
 		cost = -tf.log(tf.nn.sigmoid(self.y * dot))
 
 		# Average the cost over all speakers in the input
-		cost = tf.reduce_sum(cost, 3)
+		cost = tf.reduce_mean(cost, 3)
 
 		# Average the cost over all batches
 		cost = tf.reduce_mean(cost, 0)

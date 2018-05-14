@@ -1,5 +1,5 @@
 # coding: utf-8
-from data.dataset import Dataset, TFDataset, MixGenerator
+from data.dataset import Dataset, TFDataset
 import time
 import numpy as np
 import argparse
@@ -43,8 +43,9 @@ class MyArgs(object):
 			'--optimizer', help='Optimizer used during training', 
 			choices=['Adam', 'SGD', 'RMSProp'], required=False, default='Adam')
 		parser.add_argument(
-			'--decay_steps', type=int, help='Number of steps to apply learning rate decay', required=False, default=10000)
-
+			'--decay_epoch', type=int, help='Number of epoch to apply learning rate decay', required=False, default=50)
+		parser.add_argument(
+			'--gradient_norm_clip', type=float, help='Clip the gradient norm by this value if != 0', required=False, default=0.)
 		self.parser = parser
 
 	def add_stft_args(self):
@@ -73,6 +74,8 @@ class MyArgs(object):
 			'--embedding_size', type=int, help='Size of the embedding output', required=False, default=40)
 		self.parser.add_argument(
 			'--no_normalize', help='Normalization of the embedded space', action="store_false")
+		self.parser.add_argument(
+			'--recurrent_dropout', type=float, help='Dropout for the recurrent layers', required=False, default=0.0)
 		
 		## KMEANS PARAMS
 		self.parser.add_argument(
@@ -323,6 +326,7 @@ class Trainer(object):
 						t1 = time.time()
 
 						step += 1
+					sess.run(self.model.increment_epoch)
 
 
 				#Validation at the last step

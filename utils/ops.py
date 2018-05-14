@@ -356,11 +356,12 @@ class BatchNorm:
         return tf.layers.batch_normalization(x)
 
 class BLSTM:
-    def __init__(self, hid_dim, name, dropout=False, drop_val=0.8):
+    def __init__(self, hid_dim, name, drop_val=0.0):
         self.hid_dim = hid_dim
         self.name = name
-        self.dropout = dropout
-        self.drop_val = drop_val
+        training = tf.get_default_graph().get_tensor_by_name('inputs/is_training:0')
+        self.keep_val = tf.cond(training, lambda: 1.0 - drop_val, lambda: 1.0) 
+
 
     def f_prop(self, x):
         forward_input = x
@@ -369,15 +370,13 @@ class BLSTM:
         # Forward pass
         with tf.variable_scope('forward_' + self.name):
             forward_lstm = tf.contrib.rnn.BasicLSTMCell(self.hid_dim//2)
-            if self.dropout:
-                forward_lstm = tf.contrib.rnn.DropoutWrapper(forward_lstm, self.drop_val, self.drop_val, self.drop_val)
+            forward_lstm = tf.contrib.rnn.DropoutWrapper(forward_lstm, self.keep_val, self.keep_val, self.keep_val)
             forward_out, _ = tf.nn.dynamic_rnn(forward_lstm, forward_input, dtype=tf.float32)
 
-        # backaward pass
+        # backward pass
         with tf.variable_scope('backward_' + self.name):
             backward_lstm = tf.contrib.rnn.BasicLSTMCell(self.hid_dim//2)
-            if self.dropout:
-                backward_lstm = tf.contrib.rnn.DropoutWrapper(backward_lstm, self.drop_val, self.drop_val, self.drop_val)
+            backward_lstm = tf.contrib.rnn.DropoutWrapper(backward_lstm, self.keep_val, self.keep_val, self.keep_val)
             backward_out, _ = tf.nn.dynamic_rnn(backward_lstm, backward_input, dtype=tf.float32)
 
         # Concatenate the RNN outputs and return
