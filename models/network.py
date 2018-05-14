@@ -456,14 +456,14 @@ class Separator(Network):
 	def preprocessing(self):
 		self.stfts = tf.contrib.signal.stft(self.x_mix, 
 			frame_length=self.window_size, 
-			frame_step=self.window_size-self.hop_size,
+			frame_step=self.hop_size,
 			fft_length=self.window_size)
 
 		self.B = tf.shape(self.x_non_mix)[0]
 
 		self.stfts_non_mix = tf.contrib.signal.stft(tf.reshape(self.x_non_mix, [self.B*self.S, -1]), 
 			frame_length=self.window_size, 
-			frame_step=self.window_size-self.hop_size,
+			frame_step=self.hop_size,
 			fft_length=self.window_size)
 
 		tf.summary.image('stft/non_mix', tf.abs(tf.expand_dims(self.stfts_non_mix,3)), max_outputs=3)
