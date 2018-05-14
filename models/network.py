@@ -543,7 +543,7 @@ class Separator(Network):
 		istft = tf.contrib.signal.inverse_stft(
 			stft, 
 			frame_length=self.window_size, 
-			frame_step=self.window_size-self.hop_size,
+			frame_step=self.hop_size,
 			window_fn=tf.contrib.signal.inverse_stft_window_fn(self.window_size-self.hop_size))
 		output = tf.reshape(istft, [self.B, self.S, -1])
 		self.output = output
