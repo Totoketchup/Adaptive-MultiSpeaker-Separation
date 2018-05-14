@@ -315,11 +315,13 @@ class Separator(Network):
 		self.nb_layers = kwargs['nb_layers']
 		self.a = kwargs['mask_a']
 		self.b = kwargs['mask_b']
-		self.normalize_input = kwargs['normalize_separator']
-		self.abs_input = kwargs['abs_input']
+
 
 		#Preproc
+		self.normalize_input = kwargs['normalize_separator']
+		self.abs_input = kwargs['abs_input']
 		self.pre_func = kwargs['pre_func']
+		self.silent_threshold = kwargs['silence_mask_db']
 
 		# Loss Parameters
 		self.loss_with_silence = kwargs['silence_loss']
@@ -407,11 +409,20 @@ class Separator(Network):
 			# STFT 
 			self.preprocessing
 
+			# Apply silent mask
+			if self.silent_threshold > 0:
+				print 'blop'
+				max_ = tf.reduce_max(self.X, [1,2], keep_dims=True)
+				mask = tf.cast(tf.less(max_/(self.X + 1e-12) , tf.pow(10., self.silent_threshold/20.)), tf.float32)
+				self.X = mask * self.X
+
+			# Apply a certain function
 			if self.pre_func == 'sqrt':
 				self.X = tf.sqrt(self.X)
 			elif self.pre_func == 'log':
-				self.X = log10(self.X)
+				self.X = log10(self.X + 1e-12)
 
+			# Apply nromalization
 			if self.normalize_input == '01':
 				self.normalization01
 			elif self.normalize_input == 'meanstd':

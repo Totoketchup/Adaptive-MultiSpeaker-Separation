@@ -54,8 +54,17 @@ class MyArgs(object):
 			'--hop_size', type=int, help='Hop size for the STFT', required=False, default=256)
 
 	def add_separator_args(self):
+		# Preprocessing parameters
 		self.parser.add_argument(
 			'--normalize_separator', help='Normalize the input of the separator', choices=['None','01', 'meanstd'], required=False, default='None')
+		self.parser.add_argument(
+			'--abs_input', help='Abs on the separator input', action="store_true")
+		self.parser.add_argument(
+			'--pre_func', help='#TODO', choices=['None','sqrt','log'], required=False, default='None')
+		self.parser.add_argument(
+			'--silence_mask_db', type=int, help='silence mask applied to the input under this threshold', required=False, default=0)
+
+		# Architecture params
 		self.parser.add_argument(
 			'--nb_layers', type=int, help='Number of stacked BLSTMs', required=False, default=3)
 		self.parser.add_argument(
@@ -63,28 +72,28 @@ class MyArgs(object):
 		self.parser.add_argument(
 			'--embedding_size', type=int, help='Size of the embedding output', required=False, default=40)
 		self.parser.add_argument(
+			'--no_normalize', help='Normalization of the embedded space', action="store_false")
+		
+		## KMEANS PARAMS
+		self.parser.add_argument(
 			'--nb_tries', type=int, help='Number of tries for KMEANS', required=False, default=10)
 		self.parser.add_argument(
 			'--nb_steps', type=int, help='Number of steps for KMEANS', required=False, default=10)
-		self.parser.add_argument(
-			'--no_normalize', help='Normalization of the embedded space', action="store_false")
-		self.parser.add_argument(
-			'--abs_input', help='tf.abs on the L41 input', action="store_true")
 		self.parser.add_argument(
 			'--beta_kmeans', type=float, help='Beta value for KMEANS - None = Hard KMEANS', required=False, default=None)
 		self.parser.add_argument(
 			'--threshold', type=float, help='Threshold for the silent bins', required=False, default=2.0)
 		self.parser.add_argument(
 			'--with_silence', help='Silence weak bins during KMEANS', action="store_true")
+		
+		# L41 Loss params
 		self.parser.add_argument(
 			'--silence_loss', help='Silence weak bins in the loss function', action="store_true")
 		self.parser.add_argument(
 			'--threshold_silence_loss', type=float, help='Threshold for the silent bins', required=False, default=2.0)
 		self.parser.add_argument(
 			'--function_mask', help='#TODO', choices=['None','linear', 'sqrt', 'square'], required=False, default='None')
-		self.parser.add_argument(
-			'--pre_func', help='#TODO', choices=['None','sqrt','log'], required=False, default='None')
-	
+		
 	def select_inferencer(self):
 		self.parser.add_argument(
 			'--model', help='#TODO', 
