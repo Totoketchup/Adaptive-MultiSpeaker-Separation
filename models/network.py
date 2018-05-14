@@ -411,7 +411,6 @@ class Separator(Network):
 
 			# Apply silent mask
 			if self.silent_threshold > 0:
-				print 'blop'
 				max_ = tf.reduce_max(self.X, [1,2], keep_dims=True)
 				mask = tf.cast(tf.less(max_/(self.X + 1e-12) , tf.pow(10., self.silent_threshold/20.)), tf.float32)
 				self.X = mask * self.X
@@ -422,7 +421,7 @@ class Separator(Network):
 			elif self.pre_func == 'log':
 				self.X = log10(self.X + 1e-12)
 
-			# Apply nromalization
+			# Apply normalization
 			if self.normalize_input == '01':
 				self.normalization01
 			elif self.normalize_input == 'meanstd':
