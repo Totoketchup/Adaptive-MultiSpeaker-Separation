@@ -12,7 +12,9 @@ from  sklearn.datasets import make_blobs
 class KMeans:
 
 	def __init__(self, nb_clusters, centroids_init=None, nb_tries=10, 
-		nb_iterations=10, input_tensor=None, latent_space_tensor=None, beta=None, threshold=2.5, assign_at_end=True):
+		nb_iterations=10, input_tensor=None, normalize_input=True,
+		latent_space_tensor=None, beta=None, 
+		threshold=2.5, assign_at_end=True):
 
 		self.nb_clusters = nb_clusters
 		self.nb_iterations = nb_iterations
@@ -35,11 +37,14 @@ class KMeans:
 				else:
 					self.X_in = input_tensor
 
-				# mean, _ = tf.nn.moments(self.X_in, axes=-1, keep_dims=True)
-				x_norm = tf.nn.l2_normalize(self.X_in, axis=-1)		
-				self.b = tf.shape(x_norm)[0]
-				self.X_original = tf.identity(x_norm)
-				self.X = tf.expand_dims(x_norm, 1)
+				if normalize_input:
+					x = tf.nn.l2_normalize(self.X_in, axis=-1)
+				else:
+					x = self.X_in
+
+				self.b = tf.shape(x)[0]
+				self.X_original = tf.identity(x)
+				self.X = tf.expand_dims(x, 1)
 				self.X = tf.tile(self.X, [1, self.nb_tries, 1, 1])
 
 				self.L = tf.shape(self.X)[-2]
