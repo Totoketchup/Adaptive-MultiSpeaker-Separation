@@ -480,14 +480,15 @@ class Separator(Network):
 
 		self.X = tf.abs(self.stfts)
 		self.X_input = tf.identity(self.X)
-		self.X_non_mix = tf.reshape(self.stfts_non_mix, [self.B, self.S, -1, self.F])
-		self.X_non_mix = tf.transpose(self.X_non_mix, [0, 2, 3, 1])
+		self.X_non_mix = tf.abs(tf.reshape(self.stfts_non_mix, [self.B, self.S, -1, self.F]))
 
-		argmax = tf.argmax(tf.abs(self.X_non_mix), axis=3)
+		non_mix = tf.transpose(self.X_non_mix, [0, 2, 3, 1])
+		argmax = tf.argmax(non_mix, axis=3)
 		self.y = tf.one_hot(argmax, self.S, self.a, self.b)
 
-		tf.summary.image('mask/true/1', tf.abs(tf.expand_dims(1.0 + self.y[:,:,:,0],3)))
-		tf.summary.image('mask/true/2', tf.abs(tf.expand_dims(1.0 + self.y[:,:,:,1],3)))
+		tf.summary.image('mask/true/1', tf.abs(tf.expand_dims(self.y[:,:,:,0],3)))
+		tf.summary.image('mask/true/2', tf.abs(tf.expand_dims(self.y[:,:,:,1],3)))
+
 
 	@scope
 	def normalization01(self):
@@ -559,6 +560,7 @@ class Separator(Network):
 		tf.summary.audio(name= "audio/output/reconstructed", tensor = tf.reshape(output, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
 
 		sdr_improvement, _ = self.sdr_improvement(self.x_non_mix, self.output)
+		self.sdr_imp = sdr_improvement
 		tf.summary.scalar('SDR_improvement', sdr_improvement)			
 
 		return output

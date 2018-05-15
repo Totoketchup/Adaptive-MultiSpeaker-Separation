@@ -157,8 +157,6 @@ class MyArgs(object):
 class Trainer(object):
 	def __init__(self, trainer_type, **kwargs):
 
-		# self.dataset = Dataset(**kwargs)
-
 		self.batch_size = kwargs['batch_size']
 		
 		additional_args = {
@@ -446,7 +444,6 @@ class STFT_Separator_Trainer(Trainer):
 			self.model = self.separator.load(self.args['model_folder'], self.args)
 			self.model.create_saver()
 			self.model.restore_model(self.args['model_folder'])
-			print 'RESTORED'
 			self.model.cost_model = self.model.cost
 			self.model.finish_construction()
 			self.model.optimize
@@ -464,6 +461,7 @@ class STFT_Separator_enhance_Trainer(Trainer):
 		
 	def build(self):
 		self.model = self.separator.load(self.args['model_folder'], self.args)
+		self.model.create_saver()
 		self.model.restore_model(self.args['model_folder'])
 		self.model.add_enhance_layer()
 		self.model.tensorboard_init()
