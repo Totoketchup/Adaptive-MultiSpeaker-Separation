@@ -135,7 +135,7 @@ class L41Model(Separator):
 		cost = tf.reduce_mean(cost, 3)
 
 		if self.sampling is not None:
-			cost += neg_sampl
+			cost += self.ns_rate * neg_sampl
 
 		# Average the cost over all batches
 		cost = tf.reduce_mean(cost, 0)

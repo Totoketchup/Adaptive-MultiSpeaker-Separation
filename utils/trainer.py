@@ -98,6 +98,8 @@ class MyArgs(object):
 			'--function_mask', help='#TODO', choices=['None','linear', 'sqrt', 'square'], required=False, default='None')
 		self.parser.add_argument(
 			'--sampling', type=int, help='#TODO', required=False, default=None)
+		self.parser.add_argument(
+			'--ns_rate', type=float, help='#TODO', required=False, default=0.1)
 		
 	def select_inferencer(self):
 		self.parser.add_argument(
