@@ -96,6 +96,8 @@ class MyArgs(object):
 			'--threshold_silence_loss', type=float, help='Threshold for the silent bins', required=False, default=2.0)
 		self.parser.add_argument(
 			'--function_mask', help='#TODO', choices=['None','linear', 'sqrt', 'square'], required=False, default='None')
+		self.parser.add_argument(
+			'--sampling', type=int, help='#TODO', required=False, default=None)
 		
 	def select_inferencer(self):
 		self.parser.add_argument(

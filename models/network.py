@@ -342,6 +342,7 @@ class Separator(Network):
 		self.with_silence = kwargs['with_silence']
 		self.nb_tries = kwargs['nb_tries']
 		self.nb_steps = kwargs['nb_steps']
+		self.sampling = kwargs['sampling']
 
 		self.graph = tf.get_default_graph()
 
