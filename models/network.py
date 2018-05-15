@@ -631,7 +631,7 @@ class Separator(Network):
 		self.enhanced_masks = tf.identity(y, name='enhanced_masks')
 		
 		tf.summary.image('mask/predicted/enhanced_soft', tf.reshape(tf.transpose(y, [0,2,1]), [self.B*self.S, -1, self.F, 1]))
-		y = y * tf.reshape(self.X, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
+		y = y * tf.reshape(self.X_input, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
 
 		# y = y * tf.reshape(self.X, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
 		self.cost_in = y
