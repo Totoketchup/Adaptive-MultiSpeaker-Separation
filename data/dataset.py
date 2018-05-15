@@ -539,6 +539,7 @@ class TFDataset(object):
 		self.TRAIN = 'train'
 		self.TEST = 'test'
 		self.VALID = 'valid'
+		self.TEST_OTHER = 'test_other'
 		self.init_chunk = kwargs['chunk_size']
 		N = kwargs['nb_speakers']
 
@@ -549,12 +550,14 @@ class TFDataset(object):
 				train_M = lambda i : self.get_data('train_M.tfrecords', i)
 				valid_M = lambda i : self.get_data('valid_M.tfrecords', i) 
 				test_M = lambda i : self.get_data('test_M.tfrecords', i)
+				test_other_M = lambda i : self.get_data('test_other_M.tfrecords', i)
 
 			# FEMALES
 			if 'F' in kwargs['sex']:
 				train_F = lambda i : self.get_data('train_F.tfrecords', i)
 				valid_F = lambda i : self.get_data('valid_F.tfrecords', i)
 				test_F = lambda i : self.get_data('test_F.tfrecords', i)
+				test_other_F = lambda i : self.get_data('test_other_F.tfrecords', i)
 
 			# MIXING
 			if 'M' and 'F' in kwargs['sex']:
@@ -562,24 +565,28 @@ class TFDataset(object):
 					train_list = tuple([train_M(i) if i%2 == 0 else train_F(i) for i in range(N)])
 					valid_list = tuple([valid_M(i) if i%2 == 0 else valid_F(i) for i in range(N)])
 					test_list = tuple([test_M(i) if i%2 == 0 else test_F(i) for i in range(N)])
+					test_other_list = tuple([test_other_M(i) if i%2 == 0 else test_other_F(i) for i in range(N)])
 				else:
 					train_comb = [[train_M(j+N*i) for j in range(i)] + [train_F(k+N*i) for k in range(N-i)] for i in range(N+1)] 
 					valid_comb = [[valid_M(j+N*i) for j in range(i)] + [valid_F(k+N*i) for k in range(N-i)] for i in range(N+1)] 
 					test_comb = [[test_M(j+N*i) for j in range(i)] + [test_F(k+N*i) for k in range(N-i)] for i in range(N+1)]
-
+					test_other_comb = [[test_other_M(j+N*i) for j in range(i)] + [test_other_F(k+N*i) for k in range(N-i)] for i in range(N+1)]
 			elif 'M' in kwargs['sex']:
 				train_list = tuple([train_M(i) for i in range(N)])
 				valid_list = tuple([valid_M(i) for i in range(N)])
 				test_list = tuple([test_M(i) for i in range(N)])
+				test_other_list = tuple([test_other_M(i) for i in range(N)])
 			else:
 				train_list = tuple([train_F(i) for i in range(N)])
 				valid_list = tuple([valid_F(i) for i in range(N)])
 				test_list = tuple([test_F(i) for i in range(N)])
-			
+				test_other_list = tuple([test_other_F(i) for i in range(N)])
+
 			if self.no_random_picking:
 				train_mix = tf.data.TFRecordDataset.zip(train_list)
 				valid_mix = tf.data.TFRecordDataset.zip(valid_list)
 				test_mix = tf.data.TFRecordDataset.zip(test_list)
+				test_other_mix = tf.data.TFRecordDataset.zip(test_other_list)
 				
 				train_mix = train_mix.map(mix)
 				train_mix = train_mix.filter(filtering)
@@ -596,17 +603,25 @@ class TFDataset(object):
 				test_mix = test_mix.batch(batch_size)
 				test_mix = test_mix.prefetch(1)
 
+				test_other_mix = test_other_mix.map(mix)
+				test_other_mix = test_other_mix.filter(filtering)
+				test_other_mix = test_other_mix.batch(batch_size)
+				test_other_mix = test_other_mix.prefetch(1)
+
 				self.training_iterator = train_mix.make_initializable_iterator()
 				self.validation_iterator = valid_mix.make_initializable_iterator()
 				self.test_iterator = test_mix.make_initializable_iterator()
+				self.test_other_iterator = test_other_mix.make_initializable_iterator()
 
 				self.training_initializer = self.training_iterator.initializer
 				self.validation_initializer = self.validation_iterator.initializer
 				self.test_initializer = self.test_iterator.initializer
+				self.test_other_initializer = self.test_other_iterator.initializer
 			else:
 				self.training_iterator, self.training_initializer = process(train_comb, batch_size)
 				self.validation_iterator, self.validation_initializer = process(valid_comb, batch_size)
 				self.test_iterator, self.test_initializer = process(test_comb, batch_size)
+				self.test_other_iterator, self.test_other_initializer = process(test_other_comb, batch_size)
 
 			self.handle = tf.placeholder(tf.string, shape=[])
 			iterator = tf.data.Iterator.from_string_handle(
@@ -617,11 +632,11 @@ class TFDataset(object):
 			self.training_handle = sess.run(self.training_iterator.string_handle())
 			self.validation_handle = sess.run(self.validation_iterator.string_handle())
 			self.test_handle = sess.run(self.test_iterator.string_handle())
+			self.test_other_handle = sess.run(self.test_other_iterator.string_handle())
 
 			if kwargs['dataset_normalize']:
 				self.next_mix, self.next_non_mix, self.next_ind, meanstd = self.next_element
 				self.meanstd = tf.identity(meanstd, name='meanstd')
-				print self.meanstd
 			else:
 				self.next_mix, self.next_non_mix, self.next_ind = self.next_element
 
@@ -632,6 +647,8 @@ class TFDataset(object):
 			return self.validation_handle
 		elif split == 'test':
 			return self.test_handle
+		elif split == 'test_other':
+			return self.test_other_handle
 
 	def get_initializer(self, split):
 		if split == 'train':
@@ -640,6 +657,8 @@ class TFDataset(object):
 			return self.validation_initializer
 		elif split == 'test':
 			return self.test_initializer
+		elif split == 'test_other':
+			return self.test_other_initializer
 
 	def length(self, split):
 		count = 0
