@@ -480,10 +480,9 @@ class Separator(Network):
 
 		self.X = tf.abs(self.stfts)
 		self.X_input = tf.identity(self.X)
-		self.X_non_mix = tf.abs(tf.reshape(self.stfts_non_mix, [self.B, self.S, -1, self.F]))
+		self.X_non_mix =  tf.transpose(tf.abs(tf.reshape(self.stfts_non_mix, [self.B, self.S, -1, self.F])), [0,2,3,1])
 
-		non_mix = tf.transpose(self.X_non_mix, [0, 2, 3, 1])
-		argmax = tf.argmax(non_mix, axis=3)
+		argmax = tf.argmax(self.X_non_mix, axis=3)
 		self.y = tf.one_hot(argmax, self.S, self.a, self.b)
 
 		tf.summary.image('mask/true/1', tf.abs(tf.expand_dims(self.y[:,:,:,0],3)))
