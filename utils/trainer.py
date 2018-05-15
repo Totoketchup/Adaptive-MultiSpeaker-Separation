@@ -442,9 +442,20 @@ class STFT_Separator_Trainer(Trainer):
 		super(STFT_Separator_Trainer, self).__init__(trainer_type=name, **kwargs)
 
 	def build(self):
-		self.model = self.separator(**self.args)
-		self.model.tensorboard_init()
-		self.model.init_all()		
+		if self.args['model_folder'] is not None:
+			self.model = self.separator.load(self.args['model_folder'], self.args)
+			self.model.create_saver()
+			self.model.restore_model(self.args['model_folder'])
+			print 'RESTORED'
+			self.model.cost_model = self.model.cost
+			self.model.finish_construction()
+			self.model.optimize
+			self.model.tensorboard_init()
+			self.model.initialize_non_init()
+		else:
+			self.model = self.separator(**self.args)
+			self.model.tensorboard_init()
+			self.model.init_all()		
 
 class STFT_Separator_enhance_Trainer(Trainer):
 	def __init__(self, separator, name, **kwargs):
