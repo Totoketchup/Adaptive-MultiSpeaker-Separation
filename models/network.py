@@ -342,8 +342,11 @@ class Separator(Network):
 		self.with_silence = kwargs['with_silence']
 		self.nb_tries = kwargs['nb_tries']
 		self.nb_steps = kwargs['nb_steps']
+
+		# Negative Sampling for L41
 		self.sampling = kwargs['sampling']
 		self.ns_rate = kwargs['ns_rate']
+		self.ns_method = kwargs['ns_method']
 
 		self.graph = tf.get_default_graph()
 
