@@ -100,7 +100,9 @@ class MyArgs(object):
 			'--sampling', type=int, help='#TODO', required=False, default=None)
 		self.parser.add_argument(
 			'--ns_rate', type=float, help='#TODO', required=False, default=0.1)
-		
+		self.parser.add_argument(
+			'--ns_method', help='#TODO', choices=['random', 'k-nearest'], required=False, default='random')
+
 	def select_inferencer(self):
 		self.parser.add_argument(
 			'--model', help='#TODO', 

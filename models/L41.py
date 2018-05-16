@@ -51,7 +51,7 @@ class L41Model(Separator):
 		"""
 
 		# Get the embedded T-F vectors from the network
-		embedding = self.prediction
+		embedding = self.prediction # [B, T, F, E]
 
 	
 
@@ -67,54 +67,82 @@ class L41Model(Separator):
 			# Gathering the speaker_vectors [|S|, E]
 			Vspeakers = tf.gather_nd(speaker_vectors, I) # [B, S, E]
 		else:
+
+			I = tf.expand_dims(self.I, axis=2)
+					 
+			# Gathering the speaker_vectors [B, S, E]
+			Vspeakers = tf.gather_nd(speaker_vectors, I)
 			# Get index of dominant speaker
 			dominant = tf.argmax(self.y, -1) # [B, T, F]
 
-			# For each speaker vector get the K-neighbors
-			with tf.name_scope('K-Neighbors'):
-				I = tf.expand_dims(self.I, axis=2)
-				 
-				# Gathering the speaker_vectors [B, S, E]
-				Vspeakers = tf.gather_nd(speaker_vectors, I)
-				
-				# [B, S, 1, E]
-				Vspeakers_ext = tf.expand_dims(Vspeakers, 2)
+			# [B, TF]
+			dominant = tf.reshape(dominant, [self.B, -1, 1])
 
-				# [1, 1, |S|, E]
-				speaker_vectors_ext = tf.expand_dims(tf.expand_dims(speaker_vectors, 0), 0)
-
-				# dot product # [B, S, |S|]
-				prod_dot = tf.reduce_sum(Vspeakers_ext * speaker_vectors_ext, 3)
-				
-				# K neighbors [B, S, K]
-				_, k_neighbors = tf.nn.top_k(prod_dot, k=self.sampling, sorted=False)
-
-				k_neighbors = tf.reshape(k_neighbors, [-1, 1])
-
-				# K neighbors vectors [B, S, K, E]
-				k_neighbors_vectors = tf.gather_nd(speaker_vectors, k_neighbors)
-				k_neighbors_vectors = tf.reshape(k_neighbors_vectors, [self.B, self.S, self.sampling, self.embedding_size])
-
-				# [B, TF]
-				dominant = tf.reshape(dominant, [self.B, -1, 1])
-				
-				batch_range = tf.tile(tf.reshape(tf.range(tf.cast(self.B, tf.int64), dtype=tf.int64), shape=[self.B, 1, 1]), [1, tf.shape(dominant)[1], 1])
-				indices = tf.concat([batch_range, dominant], axis = 2)
-
-				# Gathered K-nearest neighbors on each tf bins for the dominant
-				# [B, T, F, K, E]
-				k_neighbors_vectors_tf = tf.reshape(tf.gather_nd(k_neighbors_vectors, indices)
-								,[self.B, -1, self.F, self.sampling, self.embedding_size])
-				
-
-				# []
+			# []
 			dominant_speaker = tf.gather(self.I, dominant) # [B, TF]
 			dominant_speaker_vector = tf.gather_nd(tf.expand_dims(speaker_vectors, 1), dominant_speaker) # [B, TF, E]
 			dominant_speaker_vector = tf.reshape(dominant_speaker_vector, [self.B, -1, self.F, self.embedding_size])
 			dominant_speaker_vector = tf.expand_dims(dominant_speaker_vector, 3) # [B, T, F, 1, E]
 
+
+			if self.ns_method == 'k-nearest':
+				# For each speaker vector get the K-neighbors
+				with tf.name_scope('K-Neighbors'):
+					
+					# [B, S, 1, E]
+					Vspeakers_ext = tf.expand_dims(Vspeakers, 2)
+
+					# [1, 1, |S|, E]
+					speaker_vectors_ext = tf.expand_dims(tf.expand_dims(speaker_vectors, 0), 0)
+
+					# dot product # [B, S, |S|]
+					prod_dot = tf.reduce_sum(Vspeakers_ext * speaker_vectors_ext, 3)
+					
+					# K neighbors [B, S, K]
+					_, k_neighbors = tf.nn.top_k(prod_dot, k=self.sampling, sorted=False)
+
+					k_neighbors = tf.reshape(k_neighbors, [-1, 1])
+
+					# K neighbors vectors [B, S, K, E]
+					k_neighbors_vectors = tf.gather_nd(speaker_vectors, k_neighbors)
+					k_neighbors_vectors = tf.reshape(k_neighbors_vectors, [self.B, self.S, self.sampling, self.embedding_size])
+
+					batch_range = tf.tile(tf.reshape(tf.range(tf.cast(self.B, tf.int64), dtype=tf.int64), shape=[self.B, 1, 1]), [1, tf.shape(dominant)[1], 1])
+					indices = tf.concat([batch_range, dominant], axis = 2)
+
+					# Gathered K-nearest neighbors on each tf bins for the dominant
+					# [B, T, F, K, E]
+					vectors_tf = tf.reshape(tf.gather_nd(k_neighbors_vectors, indices)
+									,[self.B, -1, self.F, self.sampling, self.embedding_size])
+			elif self.ns_method == 'random':
+
+				# Select randomly K other vectors, except the one in the batch
+				with tf.name_scope('Random'):
+
+
+					ext_I = tf.cast(tf.expand_dims(self.I, 1), tf.int32)
+					ranges = tf.cast(tf.tile(tf.reshape(tf.range(self.num_speakers), [1, self.num_speakers, 1]), [self.B, 1, 1]), tf.int32)
+
+					# [B, S] boolean mask
+					indices_available = tf.logical_not(tf.reduce_any(tf.equal(ext_I, ranges), -1))
+					
+					indices_available = tf.boolean_mask(tf.squeeze(ranges), indices_available)
+					# [B, |S| - S]
+					indices_available = tf.reshape(indices_available, [self.B, self.num_speakers - self.S])
+					
+					shuffled_indices = tf.map_fn(lambda x : tf.random_shuffle(x, seed=42) , indices_available)
+					rand_I = shuffled_indices[:, :self.sampling] # [B, K]
+
+					rand_I = tf.expand_dims(rand_I, 2) # [B, K, 1]
+
+					# Gathering the speaker_vectors [B, K, E]
+					Vspeakers_other = tf.gather_nd(speaker_vectors, rand_I)
+					vectors_tf = tf.reshape(Vspeakers_other, [self.B, 1 , 1, self.sampling, self.embedding_size])
+
 			# Additional term for the loss
-			doto = tf.reduce_sum(k_neighbors_vectors_tf * dominant_speaker_vector, -1)
+			embedding_ext = tf.expand_dims(embedding, 3)
+
+			doto = tf.reduce_sum(vectors_tf * embedding_ext, -1)
 			c = -tf.log(tf.nn.sigmoid(tf.negative(doto))) # [B, T, F, K]
 			neg_sampl = tf.reduce_mean(c, -1) # [B, T, F]
 
