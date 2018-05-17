@@ -113,7 +113,7 @@ class Adapt(Network):
 		if self.with_max_pool:
 			self.X = tf.nn.conv2d(input_front, self.conv_filter, strides=[1, 1, 1, 1], padding="SAME", name='Conv_STFT')
 			self.y, self.argmax = tf.nn.max_pool_with_argmax(self.X, [1, 1, self.max_pool_value, 1], 
-										strides=[1, 1, self.max_pool_value, 1], padding="VALID", name='output')
+										strides=[1, 1, self.hop_size, 1], padding="VALID", name='output')
 			print self.argmax
 		elif self.with_average_pool:
 			self.X = tf.nn.conv2d(input_front, self.conv_filter, strides=[1, 1, 1, 1], padding="SAME", name='Conv_STFT')
