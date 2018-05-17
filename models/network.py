@@ -544,13 +544,13 @@ class Separator(Network):
 		separated = tf.reshape(separated, [self.B, -1, self.F, self.S])
 		separated = tf.transpose(separated, [0,3,1,2]) # [B, S, T, F]
 		separated = tf.reshape(separated, [self.B*self.S, -1, self.F, 1]) # [BS, T, F, 1]
-
+		self.separated = separated
 		return separated
 
 	@scope
 	def postprocessing(self):
 
-		stft = tf.reshape(self.separate, [self.B*self.S, -1, self.F])
+		stft = tf.reshape(self.separated, [self.B*self.S, -1, self.F])
 		
 		stft = tf.complex(stft, 0.0*stft) * tf.exp(tf.complex(0.0, tf.angle(self.stfts)))
 
@@ -638,10 +638,11 @@ class Separator(Network):
 		tf.summary.image('mask/predicted/enhanced_soft', tf.reshape(tf.transpose(y, [0,2,1]), [self.B*self.S, -1, self.F, 1]))
 		y = y * tf.reshape(self.X_input, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
 
-		# y = y * tf.reshape(self.X, [self.B, -1, 1]) # Apply enhanced filters # [B, TF, S] -> [BS, T, F, 1]
 		self.cost_in = y
 
 		y =  tf.transpose(y, [0, 2, 1])
+		self.separated = y
+
 		return tf.reshape(y , [self.B*self.S, -1, self.F, 1])
 
 	@scope

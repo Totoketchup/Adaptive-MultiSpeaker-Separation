@@ -33,6 +33,7 @@ class Adapt(Network):
 			self.separation = kwargs['separation']
 			self.with_max_pool = kwargs['with_max_pool']
 			self.with_average_pool = kwargs['with_average_pool']
+			self.hop_size = kwargs['hop_size']
 
 		with tf.get_default_graph().as_default():
 
@@ -116,9 +117,9 @@ class Adapt(Network):
 			print self.argmax
 		elif self.with_average_pool:
 			self.X = tf.nn.conv2d(input_front, self.conv_filter, strides=[1, 1, 1, 1], padding="SAME", name='Conv_STFT')
-			self.y = tf.layers.average_pooling2d(self.X, (1, self.max_pool_value), strides=(1, self.max_pool_value), name='output')		
+			self.y = tf.layers.average_pooling2d(self.X, (1, self.max_pool_value), strides=(1, self.hop_size), name='output')		
 		else:
-			self.y = tf.nn.conv2d(input_front, self.conv_filter, strides=[1, 1, self.max_pool_value, 1], padding="SAME", name='Conv_STFT')
+			self.y = tf.nn.conv2d(input_front, self.conv_filter, strides=[1, 1, self.hop_size, 1], padding="SAME", name='Conv_STFT')
 
 		# Reshape to Btot batches of T x N images with 1 channel
 		# [Btot, 1, T_pool, N] -> [Btot, T-pool, N, 1]
@@ -218,7 +219,7 @@ class Adapt(Network):
 
 			output_shape = [self.B*self.S, 1, self.T, self.N]
 
-			output = unpool(input_tensor, argmax_mix, ksize=[1, 1, self.max_pool_value, 1], output_shape= output_shape, scope='unpool')
+			output = unpool(input_tensor, argmax_mix, ksize=[1, 1, self.max_pool_value, 1], output_shape=output_shape, scope='unpool')
 			output = tf.reshape(output, [self.B*self.S, 1, self.T, self.N])
 
 		elif self.with_average_pool:

@@ -133,6 +133,8 @@ class MyArgs(object):
 			'--with_max_pool', help='Use Max pooling and not hop', action="store_true")
 		self.parser.add_argument(
 			'--with_average_pool', help='Use Average pooling and not hop', action="store_true")
+		self.parser.add_argument(
+			'--hop_size', type=int, help='Hop size for the STFT', required=False, default=256)
 
 		#Loss arguments
 		self.parser.add_argument(
