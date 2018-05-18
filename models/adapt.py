@@ -249,19 +249,16 @@ class Adapt(Network):
 		return output
 
 	@scope
+	@scope
 	def cost(self):
 		# Definition of cost for Adapt model
 		# Regularisation
-		# shape = [B_tot, T, N]		
-		# regularization = tf.nn.l2_loss(self.conv_filter_2) + tf.nn.l2_loss(self.conv_filter)
-		
-		# non_negativity_1 = tf.reduce_sum(tf.square(tf.where(self.conv_filter < 0, self.conv_filter, tf.zeros_like(self.conv_filter))))
-		# non_negativity_2 = tf.reduce_sum(tf.square(tf.where(self.conv_filter_2 < 0, self.conv_filter_2, tf.zeros_like(self.conv_filter_2))))
-		# nn = 0.5 * (non_negativity_1 + non_negativity_2)
-		neg = tf.square(tf.where(self.front < 0, self.front, tf.zeros_like(self.front)))
-		nn = 10*tf.reduce_mean(tf.reduce_sum(neg, [1,2,3]))
-
+		# shape = [B_tot, T, N]	
 		regularization = self.l * (tf.nn.l2_loss(self.conv_filter_2)+ tf.nn.l2_loss(self.conv_filter))
+	
+		# Non-Negativity Loss	
+		neg = tf.square(tf.where(self.front < 0, self.front, tf.zeros_like(self.front)))
+		nn = self.non_negativity*tf.reduce_mean(tf.reduce_sum(neg, [1,2,3]))
 
 
 		# input_shape = [B, S, L]
@@ -283,8 +280,6 @@ class Adapt(Network):
 				loss = sdr
 			else:
 				loss = l2 + sdr
-
-			# loss = loss + nn
 
 		else:
 			# Compute loss over all possible permutations
@@ -330,6 +325,8 @@ class Adapt(Network):
 			cost_value += self.l * regularization 
 		if self.overlap_coef != 0.0:
 			cost_value += self.overlap_coef * self.overlapping_constraint
+		if self.non_negativity is not None:
+			cost_value += self.non_negativity*nn
 
 		variable_summaries(self.conv_filter_2)
 
@@ -339,7 +336,7 @@ class Adapt(Network):
 			tf.summary.scalar('l2_loss', l2)
 			tf.summary.scalar('SDR', sdr)
 			tf.summary.scalar('SDR_improvement', sdr_improvement)			
-			tf.summary.scalar('Non negativity loss', nn)			
+			tf.summary.scalar('Non negativity loss', self.non_negativity*nn)			
 			tf.summary.scalar('sparsity', tf.reduce_mean(self.p_hat))
 			tf.summary.scalar('sparsity_loss', self.beta * self.sparse_constraint)
 			tf.summary.scalar('L2_reg', self.l * regularization)

@@ -148,6 +148,9 @@ class MyArgs(object):
 		self.parser.add_argument(
 			'--overlap_value', type=float, help='Coefficient for Overlapping loss', required=False, default=0.1)
 		self.parser.add_argument(
+			'--non_negativity', type=float, help='Coefficient for Non-Negativity loss', required=False, default=0.0)
+		
+		self.parser.add_argument(
 			'--loss', choices=['l2', 'sdr', 'l2+sdr', 'sdr+l2'], required=False, default='sdr')
 		self.parser.add_argument(
 			'--separation', choices=['perfect', 'mask'], required=False, default='perfect')
