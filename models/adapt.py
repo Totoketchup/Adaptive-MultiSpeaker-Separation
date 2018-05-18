@@ -114,10 +114,9 @@ class Adapt(Network):
 			self.X = tf.nn.conv2d(input_front, self.conv_filter, strides=[1, 1, 1, 1], padding="SAME", name='Conv_STFT')
 			self.y, self.argmax = tf.nn.max_pool_with_argmax(self.X, [1, 1, self.max_pool_value, 1], 
 										strides=[1, 1, self.hop_size, 1], padding="VALID", name='output')
-			print self.argmax
 		elif self.with_average_pool:
 			self.X = tf.nn.conv2d(input_front, self.conv_filter, strides=[1, 1, 1, 1], padding="SAME", name='Conv_STFT')
-			self.y = tf.layers.average_pooling2d(self.X, (1, self.max_pool_value), strides=(1, self.hop_size), name='output')		
+			self.y = tf.layers.average_pooling2d(self.X, (1, self.max_pool_value), strides=(1, self.max_pool_value), name='output')		
 		else:
 			self.y = tf.nn.conv2d(input_front, self.conv_filter, strides=[1, 1, self.hop_size, 1], padding="SAME", name='Conv_STFT')
 
@@ -234,7 +233,7 @@ class Adapt(Network):
 		self.conv_filter_2 = tf.reshape(tf.abs(tf.expand_dims(self.window_filter_2,1))*self.bases_2 , [1, self.window, 1, self.N], name='filters')# self.conv_filter_2 = tf.Variable(self.conv_filter.initialized_value(), name="filters_back")
 
 		if not (self.with_max_pool or self.with_average_pool):
-			strides = [1, 1, self.max_pool_value, 1]
+			strides = [1, 1, self.hop_size, 1]
 		else:
 			strides = [1, 1, 1, 1]
 
