@@ -34,6 +34,7 @@ class Adapt(Network):
 			self.with_max_pool = kwargs['with_max_pool']
 			self.with_average_pool = kwargs['with_average_pool']
 			self.hop_size = kwargs['hop_size']
+			self.non_negativity = kwargs['non_negativity']
 
 		with tf.get_default_graph().as_default():
 
@@ -246,9 +247,63 @@ class Adapt(Network):
 
 		sdr_improvement, sdr = self.sdr_improvement(self.x_non_mix, output)
 		self.sdr_imp = sdr_improvement
+
+
 		return output
 
 	@scope
+	def enhance(self):
+
+		input_enhance = self.output # Take the reconstructed audio as input
+		# shape [B, S, L]
+
+		x_tile  = tf.tile(tf.expand_dims(self.x_mix, 1), [1, self.S, 1]) # [B, L] -> [B, S, L]
+
+		z = tf.concat([tf.expand_dims(x_tile, 2), tf.expand_dims(input_enhance, 2)], axis=2)
+		
+		z = tf.reshape(z, [self.B*self.S, 2, self.L, 1]) # B*S images of [2, L] with 1 channel
+
+		z = tf.layers.conv2d(z, 32, [1, 8], activation=tf.nn.relu, padding='same') # [2,L, 256]
+		print z
+		z = tf.layers.conv2d(z, 32, [2, 8], activation=tf.nn.relu, padding='same') # [2, L, 256]
+		print z
+		z = tf.layers.conv2d(z, 1, [1, 8], activation=tf.nn.relu, padding='same') # [2, L, 256]
+		print z
+		# z = tf.layers.conv2d(z, 1, [1, 1024], activation=tf.nn.relu) # [2, L, 1]
+		z = tf.layers.average_pooling2d(z, [2, 1], strides=[1, 1])
+		z = tf.reshape(z, [self.B, self.S, self.L])
+
+		return z
+
+	@scope
+	def enhance_cost(self):
+		perms = list(permutations(range(self.S))) # ex with 3: [0, 1, 2], [0, 2 ,1], [1, 0, 2], [1, 2, 0], [2, 1, 0], [2, 0, 1]
+		length_perm = len(perms)
+		perms = tf.reshape(tf.constant(perms), [1, length_perm, self.S, 1])
+		perms = tf.tile(perms, [self.B, 1, 1, 1])
+
+		batch_range = tf.tile(tf.reshape(tf.range(self.B, dtype=tf.int32), shape=[self.B, 1, 1, 1]), [1, length_perm, self.S, 1])
+		perm_range = tf.tile(tf.reshape(tf.range(length_perm, dtype=tf.int32), shape=[1, length_perm, 1, 1]), [self.B, 1, self.S, 1])
+		indicies = tf.concat([batch_range, perm_range, perms], axis=3)
+
+		# [B, P, S, L]
+		permuted_back = tf.gather_nd(tf.tile(tf.reshape(self.enhance, [self.B, 1, self.S, self.L]), [1, length_perm, 1, 1]), indicies) # 
+
+		X_nmr = tf.reshape(self.x_non_mix, [self.B, 1, self.S, self.L])
+
+		l2 = tf.reduce_sum(tf.square(X_nmr - permuted_back), axis=-1) # L2^2 norm
+		l2 = tf.reduce_min(l2, axis=1) # Get the minimum over all possible permutations : B S
+		l2 = tf.reduce_sum(l2, -1)
+		l2 = tf.reduce_mean(l2, -1)
+
+		sdr_improvement, sdr = self.sdr_improvement(X_nmr, self.enhance, True)
+		self.sdr_imp = sdr_improvement
+
+		tf.summary.scalar('SDR_improvement', sdr_improvement)			
+		tf.summary.scalar('cost', l2)			
+
+		return l2
+
 	@scope
 	def cost(self):
 		# Definition of cost for Adapt model
