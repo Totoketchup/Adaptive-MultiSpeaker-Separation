@@ -294,7 +294,7 @@ class Network(object):
 		params_path = os.path.join(path, 'params')
 		with open(params_path) as f:
 			args = json.load(f)
-			keys_to_update = ['learning_rate','epochs','batch_size', 'chunk_size', 'nb_speakers'
+			keys_to_update = ['learning_rate','epochs','batch_size', 'chunk_size', 'nb_speakers',
 			'regularization','overlap_coef','loss','beta','model_folder', 'type','pretraining', 'with_silence',
 			'beta_kmeans', 'nb_tries', 'nb_steps', 'threshold']
 			to_modify = { key: modified_args[key] for key in keys_to_update if key in modified_args.keys() }
