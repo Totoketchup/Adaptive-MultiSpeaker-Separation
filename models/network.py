@@ -489,10 +489,6 @@ class Separator(Network):
 		argmax = tf.argmax(self.X_non_mix, axis=3)
 		self.y = tf.one_hot(argmax, self.S, self.a, self.b)
 
-		tf.summary.image('mask/true/1', tf.abs(tf.expand_dims(self.y[:,:,:,0],3)))
-		tf.summary.image('mask/true/2', tf.abs(tf.expand_dims(self.y[:,:,:,1],3)))
-
-
 	@scope
 	def normalization01(self):
 		self.min_ = tf.reduce_min(self.X, axis=[1,2], keep_dims=True)
@@ -669,13 +665,6 @@ class Separator(Network):
 		cost = tf.reduce_sum(cost, axis=-1) # Sum among all speakers
 
 		cost = tf.reduce_min(cost, axis=-1) # Take the minimum permutation error
-
-		# training_vars = tf.trainable_variables()
-		# reg = []
-		# for var in training_vars:
-		# 	if 'enhance' in var.name:
-		# 		reg.append(tf.nn.l2_loss(var))
-		# reg = sum(reg)
 
 		cost = tf.reduce_mean(cost) #+ self.adapt_front.l * reg
 
