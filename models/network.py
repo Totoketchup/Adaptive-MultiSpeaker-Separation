@@ -641,7 +641,7 @@ class Separator(Network):
 			sep_and_in = (sep_and_in - mean) / tf.sqrt(var)
 
 		layers = [
-			BLSTM(self.args['layer_size_enhance'], 
+			BLSTM(self.args['layer_size_enhance'], drop_val=self.args["recurrent_dropout_enhance"],
 				'BLSTM_'+str(i)) for i in range(self.args['nb_layers_enhance'])
 		]
 

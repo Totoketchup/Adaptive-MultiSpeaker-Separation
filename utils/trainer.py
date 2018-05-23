@@ -125,7 +125,9 @@ class MyArgs(object):
 			'--layer_size_enhance', type=int, help='Size of hidden layers in BLSTM', required=False, default=600)
 		self.parser.add_argument(
 			'--nonlinearity', help='Nonlinearity used in output', choices=['tanh', 'softmax', 'None'], required=False, default='softmax')
-
+		self.parser.add_argument(
+			'--recurrent_dropout_enhance', type=float, help='Dropout for the recurrent layers', required=False, default=0.0)
+		
 	def add_adapt_args(self):
 		#Preprocess arguments
 		self.parser.add_argument(
