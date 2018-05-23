@@ -88,7 +88,8 @@ class MyArgs(object):
 			'--threshold', type=float, help='Threshold for the silent bins', required=False, default=2.0)
 		self.parser.add_argument(
 			'--with_silence', help='Silence weak bins during KMEANS', action="store_true")
-		
+		self.parser.add_argument(
+			'--end_assign', help='Assign the silent bins', action="store_true")
 		# L41 Loss params
 		self.parser.add_argument(
 			'--silence_loss', help='Silence weak bins in the loss function', action="store_true")

@@ -553,7 +553,7 @@ class Separator(Network):
 		# S speakers to separate, give self.X in input not to consider silent bins
 		kmeans = KMeans(nb_clusters=self.S, nb_tries=self.nb_tries, nb_iterations=self.nb_steps, 
 			input_tensor=input_kmeans, beta=self.beta, latent_space_tensor=tf.abs(self.X_input) if self.with_silence else None,
-			threshold=self.threshold)
+			threshold=self.threshold, assign_at_end=self.args['end_assign'])
 
 		# Extract labels of each bins TF_i - labels [B, TF, 1]
 		_ , labels = kmeans.network
