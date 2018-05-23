@@ -642,7 +642,7 @@ class Separator(Network):
 
 		layers = [
 			BLSTM(self.args['layer_size_enhance'], drop_val=self.args["recurrent_dropout_enhance"],
-				'BLSTM_'+str(i)) for i in range(self.args['nb_layers_enhance'])
+				 name='BLSTM_'+str(i)) for i in range(self.args['nb_layers_enhance'])
 		]
 
 		layers += [
