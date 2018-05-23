@@ -103,6 +103,11 @@ class MyArgs(object):
 		self.parser.add_argument(
 			'--ns_method', help='#TODO', choices=['random', 'k-nearest'], required=False, default='random')
 
+		# Adding new architectures
+		self.parser.add_argument(
+			'--add_dilated', help='Add Convolutional Dilated Network before the BLSTMs', action="store_true")
+		
+
 	def select_inferencer(self):
 		self.parser.add_argument(
 			'--model', help='#TODO', 

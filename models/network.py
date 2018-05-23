@@ -347,6 +347,9 @@ class Separator(Network):
 		self.ns_rate = kwargs['ns_rate']
 		self.ns_method = kwargs['ns_method']
 
+		# Adding architectures
+		self.add_dilated = kwargs['add_dilated']
+
 		self.graph = tf.get_default_graph()
 
 		self.plugged = plugged
@@ -439,6 +442,9 @@ class Separator(Network):
 				mask = tf.cast(tf.less(max_ - self.X , self.silent_threshold/20.), tf.float32)
 				self.X = mask * self.X
 
+			if self.add_dilated:
+				self.dilated
+
 			self.prediction
 			#TODO TO IMPROVE !
 			if self.args['model_folder'] is None:
@@ -511,6 +517,33 @@ class Separator(Network):
 	@scope
 	def prediction(self):
 		pass
+
+	@scope
+	def dilated(self):
+
+		X_in = tf.expand_dims(self.X, 3)
+		size_t = (self.args['chunk_size'] - (self.args['window_size'] - self.args['hop_size'])) / self.args['hop_size']
+		size_f = self.args['window_size']//2 + 1
+		
+		X_in = tf.reshape(X_in, [-1, size_t, size_f, 1])
+
+		f = 128
+		y = tf.contrib.layers.conv2d(X_in, f, [1, 7], rate=[1,1])
+		y = tf.contrib.layers.conv2d(y, f, [7, 1], rate=[1,1])
+		y = tf.contrib.layers.conv2d(y, f, [5, 5], rate=[4,1])
+		y = tf.contrib.layers.conv2d(y, f, [5, 5], rate=[8,1])
+		y = tf.contrib.layers.conv2d(y, f, [5, 5], rate=[16,1])
+		y = tf.contrib.layers.conv2d(y, f, [5, 5], rate=[32,1])
+		y = tf.contrib.layers.conv2d(y, f, [5, 5], rate=[1,1])
+		y = tf.contrib.layers.conv2d(y, f, [5, 5], rate=[2,2])
+		y = tf.contrib.layers.conv2d(y, f, [5, 5], rate=[4,4])
+		y = tf.contrib.layers.conv2d(y, f, [5, 5], rate=[8,8])
+		y = tf.contrib.layers.conv2d(y, f, [5, 5], rate=[16,16])
+		y = tf.contrib.layers.conv2d(y, f, [5, 5], rate=[32,32])
+		y = tf.contrib.layers.conv2d(y, 4, [5, 5], rate=[1,1])
+
+		self.X = tf.reshape(y, [self.B, size_t, size_f*4])
+
 
 	@scope
 	def separate(self):
