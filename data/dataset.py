@@ -9,7 +9,7 @@ import copy
 import time
 from librosa.core import resample,load
 import tensorflow as tf
-from itertools import combinations_with_replacement
+from itertools import combinations_with_replacement, product
 
 """
 Class used to have a consistent Randomness between Training/Validation/Test for
@@ -567,10 +567,14 @@ class TFDataset(object):
 					test_list = tuple([test_M(i) if i%2 == 0 else test_F(i) for i in range(N)])
 					test_other_list = tuple([test_other_M(i) if i%2 == 0 else test_other_F(i) for i in range(N)])
 				else:
-					train_comb = [[train_M(j+N*i) for j in range(i)] + [train_F(k+N*i) for k in range(N-i)] for i in range(N+1)] 
-					valid_comb = [[valid_M(j+N*i) for j in range(i)] + [valid_F(k+N*i) for k in range(N-i)] for i in range(N+1)] 
-					test_comb = [[test_M(j+N*i) for j in range(i)] + [test_F(k+N*i) for k in range(N-i)] for i in range(N+1)]
-					test_other_comb = [[test_other_M(j+N*i) for j in range(i)] + [test_other_F(k+N*i) for k in range(N-i)] for i in range(N+1)]
+					train_comb = [[ds(j + N*i) for j, ds in enumerate(comb)] 
+										for i, comb in enumerate(product([train_M, train_F], repeat=N))]
+					valid_comb = [[ds(j + N*i) for j, ds in enumerate(comb)] 
+										for i, comb in enumerate(product([valid_M, valid_F], repeat=N))]
+					test_comb = [[ds(j + N*i) for j, ds in enumerate(comb)] 
+										for i, comb in enumerate(product([test_M, test_F], repeat=N))]
+					test_other_comb = [[ds(j + N*i) for j, ds in enumerate(comb)] 
+										for i, comb in enumerate(product([test_other_M, test_other_F], repeat=N))]
 			elif 'M' in kwargs['sex']:
 				train_list = tuple([train_M(i) for i in range(N)])
 				valid_list = tuple([valid_M(i) for i in range(N)])
