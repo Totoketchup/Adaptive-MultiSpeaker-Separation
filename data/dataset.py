@@ -471,7 +471,8 @@ def is_long_enough(chunk_size, *x):
 	return tf.less(chunk_size, tf.shape(x[0])[0])
 
 def filtering(*inputs):
-	keys = inputs[2]
+	zipped = zip(*inputs)
+	keys = tf.stack(zipped[1])
 	L = tf.shape(keys)[0]
 	tiled = tf.tile(tf.expand_dims(keys, 1), [1, L])
 	sums = tf.reduce_sum(tf.cast(tf.equal(keys, tiled), tf.int32))
@@ -499,18 +500,16 @@ def process(combinations, batch_size):
 	# TRAINING SET
 	datasets = []
 	for i, c in enumerate(combinations):
-		# Creating zipped dataset [M,M] [M,F] [F,F] for 2 speakers
-		dataset_lambda_evald = tuple([d for j, d in enumerate(c)])
-
-		current_zip = tf.data.TFRecordDataset.zip(dataset_lambda_evald)
-		current_zip = current_zip.map(mix)
+		# Creating zipped dataset [M,M] [M,F] [F,M] [F,F] for 2 speakers
+		current_zip = tf.data.TFRecordDataset.zip(tuple(c))
 		current_zip = current_zip.filter(filtering)
+		current_zip = current_zip.map(mix, num_parallel_calls=8)
 		datasets.append(current_zip)
 
 	all_zip = tf.data.Dataset.zip(tuple(datasets))
-	all_zip = all_zip.map(lambda *x: map(tf.stack, zip(*x)))
+	all_zip = all_zip.map(lambda *x: map(tf.stack, zip(*x)), num_parallel_calls=8)
 	all_zip = all_zip.apply(tf.contrib.data.unbatch())
-	all_zip = all_zip.shuffle(len(combinations), seed=config.seed)
+	# all_zip = all_zip.shuffle(len(combinations), seed=config.seed)
 	all_zip = all_zip.batch(batch_size)
 	all_zip = all_zip.prefetch(1)
 
@@ -522,11 +521,11 @@ class TFDataset(object):
 
 	def get_data(self, name, seed):
 		return tf.data.TFRecordDataset(os.path.join(config.workdir, name)) \
-				.map(decode) \
-				.map(normalize if self.args['dataset_normalize'] else lambda x,y: (x,y)) \
+				.map(decode, num_parallel_calls=8) \
+				.map(normalize if self.args['dataset_normalize'] else lambda x,y: (x,y), num_parallel_calls=8) \
 				.shuffle(100, seed=seed) \
 				.filter(lambda *x: is_long_enough(self.chunk_size, *x)) \
-				.map(lambda *x: chunk(self.chunk_size, *x)) \
+				.map(lambda *x: chunk(self.chunk_size, *x), num_parallel_calls=8) \
 				.apply(tf.contrib.data.unbatch()) \
 				.shuffle(10, seed=seed)
 
@@ -592,23 +591,24 @@ class TFDataset(object):
 				test_mix = tf.data.TFRecordDataset.zip(test_list)
 				test_other_mix = tf.data.TFRecordDataset.zip(test_other_list)
 				
-				train_mix = train_mix.map(mix)
+
 				train_mix = train_mix.filter(filtering)
+				train_mix = train_mix.map(mix)
 				train_mix = train_mix.batch(batch_size)
 				train_mix = train_mix.prefetch(1)
 
-				valid_mix = valid_mix.map(mix)
 				valid_mix = valid_mix.filter(filtering)
+				valid_mix = valid_mix.map(mix)
 				valid_mix = valid_mix.batch(batch_size)
 				valid_mix = valid_mix.prefetch(1)
 
-				test_mix = test_mix.map(mix)
 				test_mix = test_mix.filter(filtering)
+				test_mix = test_mix.map(mix)
 				test_mix = test_mix.batch(batch_size)
 				test_mix = test_mix.prefetch(1)
 
-				test_other_mix = test_other_mix.map(mix)
 				test_other_mix = test_other_mix.filter(filtering)
+				test_other_mix = test_other_mix.map(mix)
 				test_other_mix = test_other_mix.batch(batch_size)
 				test_other_mix = test_other_mix.prefetch(1)
 
@@ -670,7 +670,7 @@ class TFDataset(object):
 		sess.run(self.get_initializer(split), feed_dict={self.chunk_size: self.init_chunk} )
 		try:
 			while True:
-				sess.run(self.next_element, feed_dict={self.handle: self.get_handle(split), self.chunk_size: self.init_chunk})
+				sess.run(self.next_ind, feed_dict={self.handle: self.get_handle(split), self.chunk_size: self.init_chunk})
 				count += 1
 		except Exception:
 			return count
