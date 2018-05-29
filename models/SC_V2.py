@@ -81,7 +81,7 @@ class L41ModelV2(Separator):
 
 			assignments = tf.reduce_sum(v_mean_broad * embedding_broad, 3)  # [B, T, F, S]
 
-			assignments = tf.nn.sigmoid(assignments) # [B, T, F, S]
+			assignments = tf.nn.softmax(assignments, -1) # [B, T, F, S]
 
 			masked_input = tf.expand_dims(self.X_input, 3) * assignments
 
