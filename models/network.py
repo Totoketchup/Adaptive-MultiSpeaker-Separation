@@ -296,7 +296,7 @@ class Network(object):
 			args = json.load(f)
 			keys_to_update = ['learning_rate','epochs','batch_size', 'chunk_size', 'nb_speakers',
 			'regularization','overlap_coef','loss','beta','model_folder', 'type','pretraining', 'with_silence',
-			'beta_kmeans', 'nb_tries', 'nb_steps', 'threshold', 'optimizer']
+			'beta_kmeans', 'nb_tries', 'nb_steps', 'threshold', 'optimizer', 'men', 'women']
 			to_modify = { key: modified_args[key] for key in keys_to_update if key in modified_args.keys() }
 			to_modify.update({key: val for key, val in modified_args.items() if key not in args.keys()})
 		# Update with new args such as 'pretraining' or 'type'
