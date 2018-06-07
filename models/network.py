@@ -580,7 +580,14 @@ class Separator(Network):
 
 		stft = tf.reshape(self.separated, [self.B*self.S, -1, self.F])
 		
-		stft = tf.complex(stft, 0.0*stft) * tf.exp(tf.complex(0.0, tf.angle(self.stfts)))
+		angles = tf.angle(self.stfts)
+		repeats = [self.S, 1, 1]
+		shape = tf.shape(angles)
+		angles = tf.expand_dims(angles, 1)
+		angles = tf.tile(angles, [1, self.S, 1 ,1])
+		angles = tf.reshape(angles, shape*repeats)
+
+		stft = tf.complex(stft, 0.0*stft) * tf.exp(tf.complex(0.0,angles))
 
 		istft = tf.contrib.signal.inverse_stft(
 			stft, 
