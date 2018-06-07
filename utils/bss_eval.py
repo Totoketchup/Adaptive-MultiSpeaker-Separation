@@ -647,19 +647,12 @@ def _bss_decomp_mtifilt_cupy(reference_sources, estimated_source, j, flen, nsrc)
 
     return (s_true, e_spat, e_interf, e_artif)
 
-def toeplitz_cupy(col, row):
-    L = col.shape[0]
-    R = row.shape[0]
+def toeplitz_cupy(c, r):
+    vals = cp.concatenate((r[-1:0:-1], c))
+    a, b = cp.ogrid[0:len(c), len(r) - 1:-1:-1]
+    indx = a + b
+    return vals[indx]
 
-    col_ = cp.pad(cp.flip(col,0), ((0,R-1)), 'constant')
-    row_ = cp.pad(row[1:], ((L,0)), 'constant')
-
-    out = cp.zeros((L,R))
-    for i in range(L):
-        out[i,:] = (col_ + row_)[-R:]
-        col_ = cp.roll(col_, 1, axis=0)
-        row_ = cp.roll(row_, 1, axis=0)
-    return out
 
 
 def _project_cupy(reference_sources, estimated_source, flen, nsrc):
