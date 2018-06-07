@@ -372,29 +372,31 @@ class Trainer(object):
 				# Load the best model on validation set and test it
 				self.model.restore_last_checkpoint()
 				
-				sess.run(tfds.test_initializer, feed_dict={tfds.chunk_size: self.args['chunk_size']})
+				sess.run(tfds.test_initializer, feed_dict={tfds.chunk_size: self.args['chunk_size']}) 
 
 				for b_t in range(nb_batches_test):
 					cost = self.model.test_batch(feed_dict_test)
 					costs.append(cost)
 				print 'Test cost = ', np.mean(costs)
 
-class STFT_finetuned_inference(Trainer):
+class STFT_Separator_Enhanced_Inference(Trainer):
 	def __init__(self, separator, name, **kwargs):
 		self.separator = separator
-		super(STFT_inference, self).__init__(trainer_type=name, **kwargs)
-
+		super(STFT_Separator_Enhanced_Inference, self).__init__(trainer_type=name, **kwargs)
+		
 	def build(self):
 		self.model = self.separator.load(self.args['model_folder'], self.args)
-		self.model.add_finetuning(inference=True)
+		self.model.separate
+		self.model.enhance
+		self.model.postprocessing
 		self.model.create_saver()
 		self.model.restore_model(self.args['model_folder'])
 		self.model.initialize_non_init()
 
-class STFT_inference(Trainer):
+class STFT_Separator_Inference(Trainer):
 	def __init__(self, separator, name, **kwargs):
 		self.separator = separator
-		super(STFT_inference, self).__init__(trainer_type=name, **kwargs)
+		super(STFT_Separator_Inference, self).__init__(trainer_type=name, **kwargs)
 
 	def build(self):
 		self.model = self.separator.load(self.args['model_folder'], self.args)
