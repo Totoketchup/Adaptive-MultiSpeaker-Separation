@@ -215,8 +215,8 @@ class Trainer(object):
 
 				for b in range(nb_batches_test):
 					output = self.model.infer(feed_dict_test, b)
+					print 'Batch #', b+1, '/', nb_batches_test, 
 					yield output
-					print 'Batch #', b+1, '/', nb_batches_test
 
 	def sdr_improvement(self):
 
