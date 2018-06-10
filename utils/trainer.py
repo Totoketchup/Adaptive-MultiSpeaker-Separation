@@ -515,16 +515,66 @@ class Adapt_Pretrainer(Trainer):
 		self.model.tensorboard_init()
 		self.model.init_all()
 
+class Adapt_Enhance(Trainer):
+	def __init__(self, name, **kwargs):
+		super(Adapt_Enhance, self).__init__(trainer_type=name, **kwargs)
+
+	def build(self):
+		self.model = Adapt.load(self.args['model_folder'], self.args)
+		self.model.front
+		self.model.pretraining = True
+		self.model.separator
+		self.model.back
+		self.model.create_saver()
+		self.model.restore_model(self.args['model_folder'])
+		self.model.enhance
+		self.model.cost_model = self.model.enhance_cost
+		self.model.finish_construction()
+		self.model.freeze_all_with('front/')
+		self.model.freeze_all_with('back/')
+		self.model.optimize
+		self.model.tensorboard_init()
+		self.model.initialize_non_init()
+
+
+class MultiChannel_Pretrainer(Trainer):
+
+	def __init__(self, **kwargs):
+		super(MultiChannel_Pretrainer, self).__init__(trainer_type='multi_pretraining', **kwargs)
+
+	def build(self):
+		self.model = MultiAdapt(**self.args)
+		self.model.tensorboard_init()
+		self.model.init_all()
+
 class Front_Separator_Trainer(Trainer):
 	def __init__(self, separator, name, **kwargs):
 		super(Front_Separator_Trainer, self).__init__(trainer_type=name, **kwargs)
 		self.separator = separator
 
 	def build(self):
-		self.model = Adapt.load(self.args['model_folder'], self.args)
-		self.model.connect_only_front_to_separator(self.separator)
-		# Initialize only non restored values
-		self.model.initialize_non_init()
+
+		if self.args['model_previous'] is not None:
+			self.model = Adapt.load(self.args['model_previous'], self.args)
+			self.model.connect_front(self.separator)
+			self.model.sepNet.output = self.model.sepNet.prediction
+			self.model.cost_model = self.model.sepNet.cost
+			self.model.back # To save the back values !
+			self.model.create_saver()
+			self.model.restore_model(self.args['model_previous'])
+			self.model.finish_construction()
+			self.model.freeze_all_with('front/')
+			self.model.freeze_all_with('back/')
+			self.model.optimize
+			self.model.tensorboard_init()
+			self.model.initialize_non_init()	
+		else:
+			self.model = Adapt.load(self.args['model_folder'], self.args)
+			self.model.connect_only_front_to_separator(self.separator)
+			# Initialize only non restored values
+			self.model.initialize_non_init()	
+
+		
 
 class Front_Separator_Finetuning_Trainer(Trainer):
 	def __init__(self, separator, name, **kwargs):

@@ -9,6 +9,9 @@ if __name__ == '__main__':
 	p.parser.add_argument(
 		'--model_folder', help='Path to Adapt folder to load', required=True)
 
+	p.parser.add_argument(
+		'--model_previous', help='Path to previous folder to load', required=False, default=None)
+
 	p.add_separator_args()
 	
 	args = p.get_args()
