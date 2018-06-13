@@ -53,7 +53,7 @@ if __name__ == '__main__':
 			sir_ = np.mean(separation[1] - no_separation[1])
 			sar_ = np.mean(separation[2] - no_separation[2])
 
-			if np.isnan(sdr_) or np.isnan(sir_) or np.isnan(sar_):
+			if np.isnan(sdr_) or np.isnan(sir_) or np.isnan(sar_) or np.isinf(sdr_) or np.isinf(sir_) or np.isinf(sar_):
 				continue
 
 			sdr += sdr_
