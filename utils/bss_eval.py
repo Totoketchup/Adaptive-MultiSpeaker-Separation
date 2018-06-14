@@ -379,37 +379,53 @@ def bss_eval_sources_tf(reference_sources, estimated_sources,
     estimated_sources = tf.cast(tf.reshape(estimated_sources, [nsrc, nsampl]), tf.float64)
     reference_sources = tf.cast(tf.reshape(reference_sources, [nsrc, nsampl]), tf.float64)
 
+    print estimated_sources, reference_sources
     # does user desire permutations?
     if compute_permutation:
         # compute criteria for all possible pair matches
-        sdr = [[[]]*nsrc]*nsrc
-        sir = [[[]]*nsrc]*nsrc
-        sar = [[[]]*nsrc]*nsrc
+        sdr = []
+        sir = []
+        sar = []
         for jest in range(nsrc):
             for jtrue in range(nsrc):
                 s_true, e_spat, e_interf, e_artif = \
                     _bss_decomp_mtifilt_tf(reference_sources,
                                         estimated_sources[jest],
                                         jtrue, 512, nsrc)
-                sdr[jest][jtrue], sir[jest][jtrue], sar[jest][jtrue] = \
+                sdr_, sir_, sar_ = \
                     _bss_source_crit_tf(s_true, e_spat, e_interf, e_artif)
+                sdr.append(sdr_)
+                sir.append(sir_)
+                sar.append(sar_)
 
-        return sdr       
+        # sdr = tf.reshape(tf.stack(sdr), [nsrc, nsrc])
+        # sir = tf.reshape(tf.stack(sir), [nsrc, nsrc])
+        # sar = tf.reshape(tf.stack(sar), [nsrc, nsrc])
         sdr = tf.stack(sdr)
         sir = tf.stack(sir)
         sar = tf.stack(sar)
 
-        return sdr, sir, sar
+        # Working only with 2 signals:
+        gather = [[0, 3],[2, 1]]
+        best_perm = tf.argmax(tf.reduce_mean(tf.gather(sir,gather), 1))
+        idx = tf.gather(gather, best_perm)
 
-        # select the best ordering
-        perms = list(itertools.permutations(list(range(nsrc))))
-        mean_sir = np.empty(len(perms))
-        dum = np.arange(nsrc)
-        for (i, perm) in enumerate(perms):
-            mean_sir[i] = np.mean(sir[perm, dum])
-        popt = perms[np.argmax(mean_sir)]
-        idx = (popt, dum)
-        return (sdr[idx], sir[idx], sar[idx], np.asarray(popt))
+        return tf.gather(sdr, idx), tf.gather(sir, idx), tf.gather(sar, idx)
+
+
+        # # select the best ordering
+        # perms = list(itertools.permutations(list(range(nsrc))))
+        # perms_tensor = tf.constant(perms)
+        # print perms
+        # return tf.gather_nd(sir,perms_tensor[1])
+        # mean_sir = []
+        # dum = np.arange(nsrc)
+        # for (i, perm) in enumerate(perms):
+        #     mean_sir.append(tf.reduce_mean(sir[i]))
+        # popt = perms_tensor[tf.argmax(mean_sir)]
+        # idx = (popt, dum)
+
+        # return (tf.gather_nd(sdr, idx), tf.gather(sir, idx), tf.gather(sar, idx), popt)
     else:
         # compute criteria for only the simple correspondence
         # (estimate 1 is estimate corresponding to reference source 1, etc.)
@@ -455,22 +471,12 @@ def _bss_decomp_mtifilt_tf(reference_sources, estimated_source, j, flen, nsrc):
 
     return (s_true, e_spat, e_interf, e_artif)
 
-def toeplitz_tf(col, row):
-    L = tf.shape(col)[0]
-    R = tf.shape(row)[0]
-    r = tf.range(L)
+def toeplitz_tf(col, row, l):
+    vals = tf.concat((row[-1:0:-1], col), 0)
+    a, b = np.ogrid[0:l, l - 1:-1:-1]
+    indx = a + b
 
-    def concat(i):
-        begin = tf.clip_by_value(i-R+1, 0, L)
-        size = tf.clip_by_value(i+1, 1, R)
-        left = tf.reverse(tf.slice(col,[begin], [size]), [0])
-
-        size = tf.clip_by_value(R-i-1, 0, R-i)
-        right = tf.slice(row, [1], [size])
-        return tf.concat([left, right], 0)
-
-    out = tf.map_fn(lambda i: tf.cast(concat(i), dtype=tf.float64), r, dtype=tf.float64)
-    return out
+    return tf.gather(vals, indx)
 
 
 
@@ -495,52 +501,62 @@ def _project_tf(reference_sources, estimated_source, flen, nsrc):
     pad_reference_sources = tf.pad(reference_sources, [[0,0],[0,n_fft-tf.shape(reference_sources)[-1]]])
     pad_estimated_source = tf.pad(estimated_source, [[0,n_fft-tf.shape(reference_sources)[-1]]])
 
-    sf = tf.spectral.fft(tf.cast(tf.complex(pad_reference_sources,tf.constant(0.,tf.float64)),tf.complex64))
-    sef = tf.spectral.fft(tf.cast(tf.complex(pad_estimated_source,tf.constant(0.,tf.float64)),tf.complex64))
+    sf = tf.spectral.fft(tf.cast(tf.complex(pad_reference_sources,tf.constant(0.,tf.float64)),tf.complex128))
+    sef = tf.spectral.fft(tf.cast(tf.complex(pad_estimated_source,tf.constant(0.,tf.float64)),tf.complex128))
 
     # inner products between delayed versions of reference_sources
-    G = tf.zeros([nsrc * flen, nsrc * flen], dtype=tf.float64)
+    G_ = []
     for i in range(nsrc):
         for j in range(nsrc):
             ssf = sf[i] * tf.conj(sf[j])
             ssf = tf.real(tf.ifft(ssf))
-            ss = toeplitz_tf(tf.concat([tf.reshape(ssf[0],[1]), tf.reverse(ssf[-flen+1:],[0])],0), ssf[:flen])
-            
-            paddings = tf.constant([[j * flen, nsrc * flen - (j+1) * flen],
-                [i * flen, nsrc * flen - (i+1) * flen]])
-
-            G +=  tf.pad(tf.transpose(ss), paddings, "CONSTANT")
-
-            if i != j: 
-                paddings = tf.constant([[i * flen, nsrc * flen - (i+1) * flen],
-                    [j * flen, nsrc * flen - (j+1) * flen]])
-                G += tf.pad(ss, paddings, "CONSTANT")
+            in1 = tf.concat([tf.reshape(ssf[0],[1]), tf.reverse(ssf[-flen+1:],[0])],0)
+            in2 = ssf[:flen]
+            ss = toeplitz_tf(in1,in2,flen)
+            G_.append(ss)
+    G = []
+    for i in range(nsrc):
+        a = tf.concat(G_[i*nsrc:(i+1)*nsrc], 1)
+        G.append(tf.reshape(a, [flen, nsrc * flen]))
+    G = tf.reshape(tf.concat(G, 0), [nsrc * flen, nsrc * flen])
 
     # inner products between estimated_source and delayed versions of
     # reference_sources
-    D = tf.zeros([nsrc * flen], dtype=tf.float64)
+    D = []
+    # D = tf.zeros([nsrc * flen], dtype=tf.float64)
     for i in range(nsrc):
         ssef = sf[i] * tf.conj(sef)
         ssef = tf.cast(tf.real(tf.ifft(ssef)), tf.float64)
-        paddings = tf.constant([[i * flen, nsrc * flen - (i+1) * flen]])
         conc = tf.concat([tf.reshape(ssef[0], [1]), tf.reverse(ssef[-flen+1:],[0])],0)
-        D += tf.pad(conc, paddings, "CONSTANT")
+        D.append(conc)
+    D = tf.concat(D, 0)
 
     # Computing projection
     # Distortion filters
 
     s = tf.linalg.solve(G, tf.expand_dims(D,1))
-    C = tf.reshape(s, [flen, nsrc])
+    if nsrc == 2:
+        C = tf.concat([s[:flen],s[flen:]], 1)
+    else:
+        C = tf.reshape(s,(flen, nsrc))
 
     # Filtering
     sproj = tf.zeros([nsampl + flen - 1], dtype=tf.float64)
 
     for i in range(nsrc):
-        r = tf.pad(reference_sources[i], [[C[:, i].shape[0]-1, C[:, i].shape[0]-1]], "CONSTANT")
-        data   = tf.reshape(r, [1, int(r.shape[0]), 1], name='data')
-        kernel = tf.reshape(C[:, i], [int(C[:, i].shape[0]), 1, 1], name='kernel')
-        conv = tf.reshape(tf.nn.conv1d(data, kernel, 1, 'VALID'), [-1])
-        sproj += conv[:nsampl + flen - 1]
+        fshape = tf.shape(C[:, i])[0] + tf.shape(reference_sources[i])[0] - 1
+
+        pad_C_i = tf.pad(C[:, i], [[0, fshape-tf.shape(C[:, i])[-1]]], 'CONSTANT')
+        pad_ref = tf.pad(reference_sources[i], [[0,fshape-tf.shape(reference_sources[i])[-1]]], 'CONSTANT')
+
+        in1 = tf.cast(tf.complex(pad_C_i,tf.constant(0.,tf.float64)),tf.complex128)
+        in2 = tf.cast(tf.complex(pad_ref,tf.constant(0.,tf.float64)),tf.complex128)
+
+        fft1 = tf.spectral.fft(in1)
+        fft2 = tf.spectral.fft(in2)
+
+        ifft = tf.real(tf.spectral.ifft(fft1 * fft2))
+        sproj += ifft[:nsampl + flen - 1]
     return sproj
 
 def _bss_source_crit_tf(s_true, e_spat, e_interf, e_artif):
@@ -744,27 +760,55 @@ if __name__=="__main__":
     # srcs = srcs.astype(np.float32)
     # recons = recons.astype(np.float32)
 
-    # print bss_eval_sources(srcs, recons, )
-    print bss_eval_sources_cupy(srcs, recons)
+    print bss_eval_sources(srcs, recons, )
     # print bss_eval_sources_cupy(srcs, recons)
     # print bss_eval_sources_cupy(srcs, recons)
-    # # with tf.Session() as sess:
-    #     z = bss_eval_sources_tf(srcs, recons, nsrc=2)
-    #     print sess.run(z)
+    # print bss_eval_sources_cupy(srcs, recons)
+    # print bss_eval_sources_cupy(srcs, recons)
+    # print bss_eval_sources_cupy(srcs, recons)
+    # print bss_eval_sources_cupy(srcs, recons)
+    # print bss_eval_sources_cupy(srcs, recons)
+    with tf.Session() as sess:
+        z = bss_eval_sources_tf(srcs, recons, nsrc=2)
+        print sess.run(z)
 
     #     ref_source = tf.get_default_graph().get_tensor_by_name("concat_1:0")
-    #     sf_ = tf.get_default_graph().get_tensor_by_name("FFT:0")
-    #     G_ = tf.get_default_graph().get_tensor_by_name("add_1:0")
-    #     D_ = tf.get_default_graph().get_tensor_by_name("add_2:0")
-    #     solve_ = tf.get_default_graph().get_tensor_by_name("MatrixSolve:0")
+        # sf_ = tf.get_default_graph().get_tensor_by_name("FFT:0")
+        # G_ = tf.get_default_graph().get_tensor_by_name("add_1:0")
+        # D_ = tf.get_default_graph().get_tensor_by_name("add_2:0")
+        # solve_ = tf.get_default_graph().get_tensor_by_name("Reshape_4:0")
     #     # solve_ = tf.get_default_graph().get_tensor_by_name("matrix_solve_ls/cholesky_solve/MatrixTriangularSolve_1:0")
+        # sproj_ = tf.get_default_graph().get_tensor_by_name("Real_2:0")
+        # # kernel = tf.get_default_graph().get_tensor_by_name("kernel:0")
 
-    #     solve_ = sess.run(solve_)
-    #     solve_t = np.load('solve.npy')
-    #     print np.amax(np.abs(solve_t - solve_))
-    #     print np.mean(np.abs(solve_t - solve_))
-    #     print solve_.shape
-    #     print np.sum(np.abs(solve_ - solve_t))
+        # # k = sess.run(kernel)
+        # # print np.sum(np.abs(np.reshape(k,(-1)) - np.reshape(np.load('kernel0.npy'),(-1))))
+
+        # sproj_ = sess.run(sproj_)
+        # proj =  np.load('conv.npy')
+        # print proj.shape
+        # print sproj_
+        # print proj
+        # print np.mean(np.abs(sproj_ - proj))
+
+        # sf_tf = sess.run(sf_)
+        # print sf_tf
+        # print np.load('sftrue.npy')
+
+
+        # sf_tf = sess.run(sf_)
+        # print sf_tf
+        # print np.load('sftrue.npy')
+
+        # solve_ = sess.run(solve_)
+        # solve_t = np.reshape(np.load('solve.npy'), (512,1))
+
+        # print solve_
+        # print solve_t
+        # print np.amax(np.abs(solve_t - solve_))
+        # print np.mean(np.abs(solve_t - solve_))
+        # print solve_.shape
+        # print np.sum(np.abs(solve_ - solve_t))
 
 
         # D_ = sess.run(D_)
@@ -779,8 +823,11 @@ if __name__=="__main__":
 
         # G_ = sess.run(G_)
         # G_t = np.load('Gtrue.npy')
+        # print G_t
+        # print G_
         # print np.mean(np.abs(G_t - G_))
-        # print G_.shape
+        # print np.amax(np.abs(G_t - G_))
+        # print np.argmax(np.abs(G_t - G_))
         # print np.sum(np.abs(G_ - G_t))
 
  # 132.41732881  156.43356713  167.00013129  163.50050324  146.97019664

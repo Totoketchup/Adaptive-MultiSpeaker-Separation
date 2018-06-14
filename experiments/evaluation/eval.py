@@ -42,12 +42,14 @@ if __name__ == '__main__':
 	sir = 0.0
 	sar = 0.0
 	i = 0
+	arr = []
 	for mix, non_mix, separated in inferencer.inference():
 		for m, n_m, s in zip(list(mix), list(non_mix), list(separated)):
 			mix_stack = np.array([m, m])
 			
 			no_separation = bss_eval_sources_cupy(n_m, mix_stack)
 			separation = bss_eval_sources_cupy(n_m, s)
+
 
 			sdr_ = np.mean(separation[0] - no_separation[0])
 			sir_ = np.mean(separation[1] - no_separation[1])
@@ -56,6 +58,10 @@ if __name__ == '__main__':
 			if np.isnan(sdr_) or np.isnan(sir_) or np.isnan(sar_) or np.isinf(sdr_) or np.isinf(sir_) or np.isinf(sar_):
 				continue
 
+			input_sdr = np.mean(no_separation[0])
+			sdr_improvement = np.mean(separation[0])
+			arr.append((input_sdr, sdr_improvement))
+
 			sdr += sdr_
 			sir += sir_
 			sar += sar_
@@ -63,3 +69,5 @@ if __name__ == '__main__':
 			i += 1
 
 			print sdr/float(i), sir/float(i), sar/float(i)
+
+	np.save(inferencer.model.runID, np.array(arr))
