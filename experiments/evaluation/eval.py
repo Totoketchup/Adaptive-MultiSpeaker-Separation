@@ -58,8 +58,8 @@ if __name__ == '__main__':
 			if np.isnan(sdr_) or np.isnan(sir_) or np.isnan(sar_) or np.isinf(sdr_) or np.isinf(sir_) or np.isinf(sar_):
 				continue
 
-			input_sdr = np.mean(no_separation[0])
-			sdr_improvement = np.mean(separation[0])
+			input_sdr = no_separation[0]
+			sdr_improvement = separation[0]
 			arr.append((input_sdr, sdr_improvement))
 
 			sdr += sdr_
@@ -69,5 +69,6 @@ if __name__ == '__main__':
 			i += 1
 
 			print sdr/float(i), sir/float(i), sar/float(i)
+		break
 
 	np.save(inferencer.model.runID, np.array(arr))
