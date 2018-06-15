@@ -69,6 +69,6 @@ if __name__ == '__main__':
 			i += 1
 
 			print sdr/float(i), sir/float(i), sar/float(i)
-		break
+
 
 	np.save(inferencer.model.runID, np.array(arr))
