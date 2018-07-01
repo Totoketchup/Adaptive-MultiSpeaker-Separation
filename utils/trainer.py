@@ -208,11 +208,19 @@ class Trainer(object):
 				self.args.update(additional_args)
 				self.build()
 
-				nb_batches_test = tfds.length(tfds.TEST)
-				feed_dict_test = {tfds.handle: tfds.get_handle(tfds.TEST), tfds.chunk_size: self.args['chunk_size']}
+				# nb_batches_test = tfds.length(tfds.TEST)
+				# feed_dict_test = {tfds.handle: tfds.get_handle(tfds.TEST), tfds.chunk_size: self.args['chunk_size']}
 
-				sess.run(tfds.test_initializer, feed_dict={tfds.chunk_size: self.args['chunk_size']} )
 
+				if self.args["out"]:
+					nb_batches_test = tfds.length(tfds.TEST_OTHER)
+					feed_dict_test = {tfds.handle: tfds.get_handle(tfds.TEST_OTHER), tfds.chunk_size: self.args['chunk_size']}
+					sess.run(tfds.get_initializer(tfds.TEST_OTHER), feed_dict={tfds.chunk_size: self.args['chunk_size']} )
+				else :
+					nb_batches_test = tfds.length(tfds.TEST)
+					feed_dict_test = {tfds.handle: tfds.get_handle(tfds.TEST), tfds.chunk_size: self.args['chunk_size']}
+					sess.run(tfds.test_initializer, feed_dict={tfds.chunk_size: self.args['chunk_size']} )
+				
 				for b in range(nb_batches_test):
 					output = self.model.infer(feed_dict_test, b)
 					print 'Batch #', b+1, '/', nb_batches_test, 

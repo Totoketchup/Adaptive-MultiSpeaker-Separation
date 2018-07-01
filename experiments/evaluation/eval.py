@@ -10,6 +10,8 @@ if __name__ == '__main__':
 
 	p.parser.add_argument('--model_folder', help='Path to the Model folder to load', required=True) 
 	p.parser.add_argument('--sortofmodel', help='Sort of model', required=True) 
+	p.parser.add_argument('--out', help='Use out-of-set dataset for testing', action="store_true")
+	
 	p.add_adapt_args()
 	p.add_separator_args()
 	args = p.get_args()
