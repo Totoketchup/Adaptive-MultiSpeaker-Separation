@@ -463,12 +463,18 @@ class Separator(Network):
 
 	def add_finetuning(self):
 		self.separate
+		self.enhance
 		self.postprocessing
 		self.cost_finetuning
 		self.cost_model = self.cost_finetuning
 		self.finish_construction()
-		self.freeze_all_except('prediction')
-		self.tensorboard_init()
+		to_train = []
+		for var in self.trainable_variables:
+			for p in self.args['train']:
+				if p in var.name:
+					to_train.append(var)
+		self.trainable_variables = to_train
+		# self.tensorboard_init()
 		self.optimize
 
 	@scope
@@ -598,9 +604,8 @@ class Separator(Network):
 		self.output = output
 		tf.summary.audio(name= "audio/output/reconstructed", tensor = tf.reshape(output, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
 
-		sdr_improvement, _ = self.sdr_improvement(self.x_non_mix, self.output)
-		self.sdr_imp = sdr_improvement
-		tf.summary.scalar('SDR_improvement', sdr_improvement)			
+		# sdr_improvement = self.sdr_improvement_2(self.output)
+		# self.sdr_imp = sdr_improvement
 
 		return output
 

@@ -11,6 +11,7 @@ if __name__ == '__main__':
 	
 	p.add_adapt_args()
 	p.add_separator_args()
+	p.add_finetuning_args()
 	p.add_enhance_layer_args()
 	
 	args = p.get_args()

@@ -6,6 +6,7 @@ if __name__ == '__main__':
 
 	p.parser.add_argument('--model_folder', help='Path to the Model folder to load', required=True)	
 	p.add_stft_args()
+	p.add_finetuning_args()
 	p.add_separator_args()
 	
 	args = p.get_args()

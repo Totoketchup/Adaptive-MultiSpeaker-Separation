@@ -506,8 +506,8 @@ class STFT_Separator_FineTune_Trainer(Trainer):
 		self.model = self.separator.load(self.args['model_folder'], self.args)
 		# self.model.init_separator()
 		self.model.create_saver()
-		self.model.restore_model(self.args['model_folder'])
 		self.model.add_finetuning()
+		self.model.restore_model(self.args['model_folder'])
 		self.model.tensorboard_init()
 		# Initialize only non restored values
 		self.model.initialize_non_init()		
@@ -632,7 +632,13 @@ class Front_Separator_Enhance_Finetuning_Trainer(Trainer):
 		self.model.restore_model(self.args['model_folder'])
 		self.model.cost_model = self.model.cost
 		self.model.finish_construction()
-		self.model.freeze_all_except('prediction', 'speaker_centroids', 'enhance')
+		to_train = []
+		for var in self.model.trainable_variables:
+			for p in self.args['train']:
+				if p in var.name:
+					to_train.append(var)
+		self.model.trainable_variables = to_train
+		# self.model.freeze_all_except('prediction', 'speaker_centroids', 'enhance')
 		self.model.optimize
 		self.model.tensorboard_init()
 		# Initialize only non restored values
