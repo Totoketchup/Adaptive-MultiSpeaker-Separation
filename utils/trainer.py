@@ -116,6 +116,8 @@ class MyArgs(object):
 			'front_L41_enhanced_finetuned', 'STFT_L41', 'STFT_L41_finetuned', 
 			'STFT_L41_enhanced', 'STFT_L41_enhanced_finetuned'], required=True)
 	
+	def add_finetuning_args(self):
+		self.parser.add_argument('--train', nargs='*')
 
 	def add_enhance_layer_args(self):
 		self.parser.add_argument(
