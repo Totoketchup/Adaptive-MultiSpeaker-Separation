@@ -506,10 +506,21 @@ class STFT_Separator_FineTune_Trainer(Trainer):
 		
 	def build(self):
 		self.model = self.separator.load(self.args['model_folder'], self.args)
-		# self.model.init_separator()
-		self.model.add_finetuning()
+		self.model.separate
+		self.model.enhance
 		self.model.create_saver()
 		self.model.restore_model(self.args['model_folder'])
+		self.model.postprocessing
+		self.model.cost_finetuning
+		self.model.cost_model = self.model.cost_finetuning
+		self.model.finish_construction()
+		to_train = []
+		for var in self.model.trainable_variables:
+			for p in self.model.args['train']:
+				if p in var.name:
+					to_train.append(var)
+		self.model.trainable_variables = to_train
+		self.model.optimize
 		self.model.tensorboard_init()
 		# Initialize only non restored values
 		self.model.initialize_non_init()		
