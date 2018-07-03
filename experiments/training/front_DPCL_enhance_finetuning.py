@@ -11,9 +11,10 @@ if __name__ == '__main__':
 
 	p.add_adapt_args()
 	p.add_separator_args()
+	p.add_finetuning_args()
 	p.add_enhance_layer_args()
 	
 	args = p.get_args()
 
-	trainer = Front_Separator_Enhance_Finetuning_Trainer(DPCL, 'front_DPCL_enhance_finetuning', pretraining=False, **vars(args))
+	trainer = Front_Separator_Enhance_Finetuning_Trainer(DPCL, 'front_DPCL_finetuning', pretraining=False, **vars(args))
 	trainer.train()
