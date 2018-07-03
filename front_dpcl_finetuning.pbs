@@ -1,0 +1,32 @@
+#!/bin/bash
+#$ -S /bin/bash
+#$ -cwd
+#$ -ac d=nvcr-tensorflow-1802-py2
+#$ -jc gpu-container_g1.24h 
+#$ -e err_front_dpcl_finetuning.o
+#$ -o std_front_dpcl_finetuning.o
+
+export MY_PROXY_URL="http://10.1.10.1:8080/"
+export HTTP_PROXY=$MY_PROXY_URL
+export HTTPS_PROXY=$MY_PROXY_URL
+export FTP_PROXY=$MY_PROXY_URL
+export http_proxy=$MY_PROXY_URL 
+export https_proxy=$MY_PROXY_URL
+export ftp_proxy=$MY_PROXY_URL
+
+. /fefs/opt/dgx/env_set/common_env_set.sh
+
+export PATH="/home/anthony/anaconda2/bin:$PATH"
+export LD_LIBRARY_PATH="/home/anthony/anaconda2/lib:$LD_LIBRARY_PATH"
+export PATH="/home/anthony/anaconda2/lib:$PATH"
+export LIBRARY_PATH="/home/anthony/anaconda2/lib:$LIBRARY_PATH"
+export PATH="/home/anthony/.local/bin:$PATH"
+
+python -u -m experiments.training.front_DPCL_enhance_finetuning \
+--model_folder log/front_DPCL_enhance/${model} \
+--nb_speakers 2 --epochs 100 --batch_size 32 --chunk_size 10240 \
+--nb_tries 1 --nb_steps 10 --beta_kmeans ${bk} \
+--with_silence --threshold 2.0 --end_assign \
+--learning_rate ${alpha} --optimizer RMSProp \
+--train ${train} ${gender} \
+--men --no_random_picking > front_DPCL_finetuning_${model}_${alpha}_${train2}.o
