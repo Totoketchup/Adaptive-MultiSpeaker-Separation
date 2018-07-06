@@ -599,7 +599,7 @@ class Separator(Network):
 			stft, 
 			frame_length=self.window_size, 
 			frame_step=self.hop_size,
-			window_fn=tf.contrib.signal.inverse_stft_window_fn(self.window_size-self.hop_size))
+			window_fn=tf.contrib.signal.inverse_stft_window_fn(self.hop_size))
 		output = tf.reshape(istft, [self.B, self.S, -1])
 		self.output = output
 		tf.summary.audio(name= "audio/output/reconstructed", tensor = tf.reshape(output, [-1, self.L]), sample_rate = config.fs, max_outputs=4)
@@ -712,7 +712,7 @@ class Separator(Network):
 
 		X_nmr = tf.reshape(self.x_non_mix, [self.B, 1, self.S, self.L])
 
-		l2 = tf.reduce_mean(tf.square(X_nmr - permuted_back), axis=-1) # L2^2 norm
+		l2 = 0.5*tf.reduce_sum(tf.square(X_nmr - permuted_back), axis=-1) # L2^2 norm
 		l2 = tf.reduce_mean(l2, -1)
 		l2 = tf.reduce_min(l2, -1) # Get the minimum over all possible permutations
 		l2 = tf.reduce_mean(l2, -1)
