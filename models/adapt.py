@@ -353,9 +353,9 @@ class Adapt(Network):
 
 			X_nmr = tf.reshape(self.x_non_mix, [self.B, 1, self.S, self.L])
 
-			l2 = tf.reduce_sum(tf.square(X_nmr - permuted_back), axis=-1) # L2^2 norm
-			l2 = tf.reduce_min(l2, axis=1) # Get the minimum over all possible permutations : B S
+			l2 = tf.reduce_mean(tf.square(X_nmr - permuted_back), axis=-1) # MSE norm
 			l2 = tf.reduce_sum(l2, -1)
+			l2 = tf.reduce_min(l2,  -1) # Get the minimum over all possible permutations : B
 			l2 = tf.reduce_mean(l2, -1)
 
 			sdr_improvement, sdr = self.sdr_improvement(X_nmr, self.back, True)

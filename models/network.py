@@ -602,36 +602,10 @@ class Separator(Network):
 			window_fn=tf.contrib.signal.inverse_stft_window_fn(self.window_size-self.hop_size))
 		output = tf.reshape(istft, [self.B, self.S, -1])
 		self.output = output
-		tf.summary.audio(name= "audio/output/reconstructed", tensor = tf.reshape(output, [-1, self.L]), sample_rate = config.fs, max_outputs=2)
-
-		# sdr_improvement = self.sdr_improvement_2(self.output)
-		# self.sdr_imp = sdr_improvement
+		tf.summary.audio(name= "audio/output/reconstructed", tensor = tf.reshape(output, [-1, self.L]), sample_rate = config.fs, max_outputs=4)
 
 		return output
 
-	@scope
-	def cost_finetuning(self):
-		perms = list(permutations(range(self.S))) # ex with 3: [0, 1, 2], [0, 2 ,1], [1, 0, 2], [1, 2, 0], [2, 1, 0], [2, 0, 1]
-		length_perm = len(perms)
-		perms = tf.reshape(tf.constant(perms), [1, length_perm, self.S, 1])
-		perms = tf.tile(perms, [self.B, 1, 1, 1])
-
-		batch_range = tf.tile(tf.reshape(tf.range(self.B, dtype=tf.int32), shape=[self.B, 1, 1, 1]), [1, length_perm, self.S, 1])
-		perm_range = tf.tile(tf.reshape(tf.range(length_perm, dtype=tf.int32), shape=[1, length_perm, 1, 1]), [self.B, 1, self.S, 1])
-		indicies = tf.concat([batch_range, perm_range, perms], axis=3)
-
-		# [B, P, S, L]
-		permuted_back = tf.gather_nd(tf.tile(tf.reshape(self.postprocessing, [self.B, 1, self.S, self.L]), [1, length_perm, 1, 1]), indicies) # 
-
-		X_nmr = tf.reshape(self.x_non_mix, [self.B, 1, self.S, self.L])
-
-		l2 = tf.reduce_sum(tf.square(X_nmr - permuted_back), axis=-1) # L2^2 norm
-		l2 = tf.reduce_min(l2, axis=1) # Get the minimum over all possible permutations : B S
-		l2 = tf.reduce_sum(l2, -1)
-		l2 = tf.reduce_mean(l2, -1)
-		tf.summary.scalar('cost', l2)
-
-		return l2
  
 	@scope
 	def enhance(self):
@@ -717,3 +691,35 @@ class Separator(Network):
 		tf.summary.scalar('cost', cost)
 
 		return cost
+
+
+
+	@scope
+	def cost_finetuning(self):
+		perms = list(permutations(range(self.S))) # ex with 3: [0, 1, 2], [0, 2 ,1], [1, 0, 2], [1, 2, 0], [2, 1, 0], [2, 0, 1]
+		length_perm = len(perms)
+		perms = tf.reshape(tf.constant(perms), [1, length_perm, self.S, 1])
+		perms = tf.tile(perms, [self.B, 1, 1, 1])
+
+		batch_range = tf.tile(tf.reshape(tf.range(self.B, dtype=tf.int32), shape=[self.B, 1, 1, 1]), [1, length_perm, self.S, 1])
+		perm_range = tf.tile(tf.reshape(tf.range(length_perm, dtype=tf.int32), shape=[1, length_perm, 1, 1]), [self.B, 1, self.S, 1])
+		indicies = tf.concat([batch_range, perm_range, perms], axis=3)
+
+		postproc = tf.tile(tf.reshape(self.postprocessing, [self.B, 1, self.S, self.L]), [1, length_perm, 1, 1])
+
+		# [B, P, S, L]
+		permuted_back = tf.gather_nd(postproc, indicies) # 
+
+		X_nmr = tf.reshape(self.x_non_mix, [self.B, 1, self.S, self.L])
+
+		l2 = tf.reduce_mean(tf.square(X_nmr - permuted_back), axis=-1) # L2^2 norm
+		l2 = tf.reduce_mean(l2, -1)
+		l2 = tf.reduce_min(l2, -1) # Get the minimum over all possible permutations
+		l2 = tf.reduce_mean(l2, -1)
+		tf.summary.scalar('cost', l2)
+
+		sdr_improvement, sdr = self.sdr_improvement(X_nmr, self.postprocessing, True)
+
+		tf.summary.scalar('sdr', sdr_improvement)
+
+		return l2
