@@ -208,7 +208,7 @@ class Network(object):
 		separated = 10. * log10(sep)
 		non_separated = 10. * log10(1.0/((s_target_norm*mix_norm)/s_target_mix_2 - 1.0))
 
-		loss = (s_target_norm*s_approx_norm)/s_target_s_2
+		loss = (s_target_norm*s_approx_norm)/(s_target_s_2+1e-12)
 
 		val = separated - non_separated
 		val = tf.reduce_mean(val , -1) # Mean over speakers
@@ -216,7 +216,7 @@ class Network(object):
 			val = tf.reduce_mean(val , -1) # Mean over batches
 		else:
 			val = tf.reduce_mean(val , 0) # Mean over batches
-			val = tf.reduce_min(val, -1)
+			val = tf.reduce_max(val, -1)
 
 		return val, loss
 
