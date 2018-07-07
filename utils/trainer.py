@@ -643,7 +643,7 @@ class Front_Separator_Enhance_Finetuning_Trainer(Trainer):
 		self.model.back
 		self.model.create_saver()
 		self.model.restore_model(self.args['model_folder'])
-		self.model.cost_model = self.model.cost
+		self.model.cost_model = self.model.cost_finetuning
 		self.model.finish_construction()
 		to_train = []
 		for var in self.model.trainable_variables:
